@@ -8,77 +8,54 @@
 
 ## Task Description
 
-User reprioritised: Reports before auth ("reports is not yet complete"),
-then asked for a best-in-class dashboard. Auth work in progress was parked
-unmerged on `claude/auth-parked` (see that branch's WIP commit for state
-and remaining steps).
+User reprioritised: Reports before auth, then a best-in-class dashboard.
+Auth WIP parked unmerged on `claude/auth-parked`.
 
-## Actions Taken
+**Outcome note**: while this session built reports, a parallel session
+landed its own (more complete) M5 reports on main: `closed_at` close
+tracking, a 7/30/90-day period selector, copy-report text rendition,
+admin-editable stage weightings, loading skeletons, and a Neon connect
+fix (see WorkLogs 2026-06-10 m5-reports / skeletons / perf logs). At
+merge time main's implementation won wholesale; this session's duplicate
+`src/lib/reporting.ts` and report pages were discarded. What this session
+contributed to main is the dashboard below, ported onto main's
+`src/lib/reports.ts` so every surface reconciles.
 
-- **Reporting library** (`src/lib/reporting.ts`): shared reads used by the
-  dashboard, /reports, and the weekly report so numbers reconcile by
-  construction (FR-8.2 AC): pipeline by stage with weighted forecast
-  (value x stage weighting, FR-8.1), win rate with lost-reason breakdown,
-  activity volume by type/person, new-lead counts, actions for the week,
-  and `awstWeekRange` (Monday-to-Monday, Perth).
-- **/reports** (FR-8.1): open pipeline, weighted forecast, and win-rate
-  KPI cards; per-stage value list with weightings; lost/dormant reason
-  breakdown; activity volume by type and person (pre-auth history shows as
-  Unattributed).
-- **/reports/weekly** (FR-8.2): the seven-section Monday snapshot in Blu's
-  exact format (Summary, Closing soon, Needs attention, Full pipeline by
-  stage, Won this week with handover status, Lost/dormant with reasons,
-  Actions for the week), rendered live. The one-tap AI artifact version
-  arrives with M4/M5.
+## Actions Taken (surviving work)
+
 - **Dashboard** (`/`): replaced the static module grid with a working
   dashboard: date header + primary Quick add action; Inbox triage callout
   when unassigned leads exist; four KPI tiles (open pipeline, weighted
-  forecast, win rate, overdue follow-ups in red); pipeline-by-stage CSS
-  bar chart; Today's tasks with one-tap complete (overdue first, FR-5.2);
-  Closing soon and Needs attention top-5 lists; recent-activity feed;
-  footer links (Reports/Help/Settings) keep mobile reachability.
-- Reports added to the sidebar nav (desktop; mobile reaches it via the
-  dashboard KPI links and footer). Smoke spec rewritten for the dashboard.
-- **E2E**: `e2e/reports.spec.ts` covers the dashboard structure and the
-  weekly report (won deal with value + handover badge, lost deal with
-  reason, reason feeding the /reports breakdown). 87/87 passing twice
-  consecutively on phone/tablet/desktop; lint, tsc, build clean.
+  forecast, 30-day win rate, overdue follow-ups in red); pipeline-by-stage
+  CSS bar chart; Today's tasks with one-tap complete (overdue first,
+  FR-5.2); Closing soon and Needs attention top fives; recent-activity
+  feed; footer links keep Reports/Help/Settings reachable on mobile.
+- Smoke spec rewritten for the dashboard; merge reconciliation commit
+  `a6d081f` documents the conflict resolution.
+- 93/93 E2E passing post-merge (main's reports specs plus the dashboard
+  specs); lint, tsc, build clean; local schema pushed for `closed_at`.
 
 ## Decisions Made
 
-- **Close-time approximation**: "won/lost this week" uses the deal's
-  `updated_at` while in a Won/Lost stage; deals rarely change after
-  closing. A `stage_changed_at` column can land later if precision
-  matters.
-- **No chart dependency**: the stage breakdown is CSS bars; recharts can
-  come with M5 polish if wanted.
-- **Win-rate window** is fixed at 30 days for now; period selection is an
-  easy follow-up.
-- Module-grid home page retired; navigation lives in the shell and the
-  dashboard footer.
+- Main's parallel reports implementation kept in full: it is a superset
+  (proper close timing vs this session's `updated_at` approximation).
+- Coordination lesson repeated from M2: two sessions implemented the same
+  milestone concurrently. Before starting milestone-sized work, check not
+  only WorkLogs but whether another session is active on the same area.
 
 ## Issues Encountered
 
-- A persistent tablet-only flake in the new weekly-report spec: Next's
-  router refresh after a stage move intermittently interrupted the next
-  `page.goto` ("navigation interrupted by another navigation"). POST-wait
-  plus `networkidle` was not sufficient; fixed by running the report
-  assertions in a fresh page in the same context, which pending refreshes
-  on the board page cannot interrupt.
+- A tablet-only Playwright flake where Next's post-action router refresh
+  interrupted subsequent `page.goto` calls; fixed by asserting report
+  pages in a fresh page within the same context.
 
 ## Next Steps
 
-- Resume auth from `claude/auth-parked` (remaining: Playwright
-  storageState sign-in in global setup, sign-in/out E2E, docs), when the
-  user gives the word.
-- R2 bucket + `db:push:prod` + deploy (production still runs M1-era code).
-- M4 AI assistant, including the one-tap AI-generated weekly report
-  artifact.
-- Reports polish: period selector, admin-editable stage weightings
-  (FR-8.1), `stage_changed_at` for exact close dates.
+- Resume auth from `claude/auth-parked` when the user gives the word.
+- R2 bucket + `npm run db:push:prod` (now also `closed_at`) + deploy.
+- M4 AI assistant, including the one-tap AI weekly report artifact.
 
 ## Related Files
 
-- src/lib/reporting.ts, src/app/(app)/reports/{page.tsx,weekly/page.tsx}
-- src/app/(app)/page.tsx (dashboard), src/components/app-shell.tsx
-- e2e/{reports,smoke}.spec.ts
+- src/app/(app)/page.tsx (dashboard), e2e/smoke.spec.ts
+- Merge commit a6d081f (conflict resolution across reports surfaces)

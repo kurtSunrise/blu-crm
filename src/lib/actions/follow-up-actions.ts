@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { followUp } from "@/db/schema";
 import { createFollowUpCore } from "@/lib/mutations/follow-up";
+import { getSessionUserId } from "@/lib/session";
 import {
   completeFollowUpSchema,
   createFollowUpSchema,
@@ -29,7 +30,12 @@ export const createFollowUp = async (
     return { error: parsed.error.issues[0]?.message ?? "Invalid follow-up" };
   }
 
-  return await createFollowUpCore(parsed.data);
+  // Attribute the write to whoever is signed in; the follow-up's owner is
+  // the fallback (public/seeded paths legitimately have no session).
+  return await createFollowUpCore({
+    ...parsed.data,
+    createdBy: (await getSessionUserId()) ?? undefined,
+  });
 };
 
 export const completeFollowUp = async (

@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { activity, deal, quote } from "@/db/schema";
 import { formatAudFromCents } from "@/lib/format";
 import { createQuoteCore } from "@/lib/mutations/quote";
+import { getSessionUserId } from "@/lib/session";
 import {
   createQuoteSchema,
   sendQuoteSchema,
@@ -29,7 +30,10 @@ export const createQuote = async (
     return { error: parsed.error.issues[0]?.message ?? "Invalid quote" };
   }
 
-  return await createQuoteCore(parsed.data);
+  return await createQuoteCore({
+    ...parsed.data,
+    createdBy: (await getSessionUserId()) ?? undefined,
+  });
 };
 
 export const sendQuote = async (input: unknown): Promise<QuoteActionState> => {

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { activity, deal, notification, user } from "@/db/schema";
+import { getSessionUserId } from "@/lib/session";
 
 export interface InboxActionState {
   error?: string;
@@ -58,6 +59,7 @@ export const assignDealOwner = async (
     dealId,
     type: "note",
     content: `Lead assigned to ${assignee.name}`,
+    createdBy: await getSessionUserId(),
   });
 
   // New-lead-assigned notification (FR-11.1).

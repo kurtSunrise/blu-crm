@@ -3,9 +3,13 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db";
 import { account, session, user, verification } from "@/db/schema";
 
-// Microsoft 365 (Entra ID) SSO is part of M0 (PRD §4.3) but needs an Entra
-// app registration first — add it under socialProviders once the tenant
-// admin supplies MICROSOFT_CLIENT_ID / MICROSOFT_CLIENT_SECRET / TENANT_ID.
+// Microsoft 365 (Entra ID) SSO activates once the tenant admin registers
+// the Entra app and supplies the env vars (PRD §4.3); email/password works
+// regardless.
+const microsoftConfigured = Boolean(
+  process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET
+);
+
 export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_URL,
   database: drizzleAdapter(db, {
@@ -15,6 +19,15 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
   },
+  socialProviders: microsoftConfigured
+    ? {
+        microsoft: {
+          clientId: process.env.MICROSOFT_CLIENT_ID ?? "",
+          clientSecret: process.env.MICROSOFT_CLIENT_SECRET ?? "",
+          tenantId: process.env.MICROSOFT_TENANT_ID,
+        },
+      }
+    : undefined,
   user: {
     additionalFields: {
       role: {
@@ -25,3 +38,5 @@ export const auth = betterAuth({
     },
   },
 });
+
+export const isMicrosoftSsoEnabled = microsoftConfigured;

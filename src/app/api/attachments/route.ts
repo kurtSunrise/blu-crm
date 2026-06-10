@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { activity, attachment, deal } from "@/db/schema";
+import { getSessionUserId } from "@/lib/session";
 import {
   ALLOWED_ATTACHMENT_TYPES,
   MAX_ATTACHMENT_BYTES,
@@ -15,6 +16,11 @@ import {
 // are never publicly listable.
 
 export async function POST(request: Request): Promise<NextResponse> {
+  const userId = await getSessionUserId();
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+  }
+
   let formData: FormData;
   try {
     formData = await request.formData();
@@ -69,6 +75,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       fileName,
       contentType: file.type,
       sizeBytes: file.size,
+      uploadedBy: userId,
     })
     .returning({ id: attachment.id });
 
@@ -83,6 +90,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     dealId,
     type: "note",
     content: `Attached ${fileName}`,
+    createdBy: userId,
   });
 
   return NextResponse.json({ id: created.id }, { status: 201 });

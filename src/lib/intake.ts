@@ -130,6 +130,8 @@ export interface CreateLeadInput {
   estimatedValueCents?: number;
   fixedDate?: Date;
   ownerId?: string;
+  // The signed-in user who performed the capture; falls back to the owner.
+  createdBy?: string;
   projectType?: ProjectType;
   // Raw enquiry text (e.g. a forwarded email body) attached to the timeline
   // so no enquiry is ever silently dropped (FR-3.3 AC).
@@ -186,8 +188,8 @@ export const createLead = async (
     scopeSummary: input.scopeSummary,
     fixedDate: input.fixedDate,
     source: input.source,
-    createdBy: input.ownerId,
-    updatedBy: input.ownerId,
+    createdBy: input.createdBy ?? input.ownerId,
+    updatedBy: input.createdBy ?? input.ownerId,
   });
 
   if (dealId && input.rawNote) {

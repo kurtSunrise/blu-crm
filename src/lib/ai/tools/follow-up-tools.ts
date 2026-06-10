@@ -16,13 +16,14 @@ const createFollowUpSchema = z.object({
 const createFollowUpTool = defineTool({
   description:
     "Create a follow-up task (next action) on a deal with an owner and due date. Every open deal should carry one; propose this after logging activity or moving a stage when no next action exists.",
-  execute: async (input) => {
+  execute: async (input, ctx) => {
     const dueDate = new Date(input.dueDate);
     if (Number.isNaN(dueDate.getTime())) {
       return { resultText: `Invalid due date: ${input.dueDate}` };
     }
     const outcome = await createFollowUpCore({
       action: input.action,
+      createdBy: ctx.userId,
       dealId: input.dealId,
       dueDate,
       ownerId: input.ownerId,

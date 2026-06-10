@@ -10,8 +10,8 @@ const createQuoteSchema = z.object({
 const createQuoteTool = defineTool({
   description:
     "Record a draft quote at a value on a deal (tracking only; quotes themselves are built outside the CRM). The quote starts as a draft; sending and outcomes happen on the deal page.",
-  execute: async (input) => {
-    const outcome = await createQuoteCore(input);
+  execute: async (input, ctx) => {
+    const outcome = await createQuoteCore({ ...input, createdBy: ctx.userId });
     if (outcome.error) {
       return { resultText: `Quote failed: ${outcome.error}` };
     }

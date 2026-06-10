@@ -48,9 +48,26 @@ export const quickAddDealSchema = z
 
 export type QuickAddDealInput = z.infer<typeof quickAddDealSchema>;
 
+export const LOST_REASON_OPTIONS = [
+  { value: "price", label: "Price" },
+  { value: "timing", label: "Timing" },
+  { value: "went_elsewhere", label: "Went elsewhere" },
+  { value: "no_response", label: "No response" },
+  { value: "parked", label: "Parked" },
+] as const;
+
+const LOST_REASONS = [
+  "price",
+  "timing",
+  "went_elsewhere",
+  "no_response",
+  "parked",
+] as const;
+
 export const moveDealStageSchema = z.object({
   dealId: z.string().min(1),
   stageId: z.string().min(1),
+  lostReason: z.enum(LOST_REASONS).optional(),
 });
 
 export type MoveDealStageInput = z.infer<typeof moveDealStageSchema>;

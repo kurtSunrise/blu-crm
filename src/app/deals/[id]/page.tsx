@@ -1,5 +1,7 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { notFound } from "next/navigation";
+import { FollowUpDoneButton } from "@/components/follow-up-done-button";
+import { FollowUpForm } from "@/components/follow-up-form";
 import { QuickLogButtons } from "@/components/quick-log-buttons";
 import { StageSelect } from "@/components/stage-select";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +12,7 @@ import {
   company,
   contact,
   deal,
+  followUp,
   pipelineStage,
   user,
 } from "@/db/schema";
@@ -29,6 +32,14 @@ const ACTIVITY_LABELS: Record<string, string> = {
   note: "Note",
   stage_change: "Stage change",
   quote_event: "Quote",
+};
+
+const LOST_REASON_LABELS: Record<string, string> = {
+  price: "Price",
+  timing: "Timing",
+  went_elsewhere: "Went elsewhere",
+  no_response: "No response",
+  parked: "Parked",
 };
 
 const PROJECT_TYPE_LABELS: Record<string, string> = {
@@ -63,6 +74,8 @@ export default async function DealPage({
       scopeSummary: deal.scopeSummary,
       fixedDate: deal.fixedDate,
       decisionMakerConfirmed: deal.decisionMakerConfirmed,
+      lostReason: deal.lostReason,
+      handoverToDelivery: deal.handoverToDelivery,
       notes: deal.notes,
       companyName: company.name,
       contactId: contact.id,
@@ -85,9 +98,30 @@ export default async function DealPage({
   }
 
   const stages = await db
-    .select({ id: pipelineStage.id, name: pipelineStage.name })
+    .select({
+      id: pipelineStage.id,
+      name: pipelineStage.name,
+      isLost: pipelineStage.isLost,
+    })
     .from(pipelineStage)
     .orderBy(pipelineStage.position);
+
+  const owners = await db
+    .select({ id: user.id, name: user.name })
+    .from(user)
+    .orderBy(user.name);
+
+  const openFollowUps = await db
+    .select({
+      id: followUp.id,
+      action: followUp.action,
+      dueDate: followUp.dueDate,
+      ownerName: user.name,
+    })
+    .from(followUp)
+    .leftJoin(user, eq(followUp.ownerId, user.id))
+    .where(and(eq(followUp.dealId, id), isNull(followUp.completedAt)))
+    .orderBy(followUp.dueDate);
 
   const timeline = await db
     .select({
@@ -129,6 +163,12 @@ export default async function DealPage({
       label: "Decision maker confirmed",
       value: record.decisionMakerConfirmed ? "Yes" : "No",
     },
+    {
+      label: "Lost / dormant reason",
+      value: record.lostReason
+        ? LOST_REASON_LABELS[record.lostReason]
+        : null,
+    },
   ].filter((fact) => fact.value);
 
   return (
@@ -142,6 +182,11 @@ export default async function DealPage({
         </h1>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <Badge variant="secondary">{record.stageName}</Badge>
+          {record.handoverToDelivery && (
+            <Badge className="bg-success text-success-foreground">
+              Handover to delivery → Kurt
+            </Badge>
+          )}
           {valueCents != null && (
             <span className="font-medium">
               {formatAudFromCents(valueCents)}
@@ -175,6 +220,35 @@ export default async function DealPage({
       <section aria-label="Quick log" className="flex flex-col gap-2">
         <h2 className="font-heading font-medium text-sm">Quick log</h2>
         <QuickLogButtons dealId={record.id} />
+      </section>
+
+      <Separator />
+
+      <section aria-label="Follow-ups" className="flex flex-col gap-3">
+        <h2 className="font-heading font-medium text-sm">Follow-ups</h2>
+        {openFollowUps.length === 0 && (
+          <p className="text-muted-foreground text-sm">
+            No open follow-ups — every open deal should have a next action.
+          </p>
+        )}
+        <ul className="flex flex-col gap-2">
+          {openFollowUps.map((item) => (
+            <li
+              className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
+              key={item.id}
+            >
+              <div className="min-w-0">
+                <p className="truncate font-medium text-sm">{item.action}</p>
+                <p className="text-muted-foreground text-xs">
+                  {formatDateAwst(item.dueDate)}
+                  {item.ownerName ? ` · ${item.ownerName}` : ""}
+                </p>
+              </div>
+              <FollowUpDoneButton followUpId={item.id} label={item.action} />
+            </li>
+          ))}
+        </ul>
+        <FollowUpForm dealId={record.id} owners={owners} />
       </section>
 
       <Separator />

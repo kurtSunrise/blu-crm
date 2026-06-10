@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
+import { LostReasonDialog } from "@/components/lost-reason-dialog";
 import { Label } from "@/components/ui/label";
 import { moveDealStage } from "@/lib/actions/deal-actions";
 
@@ -12,19 +13,31 @@ export function StageSelect({
 }: {
   dealId: string;
   currentStageId: string;
-  stages: { id: string; name: string }[];
+  stages: { id: string; name: string; isLost: boolean }[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [pendingLostStageId, setPendingLostStageId] = useState<string | null>(
+    null
+  );
+
+  const applyMove = (stageId: string, lostReason?: string) => {
+    startTransition(async () => {
+      await moveDealStage({ dealId, stageId, lostReason });
+      router.refresh();
+    });
+  };
 
   const handleChange = (stageId: string) => {
     if (stageId === currentStageId) {
       return;
     }
-    startTransition(async () => {
-      await moveDealStage({ dealId, stageId });
-      router.refresh();
-    });
+    const target = stages.find((stage) => stage.id === stageId);
+    if (target?.isLost) {
+      setPendingLostStageId(stageId);
+      return;
+    }
+    applyMove(stageId);
   };
 
   return (
@@ -43,6 +56,16 @@ export function StageSelect({
           </option>
         ))}
       </select>
+      <LostReasonDialog
+        onCancel={() => setPendingLostStageId(null)}
+        onConfirm={(reason) => {
+          if (pendingLostStageId) {
+            applyMove(pendingLostStageId, reason);
+          }
+          setPendingLostStageId(null);
+        }}
+        open={pendingLostStageId !== null}
+      />
     </div>
   );
 }

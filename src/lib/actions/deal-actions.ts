@@ -4,7 +4,14 @@ import { and, eq, ilike, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { activity, company, contact, deal, pipelineStage } from "@/db/schema";
+import {
+  activity,
+  company,
+  contact,
+  deal,
+  notification,
+  pipelineStage,
+} from "@/db/schema";
 import { dollarsToCents } from "@/lib/format";
 import { nextLeadId } from "@/lib/lead-id";
 import {
@@ -200,19 +207,47 @@ export const createQuickAddDeal = async (
     return { error: "Failed to create the deal" };
   }
 
+  if (input.ownerId) {
+    await db.insert(notification).values({
+      userId: input.ownerId,
+      type: "lead_assigned",
+      payload: {
+        dealId: createdDealId,
+        title,
+        message: `New lead assigned: ${title}`,
+      },
+    });
+  }
+
   revalidatePath("/pipeline");
   redirect("/pipeline");
 };
+
+const LOST_REASON_LABELS: Record<string, string> = {
+  price: "Price",
+  timing: "Timing",
+  went_elsewhere: "Went elsewhere",
+  no_response: "No response",
+  parked: "Parked",
+};
+
+// The handover-to-delivery flag is routed to Kurt (PM) on Won — FR-1.6.
+const HANDOVER_USER_ID = "kurt";
 
 export const moveDealStage = async (input: unknown): Promise<ActionState> => {
   const parsed = moveDealStageSchema.safeParse(input);
   if (!parsed.success) {
     return { error: "Invalid stage move" };
   }
-  const { dealId, stageId } = parsed.data;
+  const { dealId, stageId, lostReason } = parsed.data;
 
   const [stage] = await db
-    .select({ id: pipelineStage.id, name: pipelineStage.name })
+    .select({
+      id: pipelineStage.id,
+      name: pipelineStage.name,
+      isWon: pipelineStage.isWon,
+      isLost: pipelineStage.isLost,
+    })
     .from(pipelineStage)
     .where(eq(pipelineStage.id, stageId))
     .limit(1);
@@ -221,16 +256,51 @@ export const moveDealStage = async (input: unknown): Promise<ActionState> => {
     return { error: "Unknown pipeline stage" };
   }
 
-  await db
+  // FR-1.6 AC: a deal cannot enter Lost/Dormant without a reason.
+  if (stage.isLost && !lostReason) {
+    return { error: "A reason is required to mark a deal Lost / Dormant" };
+  }
+
+  const [moved] = await db
     .update(deal)
-    .set({ stageId, updatedAt: new Date() })
-    .where(eq(deal.id, dealId));
+    .set({
+      stageId,
+      lostReason: stage.isLost ? lostReason : null,
+      handoverToDelivery: stage.isWon,
+      updatedAt: new Date(),
+    })
+    .where(eq(deal.id, dealId))
+    .returning({ id: deal.id, leadId: deal.leadId, title: deal.title });
+
+  if (!moved) {
+    return { error: "Deal not found" };
+  }
+
+  let content = `Moved to ${stage.name}`;
+  if (stage.isLost && lostReason) {
+    content = `Moved to ${stage.name} — reason: ${LOST_REASON_LABELS[lostReason]}`;
+  } else if (stage.isWon) {
+    content = `Moved to ${stage.name} — handover to delivery`;
+  }
 
   await db.insert(activity).values({
     dealId,
     type: "stage_change",
-    content: `Moved to ${stage.name}`,
+    content,
   });
+
+  if (stage.isWon) {
+    await db.insert(notification).values({
+      userId: HANDOVER_USER_ID,
+      type: "handover",
+      payload: {
+        dealId: moved.id,
+        leadId: moved.leadId,
+        title: moved.title,
+        message: `Won — handover to delivery: ${moved.title}`,
+      },
+    });
+  }
 
   revalidatePath("/pipeline");
   revalidatePath(`/deals/${dealId}`);

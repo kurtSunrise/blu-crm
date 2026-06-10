@@ -12,6 +12,7 @@ import {
 } from "@dnd-kit/core";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
+import { LostReasonDialog } from "@/components/lost-reason-dialog";
 import { moveDealStage } from "@/lib/actions/deal-actions";
 import { formatAudFromCents } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,8 @@ export interface BoardStage {
   id: string;
   name: string;
   position: number;
+  isWon: boolean;
+  isLost: boolean;
 }
 
 export interface BoardDeal {
@@ -103,14 +106,30 @@ export function PipelineBoard({
     })
   );
 
-  const applyMove = (dealId: string, stageId: string) => {
+  const [pendingLostMove, setPendingLostMove] = useState<{
+    dealId: string;
+    stageId: string;
+  } | null>(null);
+
+  const applyMove = (dealId: string, stageId: string, lostReason?: string) => {
     setBoardDeals((current) =>
       current.map((item) => (item.id === dealId ? { ...item, stageId } : item))
     );
     startTransition(async () => {
-      await moveDealStage({ dealId, stageId });
+      await moveDealStage({ dealId, stageId, lostReason });
       router.refresh();
     });
+  };
+
+  // Moving into Lost / Dormant requires a reason (FR-1.6), so the move is
+  // held until the user picks one in the dialog.
+  const requestMove = (dealId: string, stageId: string) => {
+    const target = stages.find((stage) => stage.id === stageId);
+    if (target?.isLost) {
+      setPendingLostMove({ dealId, stageId });
+      return;
+    }
+    applyMove(dealId, stageId);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -123,7 +142,7 @@ export function PipelineBoard({
     if (!moved || moved.stageId === targetStageId) {
       return;
     }
-    applyMove(dealId, targetStageId);
+    requestMove(dealId, targetStageId);
   };
 
   return (
@@ -137,12 +156,22 @@ export function PipelineBoard({
           <StageColumn
             deals={boardDeals.filter((item) => item.stageId === stage.id)}
             key={stage.id}
-            onMove={applyMove}
+            onMove={requestMove}
             stage={stage}
             stages={stages}
           />
         ))}
       </div>
+      <LostReasonDialog
+        onCancel={() => setPendingLostMove(null)}
+        onConfirm={(reason) => {
+          if (pendingLostMove) {
+            applyMove(pendingLostMove.dealId, pendingLostMove.stageId, reason);
+          }
+          setPendingLostMove(null);
+        }}
+        open={pendingLostMove !== null}
+      />
     </DndContext>
   );
 }

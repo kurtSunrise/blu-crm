@@ -1,14 +1,20 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { DM_Sans, JetBrains_Mono, Outfit } from "next/font/google";
+import { AppShell } from "@/components/app-shell";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const outfit = Outfit({
+  variable: "--font-heading",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const dmSans = DM_Sans({
+  variable: "--font-sans",
+  subsets: ["latin"],
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-mono",
   subsets: ["latin"],
 });
 
@@ -16,6 +22,12 @@ export const metadata: Metadata = {
   title: "Blu CRM",
   description:
     "Client and sales pipeline portal for Blu Builders — The Creative Build Company.",
+  icons: {
+    icon: [
+      { url: "/logo-light.png", media: "(prefers-color-scheme: light)" },
+      { url: "/logo-dark.png", media: "(prefers-color-scheme: dark)" },
+    ],
+  },
 };
 
 export default function RootLayout({
@@ -25,11 +37,11 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
+      className={`${outfit.variable} ${dmSans.variable} ${jetbrainsMono.variable} dark h-full antialiased`}
       lang="en"
     >
       <body className="flex min-h-full flex-col bg-background text-foreground">
-        {children}
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

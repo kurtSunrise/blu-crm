@@ -1,5 +1,7 @@
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import Image from "next/image";
 import { notFound } from "next/navigation";
+import { AttachmentUpload } from "@/components/attachment-upload";
 import { CompleteFollowUpButton } from "@/components/complete-follow-up-button";
 import { FollowUpForm } from "@/components/follow-up-form";
 import { QuickLogButtons } from "@/components/quick-log-buttons";
@@ -11,6 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { db } from "@/db";
 import {
   activity,
+  attachment,
   company,
   contact,
   deal,
@@ -25,6 +28,7 @@ import {
   formatDateTimeAwst,
 } from "@/lib/format";
 import { LOST_REASON_LABELS, PROJECT_TYPE_LABELS } from "@/lib/labels";
+import { isImageType } from "@/lib/validation/attachment";
 
 export const dynamic = "force-dynamic";
 
@@ -134,6 +138,17 @@ export default async function DealPage({
     .from(quote)
     .where(eq(quote.dealId, id))
     .orderBy(desc(quote.createdAt));
+
+  const attachments = await db
+    .select({
+      id: attachment.id,
+      fileName: attachment.fileName,
+      contentType: attachment.contentType,
+      createdAt: attachment.createdAt,
+    })
+    .from(attachment)
+    .where(eq(attachment.dealId, id))
+    .orderBy(desc(attachment.createdAt));
 
   const timeline = await db
     .select({
@@ -326,6 +341,49 @@ export default async function DealPage({
               </ul>
             )}
             <QuoteForm dealId={record.id} />
+          </section>
+
+          <Separator />
+
+          <section
+            aria-label="Files and photos"
+            className="flex flex-col gap-3"
+          >
+            <h2 className="font-heading font-medium text-sm">
+              Files and photos
+            </h2>
+            {attachments.length > 0 && (
+              <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {attachments.map((item) => (
+                  <li key={item.id}>
+                    <a
+                      className="block"
+                      href={`/api/attachments/${item.id}`}
+                      rel="noopener noreferrer"
+                      target="_blank"
+                    >
+                      {isImageType(item.contentType) ? (
+                        // Streamed through the private app route, so the
+                        // image is served unoptimised.
+                        <Image
+                          alt={item.fileName}
+                          className="aspect-square w-full rounded-md border object-cover"
+                          height={300}
+                          src={`/api/attachments/${item.id}`}
+                          unoptimized
+                          width={300}
+                        />
+                      ) : (
+                        <span className="flex aspect-square w-full items-center justify-center break-all rounded-md border bg-card p-2 text-center text-muted-foreground text-xs">
+                          {item.fileName}
+                        </span>
+                      )}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <AttachmentUpload dealId={record.id} />
           </section>
         </div>
 

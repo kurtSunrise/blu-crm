@@ -47,4 +47,6 @@ next-env.d.ts
 # cloudflare / opennext
 /.open-next/
 /.wrangler/
-cloudflare-env.d.ts
+# cloudflare-env.d.ts is committed: generated from wrangler.jsonc via
+# `npx wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts`;
+# rerun after changing wrangler.jsonc.

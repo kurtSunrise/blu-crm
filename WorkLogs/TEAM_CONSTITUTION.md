@@ -12,8 +12,8 @@ This document is the shared working agreement for contributors and AI agents in 
 - **Current auth direction**: Better Auth with a Drizzle adapter; route gating is not yet wired
 - **Current UI direction**: touch-friendly, mobile-first, shadcn/ui-based interfaces
 - **AI chat**: planned in product docs, not implemented in the current app code
-- **Deployment**: live on Cloudflare Workers (project name `blushed`) via `@opennextjs/cloudflare` + `wrangler`;
-- **Photo storage**: Cloudflare R2 bucket `blushed-photos` bound as `PHOTO_BUCKET`; the form falls back to base64 data URLs locally when `NEXT_PUBLIC_R2_PUBLIC_URL` is unset
+- **Deployment**: Cloudflare Workers (worker name `blu-crm`) via `@opennextjs/cloudflare` + `wrangler`;
+- **Photo storage**: Cloudflare R2 bucket `blu-crm-photos` bound as `PHOTO_BUCKET`; objects stay private and stream through `/api/attachments/[id]`. Local dev uses the simulated binding from `initOpenNextCloudflareForDev()` (persisted under `.wrangler/`)
 
 ---
 
@@ -41,8 +41,8 @@ This document is the shared working agreement for contributors and AI agents in 
 - **Hosting**: Cloudflare Workers
 - **Adapter**: `@opennextjs/cloudflare` 1.19.x (build = `npx opennextjs-cloudflare build`, deploy = `npx wrangler deploy` which auto-delegates to `opennextjs-cloudflare deploy`)
 - **CLI**: `wrangler` 4.x (devDependency)
-- **Config files**: `wrangler.jsonc` (worker name must match the deployed project — currently `blushed`) and `open-next.config.ts`
-- **Photo storage**: Cloudflare R2 binding `PHOTO_BUCKET` → bucket `blushed-photos`; public URL is exposed via `NEXT_PUBLIC_R2_PUBLIC_URL`
+- **Config files**: `wrangler.jsonc` (worker name `blu-crm`) and `open-next.config.ts`
+- **Photo storage**: Cloudflare R2 binding `PHOTO_BUCKET` → bucket `blu-crm-photos`; private objects served via the app's attachment route, no public bucket URL
 
 ### Development Tools
 - **Package Manager**: npm
@@ -201,7 +201,6 @@ Runtime variables the current code reads:
 - `BETTER_AUTH_SECRET` — required by Better Auth at runtime; without it the library falls back to an insecure default and logs an error.
 - `BETTER_AUTH_URL` — canonical deployed URL; needed for callbacks/redirects.
 - `NEXT_PUBLIC_APP_URL` — `plain_text`; inlined into the client bundle (used by `src/lib/auth-client.ts` and QR code generation). Must be set at build time.
-- `NEXT_PUBLIC_R2_PUBLIC_URL` — `plain_text`; when set, the item form posts photos to `/api/items/photo/upload` and stores the returned R2 URL. When unset, the form embeds a base64 data URL (local-dev fallback).
 - `ANTHROPIC_API_KEY` and/or `ZAI_API_KEY` — only required if photo search is enabled.
 
 ### Core Commands

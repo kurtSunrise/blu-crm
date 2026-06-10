@@ -29,21 +29,32 @@ test("marking Won prompts for handover and notifies delivery (US-10)", async ({
   await expect(
     dialog.getByLabel("Flag handover to delivery (notifies Kurt)")
   ).toBeChecked();
+
+  // The board updates optimistically; wait for the server action's POST to
+  // come back before navigating, or the move may never be committed.
+  const moveCommitted = page.waitForResponse(
+    (response) => response.request().method() === "POST"
+  );
   await dialog.getByRole("button", { name: "Mark as won" }).click();
+  await moveCommitted;
 
   const wonColumn = page.locator('section[aria-label="Won"]');
   await expect(
     wonColumn.getByRole("heading", { name: companyName })
   ).toBeVisible();
 
-  // The handover notification lands for delivery (FR-11.1).
-  await page.goto("/notifications");
-  await expect(
-    page
-      .locator("li")
-      .filter({ hasText: `${companyName} was won` })
-      .first()
-  ).toBeVisible();
+  // The handover notification lands for delivery (FR-11.1). The board
+  // updates optimistically, so the server write can still be in flight;
+  // poll with reloads rather than waiting on one server-rendered response.
+  await expect(async () => {
+    await page.goto("/notifications");
+    await expect(
+      page
+        .locator("li")
+        .filter({ hasText: `${companyName} was won` })
+        .first()
+    ).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 15_000 });
 });
 
 test("Lost / Dormant requires a reason before the move applies (US-10)", async ({
@@ -64,7 +75,11 @@ test("Lost / Dormant requires a reason before the move applies (US-10)", async (
   ).toBeDisabled();
 
   await dialog.getByLabel("Reason *").selectOption("price");
+  const moveCommitted = page.waitForResponse(
+    (response) => response.request().method() === "POST"
+  );
   await dialog.getByRole("button", { name: "Mark as lost" }).click();
+  await moveCommitted;
 
   const lostColumn = page.locator('section[aria-label="Lost / Dormant"]');
   await expect(

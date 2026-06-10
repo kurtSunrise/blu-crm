@@ -50,6 +50,16 @@ const globalSetup = async (): Promise<void> => {
     for (const table of TABLES_TO_CLEAR) {
       await client.query(`delete from "${table}"`);
     }
+    // Stage-management tests add temporary stages; a failed run can leave
+    // them behind, so drop everything beyond the seeded eight (deals were
+    // cleared above, so no rows still reference them).
+    await client.query(
+      `delete from "pipeline_stage" where name not in (
+        'Lead Captured', 'Qualified', 'Brief / Site Visit',
+        'Concept / Quote Issued', 'Proposal Review', 'Negotiation',
+        'Won', 'Lost / Dormant'
+      )`
+    );
   } finally {
     await client.end();
   }

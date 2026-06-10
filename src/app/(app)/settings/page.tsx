@@ -1,4 +1,4 @@
-import { asc } from "drizzle-orm";
+import { asc, count, eq } from "drizzle-orm";
 import {
   ArrowRight,
   Bell,
@@ -6,6 +6,7 @@ import {
   FileUp,
   Globe,
   Inbox,
+  KanbanSquare,
   Mail,
   Percent,
   SunMoon,
@@ -13,11 +14,12 @@ import {
 import Link from "next/link";
 import { AlertThresholdsForm } from "@/components/alert-thresholds-form";
 import { CopyLinkButton } from "@/components/copy-link-button";
+import { StageManager } from "@/components/stage-manager";
 import { StageWeightingsForm } from "@/components/stage-weightings-form";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { db } from "@/db";
-import { pipelineStage } from "@/db/schema";
+import { deal, pipelineStage } from "@/db/schema";
 import { getAlertThresholds } from "@/lib/alerts";
 
 export const metadata = {
@@ -67,13 +69,20 @@ function SettingsCard({
 
 export default async function SettingsPage() {
   const thresholds = await getAlertThresholds();
+  // Deal counts include discarded deals: they still reference their stage,
+  // so removing a stage has to move them too (FR-1.3 AC).
   const stages = await db
     .select({
       id: pipelineStage.id,
       name: pipelineStage.name,
       weighting: pipelineStage.weighting,
+      isWon: pipelineStage.isWon,
+      isLost: pipelineStage.isLost,
+      dealCount: count(deal.id),
     })
     .from(pipelineStage)
+    .leftJoin(deal, eq(deal.stageId, pipelineStage.id))
+    .groupBy(pipelineStage.id)
     .orderBy(asc(pipelineStage.position));
 
   const emailIntakeConfigured = Boolean(process.env.EMAIL_INTAKE_TOKEN);
@@ -94,14 +103,19 @@ export default async function SettingsPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
         <div className="flex flex-col gap-6">
           <SettingsCard
-            description="When deals surface on the dashboard and tasks page as needing attention or closing soon."
-            icon={Bell}
-            label="Alert thresholds"
-            title="Alerts"
+            description="Rename, reorder, add, or remove the board's stages. Won and Lost / Dormant stay fixed at the end so closing flows keep working."
+            icon={KanbanSquare}
+            label="Pipeline stages"
+            title="Pipeline stages"
           >
-            <AlertThresholdsForm
-              closingSoonDays={thresholds.closingSoonDays}
-              staleDays={thresholds.staleDays}
+            <StageManager
+              stages={stages.map((stage) => ({
+                id: stage.id,
+                name: stage.name,
+                isWon: stage.isWon,
+                isLost: stage.isLost,
+                dealCount: stage.dealCount,
+              }))}
             />
           </SettingsCard>
 
@@ -112,6 +126,18 @@ export default async function SettingsPage() {
             title="Forecast weightings"
           >
             <StageWeightingsForm stages={stages} />
+          </SettingsCard>
+
+          <SettingsCard
+            description="When deals surface on the dashboard and tasks page as needing attention or closing soon."
+            icon={Bell}
+            label="Alert thresholds"
+            title="Alerts"
+          >
+            <AlertThresholdsForm
+              closingSoonDays={thresholds.closingSoonDays}
+              staleDays={thresholds.staleDays}
+            />
           </SettingsCard>
         </div>
 

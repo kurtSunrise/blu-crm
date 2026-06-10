@@ -18,3 +18,12 @@ export const stageWeightingSchema = z.coerce
   .int()
   .min(0)
   .max(MAX_WEIGHTING_PERCENT);
+
+const MAX_STAGE_NAME_LENGTH = 60;
+
+// Stage names label board columns and menus, so keep them short (FR-1.3).
+export const stageNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_STAGE_NAME_LENGTH);

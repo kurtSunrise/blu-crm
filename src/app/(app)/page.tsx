@@ -101,44 +101,48 @@ function ModuleCard({ module }: { module: (typeof MODULES)[number] }) {
 export default async function Home() {
   const { start, end } = awstDayRange();
 
-  const [openPipeline] = await db
-    .select({
-      // Quoted value wins over the estimate (FR-1.4 AC); Won and Lost deals
-      // are excluded from open-pipeline totals (FR-1.6 AC).
-      totalCents: sql<number>`coalesce(sum(coalesce(${deal.quotedValueCents}, ${deal.estimatedValueCents}, 0)), 0)`,
-      dealCount: count(deal.id),
-    })
-    .from(deal)
-    .innerJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
-    .where(
-      and(
-        isNull(deal.deletedAt),
-        eq(pipelineStage.isWon, false),
-        eq(pipelineStage.isLost, false)
-      )
-    );
-
-  const [overdue] = await db
-    .select({ value: count(followUp.id) })
-    .from(followUp)
-    .where(and(isNull(followUp.completedAt), lt(followUp.dueDate, start)));
-
-  const [dueToday] = await db
-    .select({ value: count(followUp.id) })
-    .from(followUp)
-    .where(
-      and(
-        isNull(followUp.completedAt),
-        gte(followUp.dueDate, start),
-        lt(followUp.dueDate, end)
-      )
-    );
-
-  const thresholds = await getAlertThresholds();
-  const staleDeals = await getStaleDeals(thresholds.staleDays);
-  const closingSoonDeals = await getClosingSoonDeals(
-    thresholds.closingSoonDays
+  // Each query is its own HTTP round-trip to Neon, so independent queries run
+  // in parallel; only the stale/closing-soon lookups wait on the thresholds.
+  const [[openPipeline], [overdue], [dueToday], thresholds] = await Promise.all(
+    [
+      db
+        .select({
+          // Quoted value wins over the estimate (FR-1.4 AC); Won and Lost
+          // deals are excluded from open-pipeline totals (FR-1.6 AC).
+          totalCents: sql<number>`coalesce(sum(coalesce(${deal.quotedValueCents}, ${deal.estimatedValueCents}, 0)), 0)`,
+          dealCount: count(deal.id),
+        })
+        .from(deal)
+        .innerJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
+        .where(
+          and(
+            isNull(deal.deletedAt),
+            eq(pipelineStage.isWon, false),
+            eq(pipelineStage.isLost, false)
+          )
+        ),
+      db
+        .select({ value: count(followUp.id) })
+        .from(followUp)
+        .where(and(isNull(followUp.completedAt), lt(followUp.dueDate, start))),
+      db
+        .select({ value: count(followUp.id) })
+        .from(followUp)
+        .where(
+          and(
+            isNull(followUp.completedAt),
+            gte(followUp.dueDate, start),
+            lt(followUp.dueDate, end)
+          )
+        ),
+      getAlertThresholds(),
+    ]
   );
+
+  const [staleDeals, closingSoonDeals] = await Promise.all([
+    getStaleDeals(thresholds.staleDays),
+    getClosingSoonDeals(thresholds.closingSoonDays),
+  ]);
 
   const stats = [
     { label: "Overdue tasks", value: overdue?.value ?? 0, alert: true },

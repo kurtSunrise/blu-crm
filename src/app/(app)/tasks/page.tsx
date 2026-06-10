@@ -144,37 +144,47 @@ export default async function TasksPage({
 }) {
   const { owner } = await searchParams;
 
-  const users = await db
-    .select({ id: user.id, name: user.name })
-    .from(user)
-    .orderBy(asc(user.name));
+  // Queries run in parallel batches to avoid sequential Neon round-trips; the
+  // follow-up query waits on users only because the owner filter is validated
+  // against the user list.
+  const [users, thresholds] = await Promise.all([
+    db
+      .select({ id: user.id, name: user.name })
+      .from(user)
+      .orderBy(asc(user.name)),
+    getAlertThresholds(),
+  ]);
 
   const ownerFilter = users.some((person) => person.id === owner)
     ? owner
     : undefined;
 
-  const rows = await db
-    .select({
-      id: followUp.id,
-      action: followUp.action,
-      dueDate: followUp.dueDate,
-      ownerId: followUp.ownerId,
-      ownerName: user.name,
-      dealId: deal.id,
-      dealTitle: deal.title,
-      leadId: deal.leadId,
-    })
-    .from(followUp)
-    .innerJoin(deal, eq(followUp.dealId, deal.id))
-    .leftJoin(user, eq(followUp.ownerId, user.id))
-    .where(
-      and(
-        isNull(followUp.completedAt),
-        isNull(deal.deletedAt),
-        ownerFilter ? eq(followUp.ownerId, ownerFilter) : undefined
+  const [rows, staleDeals, closingSoonDeals] = await Promise.all([
+    db
+      .select({
+        id: followUp.id,
+        action: followUp.action,
+        dueDate: followUp.dueDate,
+        ownerId: followUp.ownerId,
+        ownerName: user.name,
+        dealId: deal.id,
+        dealTitle: deal.title,
+        leadId: deal.leadId,
+      })
+      .from(followUp)
+      .innerJoin(deal, eq(followUp.dealId, deal.id))
+      .leftJoin(user, eq(followUp.ownerId, user.id))
+      .where(
+        and(
+          isNull(followUp.completedAt),
+          isNull(deal.deletedAt),
+          ownerFilter ? eq(followUp.ownerId, ownerFilter) : undefined
+        )
       )
-    )
-    .orderBy(asc(followUp.dueDate));
+      .orderBy(asc(followUp.dueDate)),
+    getStaleDeals(thresholds.staleDays),
+    getClosingSoonDeals(thresholds.closingSoonDays),
+  ]);
 
   // Overdue sorts above today's items (FR-5.2 AC), bucketed by Perth days.
   const { start, end } = awstDayRange();
@@ -183,12 +193,6 @@ export default async function TasksPage({
     (task) => task.dueDate >= start && task.dueDate < end
   );
   const upcomingTasks = rows.filter((task) => task.dueDate >= end);
-
-  const thresholds = await getAlertThresholds();
-  const staleDeals = await getStaleDeals(thresholds.staleDays);
-  const closingSoonDeals = await getClosingSoonDeals(
-    thresholds.closingSoonDays
-  );
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 lg:max-w-5xl">

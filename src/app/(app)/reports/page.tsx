@@ -39,10 +39,14 @@ export default async function ReportsPage({
   const periodDays = parsePeriodDays(days);
   const since = new Date(Date.now() - periodDays * MS_PER_DAY);
 
-  const breakdown = await getStageBreakdown();
+  // Independent report queries run in one parallel batch instead of three
+  // sequential Neon round-trips.
+  const [breakdown, winRate, activityVolume] = await Promise.all([
+    getStageBreakdown(),
+    getWinRate(since),
+    getActivityVolume(since),
+  ]);
   const totals = summarisePipeline(breakdown);
-  const winRate = await getWinRate(since);
-  const activityVolume = await getActivityVolume(since);
 
   const openStages = breakdown.filter((row) => !(row.isWon || row.isLost));
   const maxStageCents = Math.max(...openStages.map((row) => row.totalCents), 1);

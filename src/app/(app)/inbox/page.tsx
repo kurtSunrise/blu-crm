@@ -12,26 +12,29 @@ export const dynamic = "force-dynamic";
 // Leads inbox (FR-3.5): new and unassigned leads from every intake channel
 // land here for triage: assign an owner, open to qualify, or discard.
 export default async function InboxPage() {
-  const users = await db
-    .select({ id: user.id, name: user.name })
-    .from(user)
-    .orderBy(asc(user.name));
-
-  const leads = await db
-    .select({
-      id: deal.id,
-      leadId: deal.leadId,
-      title: deal.title,
-      source: deal.source,
-      scopeSummary: deal.scopeSummary,
-      createdAt: deal.createdAt,
-      contactName: contact.name,
-      contactEmail: contact.email,
-    })
-    .from(deal)
-    .leftJoin(contact, eq(deal.contactId, contact.id))
-    .where(and(isNull(deal.ownerId), isNull(deal.deletedAt)))
-    .orderBy(desc(deal.createdAt));
+  // Independent queries share one parallel batch instead of two sequential
+  // Neon round-trips.
+  const [users, leads] = await Promise.all([
+    db
+      .select({ id: user.id, name: user.name })
+      .from(user)
+      .orderBy(asc(user.name)),
+    db
+      .select({
+        id: deal.id,
+        leadId: deal.leadId,
+        title: deal.title,
+        source: deal.source,
+        scopeSummary: deal.scopeSummary,
+        createdAt: deal.createdAt,
+        contactName: contact.name,
+        contactEmail: contact.email,
+      })
+      .from(deal)
+      .leftJoin(contact, eq(deal.contactId, contact.id))
+      .where(and(isNull(deal.ownerId), isNull(deal.deletedAt)))
+      .orderBy(desc(deal.createdAt)),
+  ]);
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6 lg:max-w-3xl">

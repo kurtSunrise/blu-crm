@@ -41,7 +41,13 @@ export default function RootLayout({
       lang="en"
       suppressHydrationWarning
     >
-      <body className="flex min-h-full flex-col bg-background text-foreground">
+      {/* suppressHydrationWarning on body: browser extensions (ColorZilla,
+          Grammarly, password managers) inject attributes before React
+          hydrates; this only silences attribute mismatches on this element. */}
+      <body
+        className="flex min-h-full flex-col bg-background text-foreground"
+        suppressHydrationWarning
+      >
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

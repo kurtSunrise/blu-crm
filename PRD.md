@@ -587,6 +587,9 @@ Home / Dashboard (pipeline summary + AI assistant entry point)
 
 - Search / pipeline filter results in < 200ms (server time, warm)
 - Page loads in < 1.5s on 4G mobile (LCP, p75)
+- Every server-rendered route shows an immediate skeleton loading state
+  (App Router `loading.tsx`) shaped like the destination page while data is
+  fetched — no blank screens or layout jumps during navigation
 - AI assistant first token streamed in < 3s for typical queries
 - Kanban drag interaction at 60fps on a mid-range phone
 

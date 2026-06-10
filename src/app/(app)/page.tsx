@@ -17,7 +17,11 @@ import {
   formatDateTimeAwst,
   MS_PER_DAY,
 } from "@/lib/format";
-import { getPipelineByStage, getWinRate } from "@/lib/reporting";
+import {
+  getStageBreakdown,
+  getWinRate,
+  summarisePipeline,
+} from "@/lib/reports";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -70,7 +74,7 @@ export default async function Home() {
   const { start, end } = awstDayRange();
   const winRateSince = new Date(Date.now() - WIN_RATE_WINDOW_DAYS * MS_PER_DAY);
 
-  const stages = await getPipelineByStage();
+  const stages = await getStageBreakdown();
   const winRate = await getWinRate(winRateSince);
   const thresholds = await getAlertThresholds();
   const staleDeals = await getStaleDeals(thresholds.staleDays);
@@ -124,15 +128,7 @@ export default async function Home() {
     .limit(ACTIVITY_LIMIT);
 
   const openStages = stages.filter((stage) => !(stage.isWon || stage.isLost));
-  const openValueCents = openStages.reduce(
-    (sum, stage) => sum + stage.totalCents,
-    0
-  );
-  const openCount = openStages.reduce((sum, stage) => sum + stage.dealCount, 0);
-  const weightedCents = openStages.reduce(
-    (sum, stage) => sum + stage.weightedCents,
-    0
-  );
+  const totals = summarisePipeline(stages);
   const maxStageCents = Math.max(
     ...openStages.map((stage) => stage.totalCents),
     1
@@ -141,14 +137,14 @@ export default async function Home() {
 
   const kpis = [
     {
-      label: `Open pipeline · ${openCount} deals`,
-      value: formatAudFromCents(openValueCents),
+      label: `Open pipeline · ${totals.openCount} deals`,
+      value: formatAudFromCents(totals.openTotalCents),
       href: "/pipeline",
       alert: false,
     },
     {
       label: "Weighted forecast",
-      value: formatAudFromCents(weightedCents),
+      value: formatAudFromCents(totals.weightedTotalCents),
       href: "/reports",
       alert: false,
     },
@@ -232,10 +228,12 @@ export default async function Home() {
         />
         <ul className="flex flex-col gap-2">
           {openStages.map((stage) => (
-            <li key={stage.id}>
+            <li key={stage.stageId}>
               <Link className="group flex flex-col gap-1" href="/pipeline">
                 <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <span className="min-w-0 flex-1 truncate">{stage.name}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {stage.stageName}
+                  </span>
                   <span className="text-muted-foreground text-xs">
                     {stage.dealCount} · {formatAudFromCents(stage.totalCents)}
                   </span>

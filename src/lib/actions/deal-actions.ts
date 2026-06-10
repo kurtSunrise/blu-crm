@@ -98,6 +98,9 @@ export const moveDealStage = async (input: unknown): Promise<ActionState> => {
     .set({
       stageId,
       lostReason: stage.isLost ? lostReason : null,
+      // Won/Lost entry is the close moment for win-rate and weekly reporting
+      // (FR-8.2); reopening a deal clears it.
+      closedAt: stage.isWon || stage.isLost ? new Date() : null,
       ...(stage.isWon
         ? { handoverToDelivery: handoverToDelivery ?? false }
         : {}),

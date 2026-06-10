@@ -227,6 +227,9 @@ export const deal = pgTable("deal", {
     .default(false),
   expectedCloseDate: timestamp("expected_close_date", { withTimezone: true }),
   lostReason: lostReason("lost_reason"),
+  // When the deal entered a Won or Lost / Dormant stage; cleared if reopened.
+  // Drives "won/lost this week" in reporting (FR-8.2).
+  closedAt: timestamp("closed_at", { withTimezone: true }),
   handoverToDelivery: boolean("handover_to_delivery").notNull().default(false),
   notes: text("notes"),
   lastContactAt: timestamp("last_contact_at", { withTimezone: true }),

@@ -1,184 +1,216 @@
+import { FileText } from "lucide-react";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import { formatAudFromCents, MS_PER_DAY } from "@/lib/format";
-import { LOST_REASON_LABELS, type LostReason } from "@/lib/labels";
 import {
   getActivityVolume,
-  getPipelineByStage,
+  getStageBreakdown,
   getWinRate,
-} from "@/lib/reporting";
+  summarisePipeline,
+} from "@/lib/reports";
+import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-const WIN_RATE_WINDOW_DAYS = 30;
+const PERIOD_OPTIONS = [7, 30, 90] as const;
+const DEFAULT_PERIOD_DAYS = 30;
 
-const ACTIVITY_TYPE_LABELS: Record<string, string> = {
-  call: "Calls",
-  email: "Emails",
-  site_visit: "Site visits",
-  meeting: "Meetings",
-  note: "Notes",
-  stage_change: "Stage changes",
-  quote_event: "Quote events",
+const parsePeriodDays = (value: string | undefined): number => {
+  const parsed = Number(value);
+  return PERIOD_OPTIONS.some((option) => option === parsed)
+    ? parsed
+    : DEFAULT_PERIOD_DAYS;
 };
 
-const reasonLabel = (reason: string): string =>
-  reason === "unrecorded"
-    ? "No reason recorded"
-    : (LOST_REASON_LABELS[reason as LostReason] ?? reason);
-
-export default async function ReportsPage() {
-  const since = new Date(Date.now() - WIN_RATE_WINDOW_DAYS * MS_PER_DAY);
-  const stages = await getPipelineByStage();
-  const winRate = await getWinRate(since);
-  const volume = await getActivityVolume(since);
-
-  const openStages = stages.filter((stage) => !(stage.isWon || stage.isLost));
-  const openValueCents = openStages.reduce(
-    (sum, stage) => sum + stage.totalCents,
-    0
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1 rounded-lg border bg-card p-3">
+      <span className="font-semibold text-2xl">{value}</span>
+      <span className="text-muted-foreground text-xs">{label}</span>
+    </div>
   );
-  const openCount = openStages.reduce((sum, stage) => sum + stage.dealCount, 0);
-  const weightedCents = openStages.reduce(
-    (sum, stage) => sum + stage.weightedCents,
-    0
-  );
+}
+
+export default async function ReportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ days?: string }>;
+}) {
+  const { days } = await searchParams;
+  const periodDays = parsePeriodDays(days);
+  const since = new Date(Date.now() - periodDays * MS_PER_DAY);
+
+  // Independent report queries run in one parallel batch instead of three
+  // sequential Neon round-trips.
+  const [breakdown, winRate, activityVolume] = await Promise.all([
+    getStageBreakdown(),
+    getWinRate(since),
+    getActivityVolume(since),
+  ]);
+  const totals = summarisePipeline(breakdown);
+
+  const openStages = breakdown.filter((row) => !(row.isWon || row.isLost));
+  const maxStageCents = Math.max(...openStages.map((row) => row.totalCents), 1);
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-4 py-6 lg:max-w-5xl">
-      <header className="flex flex-wrap items-center justify-between gap-3">
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 lg:max-w-5xl">
+      <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
           <h1 className="font-semibold text-2xl tracking-tight">Reports</h1>
           <p className="text-muted-foreground text-sm">
-            Live pipeline truth. Win rate and activity cover the last{" "}
-            {WIN_RATE_WINDOW_DAYS} days.
+            Pipeline value, forecast, and win rate — the same numbers the weekly
+            report uses.
           </p>
         </div>
         <Link
-          className="flex min-h-11 items-center rounded-md border px-4 text-sm transition-colors hover:border-blu"
+          className="flex min-h-11 items-center gap-2 rounded-md bg-blu px-4 font-medium text-sm text-white transition-opacity hover:opacity-90"
           href="/reports/weekly"
         >
-          Weekly Monday report
+          <FileText aria-hidden className="size-4" />
+          Weekly report
         </Link>
       </header>
 
       <section aria-label="Pipeline overview" className="flex flex-col gap-3">
-        <h2 className="font-heading font-semibold text-lg">Pipeline</h2>
+        <h2 className="font-heading font-medium text-sm">Pipeline overview</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="flex flex-col gap-1 rounded-lg border bg-card p-3">
-            <span className="font-semibold text-2xl">
-              {formatAudFromCents(openValueCents)}
-            </span>
-            <span className="text-muted-foreground text-xs">
-              Open pipeline ({openCount} deals)
-            </span>
-          </div>
-          <div className="flex flex-col gap-1 rounded-lg border bg-card p-3">
-            <span className="font-semibold text-2xl">
-              {formatAudFromCents(weightedCents)}
-            </span>
-            <span className="text-muted-foreground text-xs">
-              Weighted forecast (value x stage probability)
-            </span>
-          </div>
-          <div className="flex flex-col gap-1 rounded-lg border bg-card p-3">
-            <span className="font-semibold text-2xl">
-              {winRate.winRatePercent === null
-                ? "n/a"
-                : `${winRate.winRatePercent}%`}
-            </span>
-            <span className="text-muted-foreground text-xs">
-              Win rate, last {WIN_RATE_WINDOW_DAYS} days ({winRate.won.length}{" "}
-              won / {winRate.lost.length} lost)
-            </span>
-          </div>
+          <StatCard
+            label="Open pipeline"
+            value={formatAudFromCents(totals.openTotalCents)}
+          />
+          <StatCard label="Open deals" value={String(totals.openCount)} />
+          <StatCard
+            label="Weighted forecast"
+            value={formatAudFromCents(totals.weightedTotalCents)}
+          />
         </div>
-        <ul className="flex flex-col gap-1">
-          {stages.map((stage) => (
+        <p className="text-muted-foreground text-xs">
+          Forecast weights each stage's value by its win likelihood — weightings
+          are editable in Settings.
+        </p>
+        <ul className="flex flex-col gap-2">
+          {openStages.map((stage) => (
             <li
-              className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 text-sm"
-              key={stage.id}
+              className="flex flex-col gap-1.5 rounded-lg border bg-card p-3"
+              key={stage.stageId}
             >
-              <span className="min-w-0 flex-1 truncate">{stage.name}</span>
-              <span className="text-muted-foreground text-xs">
-                {stage.dealCount} deal{stage.dealCount === 1 ? "" : "s"}
-              </span>
-              <span className="w-24 text-right font-medium">
-                {formatAudFromCents(stage.totalCents)}
-              </span>
-              {!(stage.isWon || stage.isLost) && (
-                <span className="w-28 text-right text-muted-foreground text-xs">
-                  {formatAudFromCents(stage.weightedCents)} @ {stage.weighting}%
-                </span>
-              )}
+              <div className="flex items-baseline justify-between gap-3">
+                <p className="min-w-0 truncate font-medium text-sm">
+                  {stage.stageName}
+                  <span className="text-muted-foreground">
+                    {" "}
+                    · {stage.dealCount} deal{stage.dealCount === 1 ? "" : "s"}
+                  </span>
+                </p>
+                <p className="shrink-0 text-sm">
+                  {formatAudFromCents(stage.totalCents)}
+                  <span className="text-muted-foreground text-xs">
+                    {" "}
+                    · {formatAudFromCents(stage.weightedCents)} at{" "}
+                    {stage.weighting}%
+                  </span>
+                </p>
+              </div>
+              <div
+                aria-hidden
+                className="h-1.5 overflow-hidden rounded-full bg-accent"
+              >
+                <div
+                  className="h-full rounded-full bg-blu"
+                  style={{
+                    width: `${Math.round((stage.totalCents / maxStageCents) * 100)}%`,
+                  }}
+                />
+              </div>
             </li>
           ))}
         </ul>
       </section>
 
-      <section aria-label="Lost reasons" className="flex flex-col gap-3">
-        <h2 className="font-heading font-semibold text-lg">
-          Lost and dormant reasons
-        </h2>
-        {winRate.lostReasonCounts.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            Nothing lost in the last {WIN_RATE_WINDOW_DAYS} days.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-1">
-            {winRate.lostReasonCounts.map((entry) => (
-              <li
-                className="flex items-center justify-between rounded-md border bg-card px-3 py-2 text-sm"
-                key={entry.reason}
-              >
-                <span>{reasonLabel(entry.reason)}</span>
-                <Badge variant="secondary">{entry.count}</Badge>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section aria-label="Activity volume" className="flex flex-col gap-3">
-        <h2 className="font-heading font-semibold text-lg">Activity</h2>
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <h3 className="text-muted-foreground text-sm">By type</h3>
-            {volume.byType.length === 0 && (
-              <p className="text-muted-foreground text-sm">No activity yet.</p>
+      <nav aria-label="Win rate period" className="flex flex-wrap gap-2">
+        {PERIOD_OPTIONS.map((option) => (
+          <Link
+            className={cn(
+              "flex min-h-9 items-center rounded-full border px-4 text-sm",
+              option === periodDays
+                ? "border-blu text-blu"
+                : "text-muted-foreground"
             )}
-            <ul className="flex flex-col gap-1">
-              {volume.byType.map((row) => (
-                <li
-                  className="flex items-center justify-between rounded-md border bg-card px-3 py-2 text-sm"
-                  key={row.label}
-                >
-                  <span>{ACTIVITY_TYPE_LABELS[row.label] ?? row.label}</span>
-                  <Badge variant="secondary">{row.count}</Badge>
-                </li>
-              ))}
-            </ul>
+            href={`/reports?days=${option}`}
+            key={option}
+          >
+            Last {option} days
+          </Link>
+        ))}
+      </nav>
+
+      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-2 lg:items-start lg:gap-10">
+        <section aria-label="Win rate" className="flex flex-col gap-3">
+          <h2 className="font-heading font-medium text-sm">
+            Win rate — last {periodDays} days
+          </h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-2">
+            <StatCard
+              label="Win rate"
+              value={
+                winRate.winRatePercent === null
+                  ? "—"
+                  : `${winRate.winRatePercent}%`
+              }
+            />
+            <StatCard
+              label="Won value"
+              value={formatAudFromCents(winRate.wonValueCents)}
+            />
+            <StatCard label="Won" value={String(winRate.wonCount)} />
+            <StatCard
+              label="Lost / dormant"
+              value={String(winRate.lostCount)}
+            />
           </div>
-          <div className="flex flex-col gap-1">
-            <h3 className="text-muted-foreground text-sm">By person</h3>
+          {winRate.lostReasons.length > 0 ? (
             <ul className="flex flex-col gap-1">
-              {volume.byPerson.map((row) => (
+              {winRate.lostReasons.map((reason) => (
                 <li
                   className="flex items-center justify-between rounded-md border bg-card px-3 py-2 text-sm"
-                  key={row.label}
+                  key={reason.label}
                 >
-                  <span>{row.label}</span>
-                  <Badge variant="secondary">{row.count}</Badge>
+                  <span>{reason.label}</span>
+                  <span className="text-muted-foreground">{reason.count}</span>
                 </li>
               ))}
             </ul>
-            <p className="text-muted-foreground text-xs">
-              Per-person attribution starts once sign-in ships; earlier activity
-              shows as Unattributed.
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              No lost deals in this period.
             </p>
-          </div>
-        </div>
-      </section>
+          )}
+        </section>
+
+        <section aria-label="Activity volume" className="flex flex-col gap-3">
+          <h2 className="font-heading font-medium text-sm">
+            Activity — last {periodDays} days
+          </h2>
+          {activityVolume.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              No activity logged in this period.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {activityVolume.map((person) => (
+                <li
+                  className="flex items-center justify-between rounded-md border bg-card px-3 py-2 text-sm"
+                  key={person.personName}
+                >
+                  <span>{person.personName}</span>
+                  <span className="text-muted-foreground">
+                    {person.activityCount} logged
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
     </main>
   );
 }

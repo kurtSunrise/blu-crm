@@ -1,261 +1,241 @@
 import Link from "next/link";
+import { CopyReportButton } from "@/components/copy-report-button";
 import { Badge } from "@/components/ui/badge";
-import {
-  getAlertThresholds,
-  getClosingSoonDeals,
-  getStaleDeals,
-} from "@/lib/alerts";
+import type { AlertDeal } from "@/lib/alerts";
 import { formatAudFromCents, formatDateAwst } from "@/lib/format";
-import { LOST_REASON_LABELS, type LostReason } from "@/lib/labels";
 import {
-  awstWeekRange,
-  getActionsForWeek,
-  getNewLeadCount,
-  getPipelineByStage,
-  getWinRate,
-} from "@/lib/reporting";
+  getWeeklyReport,
+  type ReportDealRow,
+  renderWeeklyReportText,
+} from "@/lib/reports";
 
 export const dynamic = "force-dynamic";
 
-// The weekly Monday snapshot in Blu's report format (FR-8.2), rendered live
-// from the same reporting reads as the dashboard so the numbers reconcile.
-// The one-tap AI-generated, editable artifact version arrives with M4/M5.
+function ReportSection({
+  number,
+  title,
+  children,
+}: {
+  number: number;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section aria-label={title} className="flex flex-col gap-2">
+      <h2 className="font-heading font-medium text-sm">
+        {number}. {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+function DealList({
+  deals,
+  detail,
+}: {
+  deals: ReportDealRow[];
+  detail?: (row: ReportDealRow) => string | null;
+}) {
+  if (deals.length === 0) {
+    return <p className="text-muted-foreground text-sm">None.</p>;
+  }
+  return (
+    <ul className="flex flex-col gap-2">
+      {deals.map((row) => {
+        const extra = detail?.(row);
+        return (
+          <li key={row.id}>
+            <Link
+              className="flex items-center gap-3 rounded-lg border bg-card p-3"
+              href={`/deals/${row.id}`}
+            >
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium text-sm">{row.title}</p>
+                <p className="truncate text-muted-foreground text-xs">
+                  {row.leadId} · {row.companyName ?? "No company"}
+                  {extra ? ` · ${extra}` : ""}
+                </p>
+              </div>
+              <span className="shrink-0 text-sm">
+                {formatAudFromCents(row.valueCents)}
+              </span>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function AlertList({ deals }: { deals: AlertDeal[] }) {
+  if (deals.length === 0) {
+    return <p className="text-muted-foreground text-sm">None.</p>;
+  }
+  return (
+    <ul className="flex flex-col gap-2">
+      {deals.map((row) => {
+        const keyDate = row.fixedDate ?? row.expectedCloseDate;
+        return (
+          <li key={row.id}>
+            <Link
+              className="flex items-center gap-3 rounded-lg border bg-card p-3"
+              href={`/deals/${row.id}`}
+            >
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium text-sm">{row.title}</p>
+                <p className="truncate text-muted-foreground text-xs">
+                  {row.leadId} · {row.companyName ?? "No company"}
+                  {keyDate ? ` · date ${formatDateAwst(keyDate)}` : ""}
+                  {` · last contact ${formatDateAwst(row.lastContactAt ?? row.createdAt)}`}
+                </p>
+              </div>
+              <Badge variant="secondary">{row.stageName}</Badge>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function SummaryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1 rounded-lg border bg-card p-3">
+      <span className="font-semibold text-xl">{value}</span>
+      <span className="text-muted-foreground text-xs">{label}</span>
+    </div>
+  );
+}
+
 export default async function WeeklyReportPage() {
-  const { start, end } = awstWeekRange();
-  const stages = await getPipelineByStage();
-  const thisWeek = await getWinRate(start, end);
-  const newLeads = await getNewLeadCount(start, end);
-  const thresholds = await getAlertThresholds();
-  const closingSoon = await getClosingSoonDeals(thresholds.closingSoonDays);
-  const needsAttention = await getStaleDeals(thresholds.staleDays);
-  const actions = await getActionsForWeek(end);
-
-  const openStages = stages.filter((stage) => !(stage.isWon || stage.isLost));
-  const activeLeads = openStages.reduce(
-    (sum, stage) => sum + stage.dealCount,
-    0
-  );
-  const weightedCents = openStages.reduce(
-    (sum, stage) => sum + stage.weightedCents,
-    0
-  );
-  const wonValueCents = thisWeek.won.reduce(
-    (sum, item) => sum + item.valueCents,
-    0
-  );
-
-  const summary = [
-    { label: "Active leads", value: String(activeLeads) },
-    { label: "Total weighted value", value: formatAudFromCents(weightedCents) },
-    { label: "New this week", value: String(newLeads) },
-    {
-      label: "Won this week",
-      value: `${thisWeek.won.length} (${formatAudFromCents(wonValueCents)})`,
-    },
-    { label: "Lost / dormant this week", value: String(thisWeek.lost.length) },
-  ];
+  const report = await getWeeklyReport();
+  const reportText = renderWeeklyReportText(report);
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-4 py-6 lg:max-w-3xl">
-      <header className="flex flex-col gap-1">
-        <h1 className="font-semibold text-2xl tracking-tight">
-          Weekly pipeline report
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          Week beginning {formatDateAwst(start)} · generated live ·{" "}
-          <Link className="underline underline-offset-2" href="/reports">
-            back to reports
-          </Link>
-        </p>
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h1 className="font-semibold text-2xl tracking-tight">
+            Weekly Pipeline Report
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            {formatDateAwst(report.weekStart)} to{" "}
+            {formatDateAwst(report.generatedAt)} · numbers match{" "}
+            <Link className="underline underline-offset-2" href="/reports">
+              Reports
+            </Link>{" "}
+            for the same period · Private and Confidential
+          </p>
+        </div>
+        <CopyReportButton text={reportText} />
       </header>
 
-      <section aria-label="Summary" className="flex flex-col gap-2">
-        <h2 className="font-heading font-semibold text-lg">1. Summary</h2>
-        <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
-          {summary.map((item) => (
-            <div className="flex flex-col" key={item.label}>
-              <dt className="text-muted-foreground text-xs">{item.label}</dt>
-              <dd className="font-medium text-sm">{item.value}</dd>
+      <ReportSection number={1} title="Summary">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <SummaryStat
+            label="Active leads"
+            value={String(report.totals.openCount)}
+          />
+          <SummaryStat
+            label="Open pipeline"
+            value={formatAudFromCents(report.totals.openTotalCents)}
+          />
+          <SummaryStat
+            label="Weighted value"
+            value={formatAudFromCents(report.totals.weightedTotalCents)}
+          />
+          <SummaryStat
+            label="New this week"
+            value={String(report.newThisWeek)}
+          />
+          <SummaryStat
+            label="Won this week"
+            value={String(report.wonThisWeek.length)}
+          />
+          <SummaryStat
+            label="Lost / dormant"
+            value={String(report.lostThisWeek.length)}
+          />
+        </div>
+      </ReportSection>
+
+      <ReportSection
+        number={2}
+        title={`Closing soon (within ${report.closingSoonDays} days)`}
+      >
+        <AlertList deals={report.closingSoon} />
+      </ReportSection>
+
+      <ReportSection
+        number={3}
+        title={`Needs attention (no contact ${report.staleDays}+ days)`}
+      >
+        <AlertList deals={report.needsAttention} />
+      </ReportSection>
+
+      <ReportSection number={4} title="Full pipeline by stage">
+        <div className="flex flex-col gap-4">
+          {report.openByStage.map(({ stage, deals }) => (
+            <div className="flex flex-col gap-2" key={stage.stageId}>
+              <p className="text-muted-foreground text-xs">
+                {stage.stageName} — {stage.dealCount} deal
+                {stage.dealCount === 1 ? "" : "s"},{" "}
+                {formatAudFromCents(stage.totalCents)}
+              </p>
+              <DealList deals={deals} />
             </div>
           ))}
-        </dl>
-      </section>
+        </div>
+      </ReportSection>
 
-      <section aria-label="Closing soon" className="flex flex-col gap-2">
-        <h2 className="font-heading font-semibold text-lg">2. Closing soon</h2>
-        {closingSoon.length === 0 ? (
-          <p className="text-muted-foreground text-sm">Nothing this week.</p>
+      <ReportSection number={5} title="Won this week">
+        <DealList
+          deals={report.wonThisWeek}
+          detail={(row) =>
+            row.handoverToDelivery
+              ? "handed over to delivery"
+              : "handover pending"
+          }
+        />
+      </ReportSection>
+
+      <ReportSection number={6} title="Lost / dormant this week">
+        <DealList
+          deals={report.lostThisWeek}
+          detail={(row) =>
+            row.lostReason ? `reason: ${row.lostReason}` : null
+          }
+        />
+      </ReportSection>
+
+      <ReportSection number={7} title="Actions for the week">
+        {report.actions.length === 0 ? (
+          <p className="text-muted-foreground text-sm">None.</p>
         ) : (
-          <ul className="flex flex-col gap-1">
-            {closingSoon.map((item) => (
-              <li key={item.id}>
+          <ul className="flex flex-col gap-2">
+            {report.actions.map((row) => (
+              <li key={row.id}>
                 <Link
-                  className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 text-sm"
-                  href={`/deals/${item.id}`}
+                  className="flex items-center gap-3 rounded-lg border bg-card p-3"
+                  href={`/deals/${row.dealId}`}
                 >
-                  <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                  <span className="text-muted-foreground text-xs">
-                    {(item.fixedDate ?? item.expectedCloseDate)
-                      ? formatDateAwst(
-                          (item.fixedDate ?? item.expectedCloseDate) as Date
-                        )
-                      : ""}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-sm">{row.action}</p>
+                    <p className="truncate text-muted-foreground text-xs">
+                      {row.dealTitle}
+                      {row.ownerName ? ` · ${row.ownerName}` : " · Unassigned"}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-muted-foreground text-sm">
+                    due {formatDateAwst(row.dueDate)}
                   </span>
                 </Link>
               </li>
             ))}
           </ul>
         )}
-      </section>
-
-      <section aria-label="Needs attention" className="flex flex-col gap-2">
-        <h2 className="font-heading font-semibold text-lg">
-          3. Needs attention
-        </h2>
-        {needsAttention.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            Every open deal has been touched inside {thresholds.staleDays} days.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-1">
-            {needsAttention.map((item) => (
-              <li key={item.id}>
-                <Link
-                  className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 text-sm"
-                  href={`/deals/${item.id}`}
-                >
-                  <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                  <span className="text-muted-foreground text-xs">
-                    last contact{" "}
-                    {formatDateAwst(item.lastContactAt ?? item.createdAt)}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section aria-label="Pipeline by stage" className="flex flex-col gap-2">
-        <h2 className="font-heading font-semibold text-lg">
-          4. Full pipeline by stage
-        </h2>
-        <ul className="flex flex-col gap-1">
-          {stages.map((stage) => (
-            <li
-              className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 text-sm"
-              key={stage.id}
-            >
-              <span className="min-w-0 flex-1 truncate">{stage.name}</span>
-              <span className="text-muted-foreground text-xs">
-                {stage.dealCount} deal{stage.dealCount === 1 ? "" : "s"}
-              </span>
-              <span className="font-medium">
-                {formatAudFromCents(stage.totalCents)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section aria-label="Won this week" className="flex flex-col gap-2">
-        <h2 className="font-heading font-semibold text-lg">5. Won this week</h2>
-        {thisWeek.won.length === 0 ? (
-          <p className="text-muted-foreground text-sm">No wins yet. Go on.</p>
-        ) : (
-          <ul className="flex flex-col gap-1">
-            {thisWeek.won.map((item) => (
-              <li key={item.id}>
-                <Link
-                  className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 text-sm"
-                  href={`/deals/${item.id}`}
-                >
-                  <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                  <span className="font-medium">
-                    {formatAudFromCents(item.valueCents)}
-                  </span>
-                  <Badge
-                    variant={item.handoverToDelivery ? "default" : "secondary"}
-                  >
-                    {item.handoverToDelivery
-                      ? "Handover flagged"
-                      : "No handover"}
-                  </Badge>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section aria-label="Lost this week" className="flex flex-col gap-2">
-        <h2 className="font-heading font-semibold text-lg">
-          6. Lost / dormant this week
-        </h2>
-        {thisWeek.lost.length === 0 ? (
-          <p className="text-muted-foreground text-sm">Nothing lost.</p>
-        ) : (
-          <ul className="flex flex-col gap-1">
-            {thisWeek.lost.map((item) => (
-              <li key={item.id}>
-                <Link
-                  className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 text-sm"
-                  href={`/deals/${item.id}`}
-                >
-                  <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                  <Badge variant="secondary">
-                    {item.lostReason
-                      ? LOST_REASON_LABELS[item.lostReason as LostReason]
-                      : "No reason recorded"}
-                  </Badge>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section
-        aria-label="Actions for the week"
-        className="flex flex-col gap-2"
-      >
-        <h2 className="font-heading font-semibold text-lg">
-          7. Actions for the week
-        </h2>
-        {actions.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            No open follow-ups due this week.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-1">
-            {actions.map((item) => (
-              <li key={item.id}>
-                <Link
-                  className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 text-sm"
-                  href={`/deals/${item.dealId}`}
-                >
-                  <span className="min-w-0 flex-1 truncate">
-                    {item.action}
-                    <span className="text-muted-foreground">
-                      {" "}
-                      · {item.dealTitle}
-                    </span>
-                  </span>
-                  <span className="text-muted-foreground text-xs">
-                    {item.ownerName?.split(" ")[0] ?? "Unassigned"} · due{" "}
-                    {formatDateAwst(item.dueDate)}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <footer className="text-muted-foreground text-xs">
-        Private and Confidential · Blu.Builders Pty Ltd · numbers reconcile with
-        the Reports dashboard at generation time.
-      </footer>
+      </ReportSection>
     </main>
   );
 }

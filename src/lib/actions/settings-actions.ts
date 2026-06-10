@@ -1,10 +1,14 @@
 "use server";
 
+import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { appSetting } from "@/db/schema";
+import { appSetting, pipelineStage } from "@/db/schema";
 import { CLOSING_SOON_DAYS_KEY, STALE_DAYS_KEY } from "@/lib/alerts";
-import { alertThresholdsSchema } from "@/lib/validation/settings";
+import {
+  alertThresholdsSchema,
+  stageWeightingSchema,
+} from "@/lib/validation/settings";
 
 export interface SettingsActionState {
   error?: string;
@@ -41,6 +45,40 @@ export const updateAlertThresholds = async (
 
   revalidatePath("/");
   revalidatePath("/tasks");
+  revalidatePath("/settings");
+  return { saved: true };
+};
+
+// Forecast weightings drive the weighted pipeline value (FR-8.1); the form
+// posts one `weighting-<stageId>` field per stage.
+export const updateStageWeightings = async (
+  _prevState: SettingsActionState,
+  formData: FormData
+): Promise<SettingsActionState> => {
+  const stages = await db.select({ id: pipelineStage.id }).from(pipelineStage);
+
+  const updates: { id: string; weighting: number }[] = [];
+  for (const stage of stages) {
+    const raw = formData.get(`weighting-${stage.id}`);
+    if (raw === null) {
+      continue;
+    }
+    const parsed = stageWeightingSchema.safeParse(raw);
+    if (!parsed.success) {
+      return { error: "Weightings must be whole percentages (0 to 100)" };
+    }
+    updates.push({ id: stage.id, weighting: parsed.data });
+  }
+
+  for (const update of updates) {
+    await db
+      .update(pipelineStage)
+      .set({ weighting: update.weighting, updatedAt: new Date() })
+      .where(eq(pipelineStage.id, update.id));
+  }
+
+  revalidatePath("/reports");
+  revalidatePath("/reports/weekly");
   revalidatePath("/settings");
   return { saved: true };
 };

@@ -1,11 +1,23 @@
+import { asc } from "drizzle-orm";
 import Link from "next/link";
 import { AlertThresholdsForm } from "@/components/alert-thresholds-form";
+import { StageWeightingsForm } from "@/components/stage-weightings-form";
+import { db } from "@/db";
+import { pipelineStage } from "@/db/schema";
 import { getAlertThresholds } from "@/lib/alerts";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const thresholds = await getAlertThresholds();
+  const stages = await db
+    .select({
+      id: pipelineStage.id,
+      name: pipelineStage.name,
+      weighting: pipelineStage.weighting,
+    })
+    .from(pipelineStage)
+    .orderBy(asc(pipelineStage.position));
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6">
@@ -22,6 +34,12 @@ export default async function SettingsPage() {
           closingSoonDays={thresholds.closingSoonDays}
           staleDays={thresholds.staleDays}
         />
+      </section>
+      <section aria-label="Forecast weightings" className="flex flex-col gap-3">
+        <h2 className="font-heading font-medium text-sm">
+          Forecast weightings
+        </h2>
+        <StageWeightingsForm stages={stages} />
       </section>
       <section aria-label="Data" className="flex flex-col gap-3">
         <h2 className="font-heading font-medium text-sm">Data</h2>

@@ -9,3 +9,12 @@ export const alertThresholdsSchema = z.object({
 });
 
 export type AlertThresholdsInput = z.infer<typeof alertThresholdsSchema>;
+
+const MAX_WEIGHTING_PERCENT = 100;
+
+// Forecast weighting per pipeline stage, as a whole percentage (FR-8.1).
+export const stageWeightingSchema = z.coerce
+  .number()
+  .int()
+  .min(0)
+  .max(MAX_WEIGHTING_PERCENT);

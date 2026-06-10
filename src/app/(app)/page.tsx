@@ -58,7 +58,8 @@ const MODULES = [
   {
     name: "Reports",
     description: "Pipeline value, win rate, forecast, and the Monday report.",
-    milestone: "M5",
+    milestone: "Live",
+    href: "/reports",
   },
   {
     name: "Help",

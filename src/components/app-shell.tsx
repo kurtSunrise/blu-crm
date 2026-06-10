@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BarChart3,
   Bell,
   HelpCircle,
   Home,
@@ -24,6 +25,7 @@ const PRIMARY_NAV = [
   { href: "/tasks", label: "Tasks", icon: ListTodo },
   { href: "/deals/new", label: "Quick add", icon: Plus },
   { href: "/contacts", label: "Contacts", icon: Users },
+  { href: "/reports", label: "Reports", icon: BarChart3 },
 ];
 
 const SECONDARY_NAV = [
@@ -32,8 +34,11 @@ const SECONDARY_NAV = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-// Bottom tabs are a phone pattern: the five core destinations only.
-const MOBILE_NAV = PRIMARY_NAV.filter((item) => item.href !== "/");
+// Bottom tabs are a phone pattern: the five core field destinations only.
+// Reports is a sit-down surface, reachable from the dashboard card on phones.
+const MOBILE_NAV = PRIMARY_NAV.filter(
+  (item) => item.href !== "/" && item.href !== "/reports"
+);
 
 const isActivePath = (pathname: string, href: string): boolean =>
   href === "/" ? pathname === "/" : pathname.startsWith(href);

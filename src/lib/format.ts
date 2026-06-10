@@ -37,7 +37,7 @@ export const MS_PER_DAY = 86_400_000;
 
 // Perth is UTC+8 year-round (no DST), so AWST day boundaries are a fixed
 // offset from UTC.
-const AWST_OFFSET_MS = 8 * 60 * 60 * 1000;
+export const AWST_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 // UTC instants bounding "today" as the team experiences it in Perth.
 export const awstDayRange = (
@@ -51,3 +51,31 @@ export const awstDayRange = (
 
 export const formatDateTimeAwst = (date: Date): string =>
   AWST_DATE_TIME_FORMATTER.format(date);
+
+const awstDayIndex = (date: Date): number =>
+  Math.floor((date.getTime() + AWST_OFFSET_MS) / MS_PER_DAY);
+
+// Human-friendly wording for a signed distance in whole days:
+// "Today", "Tomorrow", "In 5 days", "Yesterday", "5 days ago".
+export const relativeDayLabel = (dayDiff: number): string => {
+  if (dayDiff === 0) {
+    return "Today";
+  }
+  if (dayDiff === 1) {
+    return "Tomorrow";
+  }
+  if (dayDiff === -1) {
+    return "Yesterday";
+  }
+  return dayDiff > 0 ? `In ${dayDiff} days` : `${-dayDiff} days ago`;
+};
+
+// Signed distance between two instants in whole Perth calendar days.
+export const awstDayDiff = (date: Date, now: Date = new Date()): number =>
+  awstDayIndex(date) - awstDayIndex(now);
+
+// The same wording for two instants, measured in Perth calendar days.
+export const formatRelativeDayAwst = (
+  date: Date,
+  now: Date = new Date()
+): string => relativeDayLabel(awstDayDiff(date, now));

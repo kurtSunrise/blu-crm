@@ -26,6 +26,7 @@ export default async function PipelinePage() {
       estimatedValueCents: deal.estimatedValueCents,
       quotedValueCents: deal.quotedValueCents,
       fixedDate: deal.fixedDate,
+      fixedDateType: deal.fixedDateType,
       companyName: company.name,
       ownerName: user.name,
     })
@@ -43,6 +44,7 @@ export default async function PipelinePage() {
     // Quoted value wins over the estimate where a quote exists (FR-1.4 AC)
     valueCents: row.quotedValueCents ?? row.estimatedValueCents ?? 0,
     fixedDate: row.fixedDate?.toISOString() ?? null,
+    fixedDateType: row.fixedDateType,
     companyName: row.companyName,
     ownerName: row.ownerName,
   }));

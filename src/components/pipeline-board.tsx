@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { moveDealStage } from "@/lib/actions/deal-actions";
 import { formatAudFromCents } from "@/lib/format";
+import type { FixedDateType } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 import { DealCard } from "./deal-card";
 import { StageChangeDialog, type StageMoveExtras } from "./stage-change-dialog";
@@ -29,6 +30,7 @@ export interface BoardStage {
 export interface BoardDeal {
   companyName: string | null;
   fixedDate: string | null;
+  fixedDateType: FixedDateType | null;
   id: string;
   leadId: string;
   ownerName: string | null;
@@ -59,18 +61,28 @@ function StageColumn({
     <section
       aria-label={stage.name}
       className={cn(
-        "flex w-[85vw] shrink-0 snap-start flex-col gap-2 rounded-lg border bg-card/50 p-3 sm:w-80",
-        isOver && "border-blu"
+        "flex w-[85vw] shrink-0 snap-start flex-col gap-2 rounded-lg border bg-card/50 p-3 transition-colors sm:w-80",
+        isOver && "border-blu bg-blu/5"
       )}
       ref={setNodeRef}
     >
       <header className="flex items-baseline justify-between gap-2 px-1">
-        <h2 className="font-heading font-medium text-sm">{stage.name}</h2>
-        <p className="text-muted-foreground text-xs">
-          {deals.length} · {formatAudFromCents(totalCents)}
+        <div className="flex items-baseline gap-1.5">
+          <h2 className="font-heading font-medium text-sm">{stage.name}</h2>
+          <span className="rounded-full bg-muted px-1.5 py-0.5 text-muted-foreground text-xs tabular-nums">
+            {deals.length}
+          </span>
+        </div>
+        <p className="text-muted-foreground text-xs tabular-nums">
+          {formatAudFromCents(totalCents)}
         </p>
       </header>
       <div className="flex min-h-24 flex-col gap-2">
+        {deals.length === 0 && (
+          <div className="flex min-h-24 items-center justify-center rounded-md border border-dashed text-muted-foreground text-xs">
+            No deals
+          </div>
+        )}
         {deals.map((item) => (
           <DealCard deal={item} key={item.id} onMove={onMove} stages={stages} />
         ))}

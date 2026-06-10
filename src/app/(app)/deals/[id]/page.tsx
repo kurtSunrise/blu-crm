@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import Image from "next/image";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AttachmentUpload } from "@/components/attachment-upload";
 import { CompleteFollowUpButton } from "@/components/complete-follow-up-button";
@@ -22,12 +23,22 @@ import {
   quote,
   user,
 } from "@/db/schema";
+import { awstMonthKey } from "@/lib/calendar";
 import {
+  awstDayDiff,
   formatAudFromCents,
   formatDateAwst,
   formatDateTimeAwst,
+  formatRelativeDayAwst,
+  relativeDayLabel,
 } from "@/lib/format";
-import { LOST_REASON_LABELS, PROJECT_TYPE_LABELS } from "@/lib/labels";
+import {
+  FIXED_DATE_TYPE_LABELS,
+  type FixedDateType,
+  LOST_REASON_LABELS,
+  PROJECT_TYPE_LABELS,
+} from "@/lib/labels";
+import { cn } from "@/lib/utils";
 import { isImageType } from "@/lib/validation/attachment";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +61,100 @@ const QUOTE_STATUS_LABELS: Record<string, string> = {
   declined: "Declined",
 };
 
+interface KeyDate {
+  accentClass: string;
+  date: Date;
+  href?: string;
+  key: string;
+  label: string;
+}
+
+// The dates that decide how busy the team is, surfaced ahead of the facts.
+function buildKeyDates(
+  record: {
+    expectedCloseDate: Date | null;
+    fixedDate: Date | null;
+    fixedDateType: FixedDateType | null;
+  },
+  nextFollowUpDue: Date | undefined
+): KeyDate[] {
+  const keyDates: KeyDate[] = [];
+  if (record.fixedDate) {
+    keyDates.push({
+      key: "fixed",
+      label: record.fixedDateType
+        ? FIXED_DATE_TYPE_LABELS[record.fixedDateType]
+        : "Fixed date",
+      date: record.fixedDate,
+      accentClass: "text-warning",
+      href: `/calendar?month=${awstMonthKey(record.fixedDate)}`,
+    });
+  }
+  if (record.expectedCloseDate) {
+    keyDates.push({
+      key: "close",
+      label: "Expected close",
+      date: record.expectedCloseDate,
+      accentClass: "text-blu",
+      href: `/calendar?month=${awstMonthKey(record.expectedCloseDate)}`,
+    });
+  }
+  if (nextFollowUpDue) {
+    keyDates.push({
+      key: "follow-up",
+      label: "Next follow-up",
+      date: nextFollowUpDue,
+      accentClass: "text-success",
+    });
+  }
+  return keyDates;
+}
+
+function KeyDateTile({
+  label,
+  date,
+  accentClass,
+  href,
+}: {
+  label: string;
+  date: Date;
+  accentClass: string;
+  href?: string;
+}) {
+  const dayDiff = awstDayDiff(date);
+  const body = (
+    <>
+      <span className={cn("flex items-center gap-1.5 text-xs", accentClass)}>
+        <span aria-hidden className="size-1.5 rounded-full bg-current" />
+        {label}
+      </span>
+      <span className="font-medium text-sm">{formatDateAwst(date)}</span>
+      <span
+        className={cn(
+          "text-xs",
+          dayDiff < 0 ? "font-medium text-destructive" : "text-muted-foreground"
+        )}
+      >
+        {relativeDayLabel(dayDiff)}
+      </span>
+    </>
+  );
+  const tileClass =
+    "flex min-w-36 flex-col gap-0.5 rounded-lg border bg-card px-3 py-2";
+
+  if (href) {
+    return (
+      <Link
+        className={cn(tileClass, "transition-colors hover:border-blu")}
+        href={href}
+      >
+        {body}
+      </Link>
+    );
+  }
+  return <div className={tileClass}>{body}</div>;
+}
+
 export default async function DealPage({
   params,
 }: {
@@ -71,6 +176,7 @@ export default async function DealPage({
       venue: deal.venue,
       scopeSummary: deal.scopeSummary,
       fixedDate: deal.fixedDate,
+      fixedDateType: deal.fixedDateType,
       decisionMakerConfirmed: deal.decisionMakerConfirmed,
       expectedCloseDate: deal.expectedCloseDate,
       lostReason: deal.lostReason,
@@ -183,24 +289,16 @@ export default async function DealPage({
     },
     { label: "Venue / location", value: record.venue },
     {
-      label: "Fixed date",
-      value: record.fixedDate ? formatDateAwst(record.fixedDate) : null,
-    },
-    {
       label: "Decision maker confirmed",
       value: record.decisionMakerConfirmed ? "Yes" : "No",
-    },
-    {
-      label: "Expected close",
-      value: record.expectedCloseDate
-        ? formatDateAwst(record.expectedCloseDate)
-        : null,
     },
     {
       label: "Lost reason",
       value: record.lostReason ? LOST_REASON_LABELS[record.lostReason] : null,
     },
   ].filter((fact) => fact.value);
+
+  const keyDates = buildKeyDates(record, openFollowUps[0]?.dueDate);
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6 lg:max-w-6xl">
@@ -223,6 +321,20 @@ export default async function DealPage({
           )}
         </div>
       </header>
+
+      {keyDates.length > 0 && (
+        <section aria-label="Key dates" className="flex flex-wrap gap-2">
+          {keyDates.map((tile) => (
+            <KeyDateTile
+              accentClass={tile.accentClass}
+              date={tile.date}
+              href={tile.href}
+              key={tile.key}
+              label={tile.label}
+            />
+          ))}
+        </section>
+      )}
 
       {/* Desktop: record on the left, timeline alongside on the right. */}
       <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:items-start lg:gap-10">
@@ -266,24 +378,38 @@ export default async function DealPage({
               </p>
             ) : (
               <ul className="flex flex-col gap-2">
-                {openFollowUps.map((item) => (
-                  <li
-                    className="flex items-center gap-3 rounded-lg border bg-card p-3"
-                    key={item.id}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-sm">{item.action}</p>
-                      <p className="text-muted-foreground text-xs">
-                        Due {formatDateAwst(item.dueDate)}
-                        {item.ownerName ? ` · ${item.ownerName}` : ""}
-                      </p>
-                    </div>
-                    <CompleteFollowUpButton
-                      action={item.action}
-                      followUpId={item.id}
-                    />
-                  </li>
-                ))}
+                {openFollowUps.map((item) => {
+                  const overdue = awstDayDiff(item.dueDate) < 0;
+                  return (
+                    <li
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg border bg-card p-3",
+                        overdue && "border-destructive/60"
+                      )}
+                      key={item.id}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm">{item.action}</p>
+                        <p className="text-muted-foreground text-xs">
+                          {"Due "}
+                          <span
+                            className={cn(
+                              overdue && "font-medium text-destructive"
+                            )}
+                          >
+                            {formatDateAwst(item.dueDate)} ·{" "}
+                            {formatRelativeDayAwst(item.dueDate)}
+                          </span>
+                          {item.ownerName ? ` · ${item.ownerName}` : ""}
+                        </p>
+                      </div>
+                      <CompleteFollowUpButton
+                        action={item.action}
+                        followUpId={item.id}
+                      />
+                    </li>
+                  );
+                })}
               </ul>
             )}
             <FollowUpForm

@@ -20,6 +20,14 @@ export const LEAD_SOURCE_LABELS: Record<string, string> = {
   other: "Other",
 };
 
+export type FixedDateType = "install" | "event" | "launch";
+
+export const FIXED_DATE_TYPE_LABELS: Record<FixedDateType, string> = {
+  install: "Install",
+  event: "Event",
+  launch: "Launch",
+};
+
 export type LostReason = (typeof LOST_REASONS)[number];
 
 export const LOST_REASON_LABELS: Record<LostReason, string> = {

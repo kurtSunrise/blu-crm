@@ -74,7 +74,7 @@ export default async function NotificationsPage() {
   const hasUnread = rows.some((row) => row.readAt === null);
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6">
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6 lg:max-w-3xl">
       <header className="flex items-center justify-between gap-3">
         <h1 className="font-semibold text-2xl tracking-tight">Notifications</h1>
         {hasUnread && (

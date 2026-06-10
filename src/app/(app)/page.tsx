@@ -191,7 +191,7 @@ export default async function Home() {
           ))}
         </div>
       </section>
-      <section className="grid gap-4 sm:grid-cols-2">
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {MODULES.map((module) => (
           <ModuleCard key={module.name} module={module} />
         ))}

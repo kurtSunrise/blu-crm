@@ -191,7 +191,7 @@ export default async function TasksPage({
   );
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6">
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 lg:max-w-5xl">
       <header className="flex flex-col gap-3">
         <h1 className="font-semibold text-2xl tracking-tight">Tasks</h1>
         <nav aria-label="Filter by owner" className="flex flex-wrap gap-2">
@@ -221,33 +221,40 @@ export default async function TasksPage({
         </nav>
       </header>
 
-      <TaskSection
-        emptyText="Nothing overdue. Keep it that way."
-        label="Overdue"
-        overdue
-        tasks={overdueTasks}
-      />
-      <TaskSection
-        emptyText="Nothing due today."
-        label="Today"
-        tasks={todayTasks}
-      />
-      <TaskSection
-        emptyText="Nothing scheduled yet."
-        label="Upcoming"
-        tasks={upcomingTasks}
-      />
+      {/* Desktop: the day's tasks beside the deal alerts. */}
+      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-2 lg:items-start lg:gap-10">
+        <div className="flex flex-col gap-6">
+          <TaskSection
+            emptyText="Nothing overdue. Keep it that way."
+            label="Overdue"
+            overdue
+            tasks={overdueTasks}
+          />
+          <TaskSection
+            emptyText="Nothing due today."
+            label="Today"
+            tasks={todayTasks}
+          />
+          <TaskSection
+            emptyText="Nothing scheduled yet."
+            label="Upcoming"
+            tasks={upcomingTasks}
+          />
+        </div>
 
-      <AlertSection
-        deals={staleDeals}
-        description={`Open deals with no contact for ${thresholds.staleDays}+ days.`}
-        label="Needs attention"
-      />
-      <AlertSection
-        deals={closingSoonDeals}
-        description={`Fixed date or expected close within ${thresholds.closingSoonDays} days.`}
-        label="Closing soon"
-      />
+        <div className="flex flex-col gap-6">
+          <AlertSection
+            deals={staleDeals}
+            description={`Open deals with no contact for ${thresholds.staleDays}+ days.`}
+            label="Needs attention"
+          />
+          <AlertSection
+            deals={closingSoonDeals}
+            description={`Fixed date or expected close within ${thresholds.closingSoonDays} days.`}
+            label="Closing soon"
+          />
+        </div>
+      </div>
     </main>
   );
 }

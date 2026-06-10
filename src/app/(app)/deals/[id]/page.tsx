@@ -188,7 +188,7 @@ export default async function DealPage({
   ].filter((fact) => fact.value);
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6">
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6 lg:max-w-6xl">
       <header className="flex flex-col gap-1">
         <p className="font-mono text-muted-foreground text-xs">
           {record.leadId}
@@ -209,145 +209,157 @@ export default async function DealPage({
         </div>
       </header>
 
-      <StageSelect
-        currentStageId={record.stageId}
-        dealId={record.id}
-        stages={stages}
-      />
+      {/* Desktop: record on the left, timeline alongside on the right. */}
+      <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:items-start lg:gap-10">
+        <div className="flex flex-col gap-5">
+          <StageSelect
+            currentStageId={record.stageId}
+            dealId={record.id}
+            stages={stages}
+          />
 
-      <section aria-label="Deal details" className="flex flex-col gap-2">
-        <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
-          {facts.map((fact) => (
-            <div className="flex flex-col" key={fact.label}>
-              <dt className="text-muted-foreground text-xs">{fact.label}</dt>
-              <dd className="text-sm">{fact.value}</dd>
-            </div>
-          ))}
-        </dl>
-        {record.scopeSummary && (
-          <p className="mt-2 text-sm">{record.scopeSummary}</p>
-        )}
-      </section>
+          <section aria-label="Deal details" className="flex flex-col gap-2">
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+              {facts.map((fact) => (
+                <div className="flex flex-col" key={fact.label}>
+                  <dt className="text-muted-foreground text-xs">
+                    {fact.label}
+                  </dt>
+                  <dd className="text-sm">{fact.value}</dd>
+                </div>
+              ))}
+            </dl>
+            {record.scopeSummary && (
+              <p className="mt-2 text-sm">{record.scopeSummary}</p>
+            )}
+          </section>
 
-      <Separator />
+          <Separator />
 
-      <section aria-label="Quick log" className="flex flex-col gap-2">
-        <h2 className="font-heading font-medium text-sm">Quick log</h2>
-        <QuickLogButtons dealId={record.id} />
-      </section>
+          <section aria-label="Quick log" className="flex flex-col gap-2">
+            <h2 className="font-heading font-medium text-sm">Quick log</h2>
+            <QuickLogButtons dealId={record.id} />
+          </section>
 
-      <Separator />
+          <Separator />
 
-      <section aria-label="Follow-ups" className="flex flex-col gap-3">
-        <h2 className="font-heading font-medium text-sm">Follow-ups</h2>
-        {openFollowUps.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            No next action set. Every open deal should carry one.
+          <section aria-label="Follow-ups" className="flex flex-col gap-3">
+            <h2 className="font-heading font-medium text-sm">Follow-ups</h2>
+            {openFollowUps.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                No next action set. Every open deal should carry one.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {openFollowUps.map((item) => (
+                  <li
+                    className="flex items-center gap-3 rounded-lg border bg-card p-3"
+                    key={item.id}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-sm">{item.action}</p>
+                      <p className="text-muted-foreground text-xs">
+                        Due {formatDateAwst(item.dueDate)}
+                        {item.ownerName ? ` · ${item.ownerName}` : ""}
+                      </p>
+                    </div>
+                    <CompleteFollowUpButton
+                      action={item.action}
+                      followUpId={item.id}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+            <FollowUpForm
+              dealId={record.id}
+              defaultOwnerId={record.ownerId}
+              users={users}
+            />
+          </section>
+
+          <Separator />
+
+          <section aria-label="Quotes" className="flex flex-col gap-3">
+            <h2 className="font-heading font-medium text-sm">Quotes</h2>
+            {quotes.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No quotes yet.</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {quotes.map((item) => (
+                  <li
+                    className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3"
+                    key={item.id}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-sm">
+                        {item.valueCents == null
+                          ? "No value"
+                          : formatAudFromCents(item.valueCents)}
+                        {"  "}
+                        <Badge variant="outline">
+                          {QUOTE_STATUS_LABELS[item.status] ?? item.status}
+                        </Badge>
+                      </p>
+                      <p className="text-muted-foreground text-xs">
+                        {item.sentAt
+                          ? `Sent ${formatDateAwst(item.sentAt)}`
+                          : ""}
+                        {item.viewedAt
+                          ? ` · Viewed ${formatDateAwst(item.viewedAt)}`
+                          : ""}
+                      </p>
+                      {item.viewToken && (
+                        <a
+                          className="text-blu text-xs underline underline-offset-2"
+                          href={`/q/${item.viewToken}`}
+                          rel="noopener noreferrer"
+                          target="_blank"
+                        >
+                          Client view link
+                        </a>
+                      )}
+                    </div>
+                    <QuoteRowActions quoteId={item.id} status={item.status} />
+                  </li>
+                ))}
+              </ul>
+            )}
+            <QuoteForm dealId={record.id} />
+          </section>
+        </div>
+
+        <Separator className="lg:hidden" />
+
+        <section
+          aria-label="Timeline"
+          className="flex flex-col gap-3 lg:rounded-lg lg:border lg:bg-card/50 lg:p-4"
+        >
+          <h2 className="font-heading font-medium text-sm">Timeline</h2>
+          {timeline.length === 0 && (
+            <p className="text-muted-foreground text-sm">No activity yet.</p>
+          )}
+          <ol className="flex flex-col gap-3">
+            {timeline.map((entry) => (
+              <li className="flex flex-col gap-0.5" key={entry.id}>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline">
+                    {ACTIVITY_LABELS[entry.type] ?? entry.type}
+                  </Badge>
+                  <span className="text-muted-foreground text-xs">
+                    {formatDateTimeAwst(entry.createdAt)}
+                    {entry.authorName ? ` · ${entry.authorName}` : ""}
+                  </span>
+                </div>
+                {entry.content && <p className="text-sm">{entry.content}</p>}
+              </li>
+            ))}
+          </ol>
+          <p className="text-muted-foreground text-xs">
+            Lead created {formatDateTimeAwst(record.createdAt)}
           </p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {openFollowUps.map((item) => (
-              <li
-                className="flex items-center gap-3 rounded-lg border bg-card p-3"
-                key={item.id}
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm">{item.action}</p>
-                  <p className="text-muted-foreground text-xs">
-                    Due {formatDateAwst(item.dueDate)}
-                    {item.ownerName ? ` · ${item.ownerName}` : ""}
-                  </p>
-                </div>
-                <CompleteFollowUpButton
-                  action={item.action}
-                  followUpId={item.id}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-        <FollowUpForm
-          dealId={record.id}
-          defaultOwnerId={record.ownerId}
-          users={users}
-        />
-      </section>
-
-      <Separator />
-
-      <section aria-label="Quotes" className="flex flex-col gap-3">
-        <h2 className="font-heading font-medium text-sm">Quotes</h2>
-        {quotes.length === 0 ? (
-          <p className="text-muted-foreground text-sm">No quotes yet.</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {quotes.map((item) => (
-              <li
-                className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3"
-                key={item.id}
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm">
-                    {item.valueCents == null
-                      ? "No value"
-                      : formatAudFromCents(item.valueCents)}
-                    {"  "}
-                    <Badge variant="outline">
-                      {QUOTE_STATUS_LABELS[item.status] ?? item.status}
-                    </Badge>
-                  </p>
-                  <p className="text-muted-foreground text-xs">
-                    {item.sentAt ? `Sent ${formatDateAwst(item.sentAt)}` : ""}
-                    {item.viewedAt
-                      ? ` · Viewed ${formatDateAwst(item.viewedAt)}`
-                      : ""}
-                  </p>
-                  {item.viewToken && (
-                    <a
-                      className="text-blu text-xs underline underline-offset-2"
-                      href={`/q/${item.viewToken}`}
-                      rel="noopener noreferrer"
-                      target="_blank"
-                    >
-                      Client view link
-                    </a>
-                  )}
-                </div>
-                <QuoteRowActions quoteId={item.id} status={item.status} />
-              </li>
-            ))}
-          </ul>
-        )}
-        <QuoteForm dealId={record.id} />
-      </section>
-
-      <Separator />
-
-      <section aria-label="Timeline" className="flex flex-col gap-3">
-        <h2 className="font-heading font-medium text-sm">Timeline</h2>
-        {timeline.length === 0 && (
-          <p className="text-muted-foreground text-sm">No activity yet.</p>
-        )}
-        <ol className="flex flex-col gap-3">
-          {timeline.map((entry) => (
-            <li className="flex flex-col gap-0.5" key={entry.id}>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline">
-                  {ACTIVITY_LABELS[entry.type] ?? entry.type}
-                </Badge>
-                <span className="text-muted-foreground text-xs">
-                  {formatDateTimeAwst(entry.createdAt)}
-                  {entry.authorName ? ` · ${entry.authorName}` : ""}
-                </span>
-              </div>
-              {entry.content && <p className="text-sm">{entry.content}</p>}
-            </li>
-          ))}
-        </ol>
-        <p className="text-muted-foreground text-xs">
-          Lead created {formatDateTimeAwst(record.createdAt)}
-        </p>
-      </section>
+        </section>
+      </div>
     </main>
   );
 }

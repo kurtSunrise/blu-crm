@@ -43,7 +43,16 @@ Continues the M2 work log; based on main at 52314d9 (post merge fix).
   quote, flips Sent → Viewed on first open, logs a timeline quote event, and
   notifies the deal owner (`quote_viewed`); accepting rolls the value into
   `deal.quoted_value_cents` so it wins in stage totals (FR-1.4 AC).
-- **E2E** (`e2e/intake.spec.ts`, `e2e/quotes.spec.ts`): web enquiry to inbox
+- **CSV import** (FR-3.4): `/settings/import` (linked from Settings) for
+  contacts and open deals. Hand-rolled RFC 4180 parser (`src/lib/csv.ts`,
+  no new dependency), client-side column mapping with header auto-guess,
+  preview with row count, per-row duplicate flags from the shared FR-2.3
+  matcher (`src/lib/duplicates.ts`, now also used by the contact form),
+  skip-or-import-anyway for flagged duplicates, deals placed into stages by
+  name and owners resolved by email; deal rows go through `createLead`
+  (which gained an optional `stageId`).
+- **E2E** (`e2e/intake.spec.ts`, `e2e/quotes.spec.ts`,
+  `e2e/csv-import.spec.ts`): web enquiry to inbox
   to assignment + notification; honeypot stores nothing; GET on the public
   endpoint is 405; forwarded email becomes a raw lead with body on the
   timeline; discard removes from inbox and pipeline; sent quote viewed via
@@ -69,9 +78,9 @@ Continues the M2 work log; based on main at 52314d9 (post merge fix).
 - **Rate limiting is per-isolate in-memory**, best effort alongside the
   honeypot; durable limiting can move to Cloudflare rate limiting rules if
   abuse shows up (risk R6 accepts this for V1).
-- **Deferred from M3**: CSV import (P1, can slip per PRD §6) and R2
-  documents/photos (needs real bucket credentials; the upload pipeline is a
-  Blu Shed pattern reuse). Both noted below as the remaining M3 items.
+- **Deferred from M3**: R2 documents/photos only (needs real bucket
+  credentials; the upload pipeline is a Blu Shed pattern reuse). CSV
+  import was initially deferred but landed in this same session.
 
 ## Issues Encountered
 
@@ -86,10 +95,9 @@ Continues the M2 work log; based on main at 52314d9 (post merge fix).
 
 ## Next Steps
 
-- M3 remainder: CSV import with column mapping + duplicate flagging
-  (FR-3.4); documents/photos on R2 (FR-9) once bucket credentials are in
-  the environment; point a Cloudflare Email Worker or M365 forwarding rule
-  at `/api/intake/email` and embed `/enquire` on blu.builders.
+- M3 remainder: documents/photos on R2 (FR-9) once bucket credentials are
+  in the environment; point a Cloudflare Email Worker or M365 forwarding
+  rule at `/api/intake/email` and embed `/enquire` on blu.builders.
 - Prod: `npm run db:push:prod` (app_setting from M2 still pending too) and
   set `EMAIL_INTAKE_TOKEN` as a Wrangler secret before enabling intake.
 - M4: AI assistant (artifact chat, tool layer over the shared validation

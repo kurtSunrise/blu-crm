@@ -7,6 +7,7 @@ import pg from "pg";
 // stages and users are seeded data and are kept.
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);
+const DATABASE_URL_LINE = /^DATABASE_URL="?([^"\n]+)"?$/m;
 
 const readDatabaseUrl = (): string => {
   if (process.env.DATABASE_URL) {
@@ -14,7 +15,7 @@ const readDatabaseUrl = (): string => {
   }
   // Playwright runs this from the repo root, where .env.local lives.
   const envFile = readFileSync(path.join(process.cwd(), ".env.local"), "utf8");
-  const match = envFile.match(/^DATABASE_URL="?([^"\n]+)"?$/m);
+  const match = envFile.match(DATABASE_URL_LINE);
   if (!match?.[1]) {
     throw new Error("DATABASE_URL not found in environment or .env.local");
   }

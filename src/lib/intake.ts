@@ -136,6 +136,9 @@ export interface CreateLeadInput {
   rawNote?: string;
   scopeSummary?: string;
   source: "web" | "instagram" | "referral" | "repeat_client" | "other";
+  // Lands in the first stage (Lead Captured) unless explicitly placed,
+  // e.g. by CSV import of an existing open pipeline (FR-3.4).
+  stageId?: string;
   title?: string;
 }
 
@@ -175,7 +178,7 @@ export const createLead = async (
   const dealId = await insertDealWithLeadId({
     title,
     estimatedValueCents: input.estimatedValueCents,
-    stageId: firstStage.id,
+    stageId: input.stageId ?? firstStage.id,
     ownerId: input.ownerId,
     companyId,
     contactId: contactId ?? undefined,

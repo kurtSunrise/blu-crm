@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AlertThresholdsForm } from "@/components/alert-thresholds-form";
 import { getAlertThresholds } from "@/lib/alerts";
 
@@ -21,6 +22,15 @@ export default async function SettingsPage() {
           closingSoonDays={thresholds.closingSoonDays}
           staleDays={thresholds.staleDays}
         />
+      </section>
+      <section aria-label="Data" className="flex flex-col gap-3">
+        <h2 className="font-heading font-medium text-sm">Data</h2>
+        <Link
+          className="flex min-h-12 w-fit items-center rounded-md border px-4 text-sm transition-colors hover:border-blu"
+          href="/settings/import"
+        >
+          CSV import (contacts and open deals)
+        </Link>
       </section>
     </main>
   );

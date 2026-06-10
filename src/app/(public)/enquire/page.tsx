@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { BrandMark } from "@/components/brand-mark";
 import { EnquiryForm } from "@/components/enquiry-form";
 
 export const metadata = {
@@ -11,13 +11,7 @@ export default function EnquirePage() {
   return (
     <main className="mx-auto flex w-full max-w-xl flex-col gap-6 px-4 py-8">
       <header className="flex flex-col gap-2">
-        <Image
-          alt="Blu Builders logo"
-          height={48}
-          priority
-          src="/logo-dark.png"
-          width={48}
-        />
+        <BrandMark className="block" priority size={48} />
         <h1 className="font-heading font-semibold text-2xl tracking-tight">
           Start a project with Blu
         </h1>

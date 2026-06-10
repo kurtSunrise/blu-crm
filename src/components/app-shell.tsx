@@ -2,6 +2,7 @@
 
 import {
   Bell,
+  HelpCircle,
   Home,
   Inbox,
   KanbanSquare,
@@ -10,9 +11,10 @@ import {
   Settings,
   Users,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { BrandMark } from "@/components/brand-mark";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 
 const PRIMARY_NAV = [
@@ -26,6 +28,7 @@ const PRIMARY_NAV = [
 
 const SECONDARY_NAV = [
   { href: "/notifications", label: "Notifications", icon: Bell },
+  { href: "/help", label: "Help", icon: HelpCircle },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -75,12 +78,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Desktop: persistent sidebar navigation */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r bg-background md:flex">
         <Link className="flex h-14 items-center gap-2 border-b px-4" href="/">
-          <Image
-            alt="Blu Builders logo"
-            height={28}
-            src="/logo-dark.png"
-            width={28}
-          />
+          <BrandMark size={28} />
           <span className="font-heading font-semibold text-lg tracking-tight">
             Blu CRM
           </span>
@@ -105,6 +103,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               key={item.href}
             />
           ))}
+          <ThemeToggle withLabel />
         </nav>
       </aside>
 
@@ -112,12 +111,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur md:hidden">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-4">
           <Link className="flex items-center gap-2" href="/">
-            <Image
-              alt="Blu Builders logo"
-              height={32}
-              src="/logo-dark.png"
-              width={32}
-            />
+            <BrandMark size={32} />
             <span className="font-heading font-semibold text-lg tracking-tight">
               Blu CRM
             </span>
@@ -139,6 +133,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </Link>
               );
             })}
+            <ThemeToggle />
           </div>
         </div>
       </header>

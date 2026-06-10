@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
-import Image from "next/image";
 import { notFound } from "next/navigation";
+import { BrandMark } from "@/components/brand-mark";
 import { db } from "@/db";
 import { activity, deal, notification, quote } from "@/db/schema";
 import { formatAudFromCents, formatDateAwst } from "@/lib/format";
@@ -76,13 +76,7 @@ export default async function QuoteViewPage({
   return (
     <main className="mx-auto flex w-full max-w-xl flex-col gap-6 px-4 py-10">
       <header className="flex flex-col gap-2">
-        <Image
-          alt="Blu Builders logo"
-          height={48}
-          priority
-          src="/logo-dark.png"
-          width={48}
-        />
+        <BrandMark className="block" priority size={48} />
         <p className="font-medium text-blu text-sm uppercase tracking-widest">
           Blu Builders
         </p>

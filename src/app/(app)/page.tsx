@@ -1,6 +1,6 @@
 import { and, count, eq, gte, isNull, lt, sql } from "drizzle-orm";
-import Image from "next/image";
 import Link from "next/link";
+import { BrandMark } from "@/components/brand-mark";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -59,6 +59,12 @@ const MODULES = [
     name: "Reports",
     description: "Pipeline value, win rate, forecast, and the Monday report.",
     milestone: "M5",
+  },
+  {
+    name: "Help",
+    description: "Guides for every flow, FAQ, glossary, and what's new.",
+    milestone: "Live",
+    href: "/help",
   },
 ];
 
@@ -143,14 +149,7 @@ export default async function Home() {
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-8 px-6 py-12">
       <header className="flex flex-col gap-2">
-        <Image
-          alt="Blu Builders logo"
-          className="mb-2"
-          height={64}
-          priority
-          src="/logo-dark.png"
-          width={64}
-        />
+        <BrandMark className="mb-2 block" priority size={64} />
         <p className="font-medium text-blu text-sm uppercase tracking-widest">
           Blu Builders — The Creative Build Company
         </p>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DM_Sans, JetBrains_Mono, Outfit } from "next/font/google";
+import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -36,11 +37,12 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      className={`${outfit.variable} ${dmSans.variable} ${jetbrainsMono.variable} dark h-full antialiased`}
+      className={`${outfit.variable} ${dmSans.variable} ${jetbrainsMono.variable} h-full antialiased`}
       lang="en"
+      suppressHydrationWarning
     >
       <body className="flex min-h-full flex-col bg-background text-foreground">
-        {children}
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );

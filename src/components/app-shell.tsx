@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BrandMark } from "@/components/brand-mark";
+import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 
@@ -63,7 +64,13 @@ function SidebarLink({
   );
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  userName,
+}: {
+  children: React.ReactNode;
+  userName: string;
+}) {
   const pathname = usePathname();
 
   return (
@@ -104,6 +111,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             />
           ))}
           <ThemeToggle withLabel />
+          <p className="truncate px-3 pt-2 text-muted-foreground text-xs">
+            Signed in as {userName}
+          </p>
+          <SignOutButton />
         </nav>
       </aside>
 
@@ -134,6 +145,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               );
             })}
             <ThemeToggle />
+            <SignOutButton compact />
           </div>
         </div>
       </header>

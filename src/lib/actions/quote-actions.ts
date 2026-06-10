@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { activity, deal, quote } from "@/db/schema";
 import { dollarsToCents, formatAudFromCents } from "@/lib/format";
+import { getSessionUserId } from "@/lib/session";
 import {
   createQuoteSchema,
   sendQuoteSchema,
@@ -31,11 +32,13 @@ export const createQuote = async (
   const { dealId, valueDollars } = parsed.data;
   const valueCents = dollarsToCents(valueDollars);
 
-  await db.insert(quote).values({ dealId, valueCents });
+  const sessionUserId = await getSessionUserId();
+  await db.insert(quote).values({ dealId, valueCents, createdBy: sessionUserId });
   await db.insert(activity).values({
     dealId,
     type: "quote_event",
     content: `Quote drafted at ${formatAudFromCents(valueCents)}`,
+    createdBy: sessionUserId,
   });
 
   revalidatePath(`/deals/${dealId}`);

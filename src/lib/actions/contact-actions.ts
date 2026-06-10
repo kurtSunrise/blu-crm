@@ -9,6 +9,7 @@ import {
   type DuplicateCandidate,
   findDuplicateContacts,
 } from "@/lib/duplicates";
+import { getSessionUserId } from "@/lib/session";
 import { createContactSchema } from "@/lib/validation/contact";
 
 export interface ContactActionState {
@@ -86,6 +87,7 @@ export const createContact = async (
     }
   }
 
+  const sessionUserId = await getSessionUserId();
   const [created] = await db
     .insert(contact)
     .values({
@@ -94,6 +96,8 @@ export const createContact = async (
       phone: input.phone,
       title: input.title,
       companyId,
+      createdBy: sessionUserId,
+      updatedBy: sessionUserId,
     })
     .returning({ id: contact.id });
 

@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { activity, deal, notification, pipelineStage, user } from "@/db/schema";
 import { dollarsToCents } from "@/lib/format";
 import { createLead } from "@/lib/intake";
+import { getSessionUserId } from "@/lib/session";
 import { LOST_REASON_LABELS } from "@/lib/labels";
 import {
   logActivitySchema,
@@ -39,6 +40,7 @@ export const createQuickAddDeal = async (
   }
 
   const input = parsed.data;
+  const sessionUserId = await getSessionUserId();
 
   const createdDealId = await createLead({
     companyName: input.companyName,
@@ -53,6 +55,7 @@ export const createQuickAddDeal = async (
     fixedDate: input.fixedDate,
     ownerId: input.ownerId,
     source: "other",
+    createdBy: sessionUserId ?? undefined,
   });
 
   if (!createdDealId) {
@@ -121,6 +124,7 @@ export const moveDealStage = async (input: unknown): Promise<ActionState> => {
     dealId,
     type: "stage_change",
     content,
+    createdBy: await getSessionUserId(),
   });
 
   if (stage.isWon && handoverToDelivery) {
@@ -167,6 +171,7 @@ export const logQuickActivity = async (
     dealId,
     type,
     content: content ?? QUICK_LOG_LABELS[type],
+    createdBy: await getSessionUserId(),
   });
   await db
     .update(deal)

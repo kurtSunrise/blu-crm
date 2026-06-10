@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { followUp } from "@/db/schema";
+import { getSessionUserId } from "@/lib/session";
 import {
   completeFollowUpSchema,
   createFollowUpSchema,
@@ -35,7 +36,7 @@ export const createFollowUp = async (
     action,
     ownerId,
     dueDate,
-    createdBy: ownerId,
+    createdBy: (await getSessionUserId()) ?? ownerId,
   });
 
   revalidatePath("/");

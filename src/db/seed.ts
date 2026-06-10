@@ -1,5 +1,7 @@
+import { hashPassword } from "better-auth/crypto";
+import { eq } from "drizzle-orm";
+import { account, pipelineStage, user } from "./schema";
 import { db } from "./index";
-import { pipelineStage, user } from "./schema";
 
 // Blu's eight default stages (FR-1.2); weightings are first-pass defaults,
 // admin-editable per FR-8.1 and open question Q2.
@@ -49,6 +51,31 @@ const seed = async () => {
     process.stdout.write("Seeded 3 team users (Andy, Kurt, Jess).\n");
   } else {
     process.stdout.write("Users already seeded, skipping.\n");
+  }
+
+  // Attach Better Auth credential accounts so the team can sign in.
+  // SEED_USER_PASSWORD sets the initial password (local default is for
+  // dev/E2E only; use a real value when seeding production).
+  const password = process.env.SEED_USER_PASSWORD ?? "blu-crm-dev";
+  const passwordHash = await hashPassword(password);
+
+  for (const member of TEAM_USERS) {
+    const [existing] = await db
+      .select({ id: account.id })
+      .from(account)
+      .where(eq(account.userId, member.id))
+      .limit(1);
+    if (existing) {
+      continue;
+    }
+    await db.insert(account).values({
+      id: crypto.randomUUID(),
+      accountId: member.id,
+      providerId: "credential",
+      userId: member.id,
+      password: passwordHash,
+    });
+    process.stdout.write(`Attached credentials for ${member.email}.\n`);
   }
 };
 

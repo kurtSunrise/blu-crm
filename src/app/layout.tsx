@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { DM_Sans, JetBrains_Mono, Outfit } from "next/font/google";
-import { AppShell } from "@/components/app-shell";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -41,7 +40,7 @@ export default function RootLayout({
       lang="en"
     >
       <body className="flex min-h-full flex-col bg-background text-foreground">
-        <AppShell>{children}</AppShell>
+        {children}
       </body>
     </html>
   );

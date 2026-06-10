@@ -47,7 +47,8 @@ const MODULES = [
   {
     name: "Inbox",
     description: "New and unassigned leads from all four intake channels.",
-    milestone: "M3",
+    milestone: "Live",
+    href: "/inbox",
   },
   {
     name: "AI Assistant",

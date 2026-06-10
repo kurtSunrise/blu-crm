@@ -2,6 +2,7 @@
 
 import {
   Bell,
+  Inbox,
   KanbanSquare,
   ListTodo,
   Plus,
@@ -15,6 +16,7 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/pipeline", label: "Pipeline", icon: KanbanSquare },
+  { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/tasks", label: "Tasks", icon: ListTodo },
   { href: "/deals/new", label: "Quick add", icon: Plus },
   { href: "/contacts", label: "Contacts", icon: Users },

@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { CompleteFollowUpButton } from "@/components/complete-follow-up-button";
 import { FollowUpForm } from "@/components/follow-up-form";
 import { QuickLogButtons } from "@/components/quick-log-buttons";
+import { QuoteForm } from "@/components/quote-form";
+import { QuoteRowActions } from "@/components/quote-row-actions";
 import { StageSelect } from "@/components/stage-select";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -14,6 +16,7 @@ import {
   deal,
   followUp,
   pipelineStage,
+  quote,
   user,
 } from "@/db/schema";
 import {
@@ -21,7 +24,7 @@ import {
   formatDateAwst,
   formatDateTimeAwst,
 } from "@/lib/format";
-import { LOST_REASON_LABELS } from "@/lib/labels";
+import { LOST_REASON_LABELS, PROJECT_TYPE_LABELS } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -35,14 +38,12 @@ const ACTIVITY_LABELS: Record<string, string> = {
   quote_event: "Quote",
 };
 
-const PROJECT_TYPE_LABELS: Record<string, string> = {
-  fit_out: "Fit-out",
-  retail_display: "Retail display",
-  event_stand: "Event stand",
-  exhibition: "Exhibition",
-  install: "Install",
-  themed_build: "Themed build",
-  other: "Other",
+const QUOTE_STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  sent: "Sent",
+  viewed: "Viewed",
+  accepted: "Accepted",
+  declined: "Declined",
 };
 
 export default async function DealPage({
@@ -119,6 +120,20 @@ export default async function DealPage({
     .leftJoin(user, eq(followUp.ownerId, user.id))
     .where(and(eq(followUp.dealId, id), isNull(followUp.completedAt)))
     .orderBy(asc(followUp.dueDate));
+
+  const quotes = await db
+    .select({
+      id: quote.id,
+      valueCents: quote.valueCents,
+      status: quote.status,
+      viewToken: quote.viewToken,
+      sentAt: quote.sentAt,
+      viewedAt: quote.viewedAt,
+      createdAt: quote.createdAt,
+    })
+    .from(quote)
+    .where(eq(quote.dealId, id))
+    .orderBy(desc(quote.createdAt));
 
   const timeline = await db
     .select({
@@ -256,6 +271,54 @@ export default async function DealPage({
           defaultOwnerId={record.ownerId}
           users={users}
         />
+      </section>
+
+      <Separator />
+
+      <section aria-label="Quotes" className="flex flex-col gap-3">
+        <h2 className="font-heading font-medium text-sm">Quotes</h2>
+        {quotes.length === 0 ? (
+          <p className="text-muted-foreground text-sm">No quotes yet.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {quotes.map((item) => (
+              <li
+                className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3"
+                key={item.id}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm">
+                    {item.valueCents == null
+                      ? "No value"
+                      : formatAudFromCents(item.valueCents)}
+                    {"  "}
+                    <Badge variant="outline">
+                      {QUOTE_STATUS_LABELS[item.status] ?? item.status}
+                    </Badge>
+                  </p>
+                  <p className="text-muted-foreground text-xs">
+                    {item.sentAt ? `Sent ${formatDateAwst(item.sentAt)}` : ""}
+                    {item.viewedAt
+                      ? ` · Viewed ${formatDateAwst(item.viewedAt)}`
+                      : ""}
+                  </p>
+                  {item.viewToken && (
+                    <a
+                      className="text-blu text-xs underline underline-offset-2"
+                      href={`/q/${item.viewToken}`}
+                      rel="noopener noreferrer"
+                      target="_blank"
+                    >
+                      Client view link
+                    </a>
+                  )}
+                </div>
+                <QuoteRowActions quoteId={item.id} status={item.status} />
+              </li>
+            ))}
+          </ul>
+        )}
+        <QuoteForm dealId={record.id} />
       </section>
 
       <Separator />

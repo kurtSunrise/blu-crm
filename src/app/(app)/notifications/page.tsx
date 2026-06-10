@@ -38,6 +38,16 @@ const describe = (
             : ""
         }`,
       };
+    case "quote_viewed":
+      return {
+        title: "Quote viewed",
+        detail: `The client just opened the quote on ${payload.dealTitle ?? "a deal"}. Good time to follow up.`,
+      };
+    case "lead_assigned":
+      return {
+        title: "New lead assigned to you",
+        detail: `${payload.dealTitle ?? "A lead"}${payload.leadId ? ` (${payload.leadId})` : ""} is yours to work.`,
+      };
     default:
       return { title: type.replaceAll("_", " "), detail: null };
   }

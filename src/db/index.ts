@@ -1,5 +1,8 @@
 import { neon } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-http";
+import {
+  drizzle as drizzleNeonHttp,
+  type NeonHttpDatabase,
+} from "drizzle-orm/neon-http";
 import { schema } from "./schema";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -10,4 +13,21 @@ if (!databaseUrl) {
   );
 }
 
-export const db = drizzle(neon(databaseUrl), { schema });
+type Database = NeonHttpDatabase<typeof schema>;
+
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);
+
+// Neon's HTTP driver only talks to Neon's proxy, so local development against
+// a plain Postgres (localhost DATABASE_URL) uses the node-postgres driver
+// instead. The import stays dynamic so `pg` never enters the Cloudflare
+// Workers bundle; both drivers expose the same Drizzle query-builder API.
+const createDb = (): Database => {
+  if (LOCAL_HOSTS.has(new URL(databaseUrl).hostname)) {
+    const { drizzle: drizzleNodePg } =
+      require("drizzle-orm/node-postgres") as typeof import("drizzle-orm/node-postgres");
+    return drizzleNodePg(databaseUrl, { schema }) as unknown as Database;
+  }
+  return drizzleNeonHttp(neon(databaseUrl), { schema });
+};
+
+export const db = createDb();

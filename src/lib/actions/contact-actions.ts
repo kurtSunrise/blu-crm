@@ -18,7 +18,26 @@ export interface DuplicateCandidate {
 export interface ContactActionState {
   duplicates?: DuplicateCandidate[];
   error?: string;
+  // Submitted values echoed back so the (uncontrolled) form can restore
+  // them after React resets the fields post-action.
+  values?: {
+    name: string;
+    email: string;
+    phone: string;
+    title: string;
+    companyName: string;
+  };
 }
+
+const submittedValues = (
+  formData: FormData
+): NonNullable<ContactActionState["values"]> => ({
+  name: String(formData.get("name") ?? ""),
+  email: String(formData.get("email") ?? ""),
+  phone: String(formData.get("phone") ?? ""),
+  title: String(formData.get("title") ?? ""),
+  companyName: String(formData.get("companyName") ?? ""),
+});
 
 // FR-2.3: exact email/phone matches always warn; fuzzy name matches warn
 // with the candidate shown; the user can proceed deliberately.
@@ -83,8 +102,13 @@ export const createContact = async (
     allowDuplicate: formData.get("allowDuplicate") === "true",
   });
 
+  const values = submittedValues(formData);
+
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+    return {
+      error: parsed.error.issues[0]?.message ?? "Invalid input",
+      values,
+    };
   }
 
   const input = parsed.data;
@@ -92,7 +116,7 @@ export const createContact = async (
   if (!input.allowDuplicate) {
     const duplicates = await findDuplicates(input);
     if (duplicates.length > 0) {
-      return { duplicates };
+      return { duplicates, values };
     }
   }
 
@@ -128,7 +152,7 @@ export const createContact = async (
     .returning({ id: contact.id });
 
   if (!created) {
-    return { error: "Failed to create the contact" };
+    return { error: "Failed to create the contact", values };
   }
 
   revalidatePath("/contacts");

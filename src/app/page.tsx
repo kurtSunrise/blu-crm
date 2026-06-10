@@ -1,3 +1,4 @@
+import { and, count, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import Image from "next/image";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +8,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { db } from "@/db";
+import { deal, followUp, pipelineStage } from "@/db/schema";
+import {
+  getAlertThresholds,
+  getClosingSoonDeals,
+  getStaleDeals,
+} from "@/lib/alerts";
+import { awstDayRange, formatAudFromCents } from "@/lib/format";
+
+export const dynamic = "force-dynamic";
 
 const MODULES = [
   {
@@ -30,7 +41,8 @@ const MODULES = [
   {
     name: "Tasks",
     description: "Today's and overdue follow-ups — never drop a follow-up.",
-    milestone: "M2",
+    milestone: "Live",
+    href: "/tasks",
   },
   {
     name: "Inbox",
@@ -78,7 +90,55 @@ function ModuleCard({ module }: { module: (typeof MODULES)[number] }) {
   return card;
 }
 
-export default function Home() {
+export default async function Home() {
+  const { start, end } = awstDayRange();
+
+  const [openPipeline] = await db
+    .select({
+      // Quoted value wins over the estimate (FR-1.4 AC); Won and Lost deals
+      // are excluded from open-pipeline totals (FR-1.6 AC).
+      totalCents: sql<number>`coalesce(sum(coalesce(${deal.quotedValueCents}, ${deal.estimatedValueCents}, 0)), 0)`,
+      dealCount: count(deal.id),
+    })
+    .from(deal)
+    .innerJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
+    .where(
+      and(
+        isNull(deal.deletedAt),
+        eq(pipelineStage.isWon, false),
+        eq(pipelineStage.isLost, false)
+      )
+    );
+
+  const [overdue] = await db
+    .select({ value: count(followUp.id) })
+    .from(followUp)
+    .where(and(isNull(followUp.completedAt), lt(followUp.dueDate, start)));
+
+  const [dueToday] = await db
+    .select({ value: count(followUp.id) })
+    .from(followUp)
+    .where(
+      and(
+        isNull(followUp.completedAt),
+        gte(followUp.dueDate, start),
+        lt(followUp.dueDate, end)
+      )
+    );
+
+  const thresholds = await getAlertThresholds();
+  const staleDeals = await getStaleDeals(thresholds.staleDays);
+  const closingSoonDeals = await getClosingSoonDeals(
+    thresholds.closingSoonDays
+  );
+
+  const stats = [
+    { label: "Overdue tasks", value: overdue?.value ?? 0, alert: true },
+    { label: "Due today", value: dueToday?.value ?? 0, alert: false },
+    { label: "Needs attention", value: staleDeals.length, alert: true },
+    { label: "Closing soon", value: closingSoonDeals.length, alert: false },
+  ];
+
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-8 px-6 py-12">
       <header className="flex flex-col gap-2">
@@ -99,6 +159,37 @@ export default function Home() {
           never drop a follow-up.
         </p>
       </header>
+      <section aria-label="Today" className="flex flex-col gap-3">
+        <p className="text-muted-foreground text-sm">
+          Open pipeline:{" "}
+          <span className="font-medium text-foreground">
+            {formatAudFromCents(Number(openPipeline?.totalCents ?? 0))}
+          </span>{" "}
+          across {openPipeline?.dealCount ?? 0} open deals
+        </p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {stats.map((stat) => (
+            <Link
+              className="flex flex-col gap-1 rounded-lg border bg-card p-3 transition-colors hover:border-blu"
+              href="/tasks"
+              key={stat.label}
+            >
+              <span
+                className={
+                  stat.alert && stat.value > 0
+                    ? "font-semibold text-2xl text-destructive"
+                    : "font-semibold text-2xl"
+                }
+              >
+                {stat.value}
+              </span>
+              <span className="text-muted-foreground text-xs">
+                {stat.label}
+              </span>
+            </Link>
+          ))}
+        </div>
+      </section>
       <section className="grid gap-4 sm:grid-cols-2">
         {MODULES.map((module) => (
           <ModuleCard key={module.name} module={module} />

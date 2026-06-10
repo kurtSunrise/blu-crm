@@ -33,5 +33,21 @@ export const dollarsToCents = (dollars: number): number =>
 export const formatDateAwst = (date: Date): string =>
   AWST_DATE_FORMATTER.format(date);
 
+export const MS_PER_DAY = 86_400_000;
+
+// Perth is UTC+8 year-round (no DST), so AWST day boundaries are a fixed
+// offset from UTC.
+const AWST_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+// UTC instants bounding "today" as the team experiences it in Perth.
+export const awstDayRange = (
+  now: Date = new Date()
+): { start: Date; end: Date } => {
+  const shifted = now.getTime() + AWST_OFFSET_MS;
+  const dayStartShifted = Math.floor(shifted / MS_PER_DAY) * MS_PER_DAY;
+  const start = new Date(dayStartShifted - AWST_OFFSET_MS);
+  return { start, end: new Date(start.getTime() + MS_PER_DAY) };
+};
+
 export const formatDateTimeAwst = (date: Date): string =>
   AWST_DATE_TIME_FORMATTER.format(date);

@@ -197,7 +197,7 @@ This document is the shared working agreement for contributors and AI agents in 
 - Document required variables when adding new ones.
 
 Runtime variables the current code reads:
-- `DATABASE_URL` — Neon Postgres connection string. Required for any DB-touching path.
+- `DATABASE_URL` — Neon Postgres connection string. Required for any DB-touching path. A localhost/127.0.0.1 URL switches `src/db/index.ts` to the node-postgres (`pg`) driver so local development and E2E runs can use a plain local Postgres; Neon's HTTP driver is used everywhere else and remains the production path.
 - `BETTER_AUTH_SECRET` — required by Better Auth at runtime; without it the library falls back to an insecure default and logs an error.
 - `BETTER_AUTH_URL` — canonical deployed URL; needed for callbacks/redirects.
 - `NEXT_PUBLIC_APP_URL` — `plain_text`; inlined into the client bundle (used by `src/lib/auth-client.ts` and QR code generation). Must be set at build time.

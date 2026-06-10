@@ -1,0 +1,11 @@
+import { z } from "zod";
+
+const MAX_THRESHOLD_DAYS = 365;
+
+// Stale / closing-soon thresholds are admin-configurable (FR-5.3 AC).
+export const alertThresholdsSchema = z.object({
+  staleDays: z.coerce.number().int().min(0).max(MAX_THRESHOLD_DAYS),
+  closingSoonDays: z.coerce.number().int().min(0).max(MAX_THRESHOLD_DAYS),
+});
+
+export type AlertThresholdsInput = z.infer<typeof alertThresholdsSchema>;

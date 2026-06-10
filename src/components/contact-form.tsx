@@ -2,7 +2,7 @@
 
 import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,18 +11,15 @@ import {
   createContact,
 } from "@/lib/actions/contact-actions";
 
-// Inputs are controlled so values survive the duplicate-warning round trip —
-// React 19 resets uncontrolled fields after a form action completes.
+// Inputs are uncontrolled (so values typed before hydration survive), and the
+// action echoes submitted values back via state: React resets the form after
+// a server action, and the reset restores these defaultValues, which keeps
+// the form filled through the duplicate-warning round trip.
 export function ContactForm() {
   const [state, formAction, isPending] = useActionState<
     ContactActionState,
     FormData
   >(createContact, {});
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [title, setTitle] = useState("");
-  const [companyName, setCompanyName] = useState("");
 
   const hasDuplicates = (state.duplicates?.length ?? 0) > 0;
 
@@ -40,11 +37,10 @@ export function ContactForm() {
         <Input
           autoFocus
           className="h-11"
+          defaultValue={state.values?.name ?? ""}
           id="name"
           name="name"
-          onChange={(event) => setName(event.target.value)}
           required
-          value={name}
         />
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -52,23 +48,21 @@ export function ContactForm() {
           <Label htmlFor="email">Email</Label>
           <Input
             className="h-11"
+            defaultValue={state.values?.email ?? ""}
             id="email"
             name="email"
-            onChange={(event) => setEmail(event.target.value)}
             type="email"
-            value={email}
           />
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="phone">Phone</Label>
           <Input
             className="h-11"
+            defaultValue={state.values?.phone ?? ""}
             id="phone"
             inputMode="tel"
             name="phone"
-            onChange={(event) => setPhone(event.target.value)}
             type="tel"
-            value={phone}
           />
         </div>
       </div>
@@ -77,20 +71,18 @@ export function ContactForm() {
           <Label htmlFor="title">Role / title</Label>
           <Input
             className="h-11"
+            defaultValue={state.values?.title ?? ""}
             id="title"
             name="title"
-            onChange={(event) => setTitle(event.target.value)}
-            value={title}
           />
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="companyName">Company</Label>
           <Input
             className="h-11"
+            defaultValue={state.values?.companyName ?? ""}
             id="companyName"
             name="companyName"
-            onChange={(event) => setCompanyName(event.target.value)}
-            value={companyName}
           />
         </div>
       </div>

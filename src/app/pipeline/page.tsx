@@ -11,6 +11,8 @@ export default async function PipelinePage() {
       id: pipelineStage.id,
       name: pipelineStage.name,
       position: pipelineStage.position,
+      isWon: pipelineStage.isWon,
+      isLost: pipelineStage.isLost,
     })
     .from(pipelineStage)
     .orderBy(pipelineStage.position);

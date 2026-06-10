@@ -1,9 +1,17 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { Label } from "@/components/ui/label";
 import { moveDealStage } from "@/lib/actions/deal-actions";
+import { StageChangeDialog, type StageMoveExtras } from "./stage-change-dialog";
+
+export interface SelectStage {
+  id: string;
+  isLost: boolean;
+  isWon: boolean;
+  name: string;
+}
 
 export function StageSelect({
   dealId,
@@ -12,19 +20,33 @@ export function StageSelect({
 }: {
   dealId: string;
   currentStageId: string;
-  stages: { id: string; name: string }[];
+  stages: SelectStage[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [pendingStage, setPendingStage] = useState<SelectStage | null>(null);
+
+  const applyMove = (stageId: string, extras: StageMoveExtras = {}) => {
+    startTransition(async () => {
+      await moveDealStage({ dealId, stageId, ...extras });
+      router.refresh();
+    });
+  };
 
   const handleChange = (stageId: string) => {
     if (stageId === currentStageId) {
       return;
     }
-    startTransition(async () => {
-      await moveDealStage({ dealId, stageId });
-      router.refresh();
-    });
+    const stage = stages.find((item) => item.id === stageId);
+    if (!stage) {
+      return;
+    }
+    // Won prompts for handover; Lost / Dormant requires a reason (FR-1.6).
+    if (stage.isWon || stage.isLost) {
+      setPendingStage(stage);
+      return;
+    }
+    applyMove(stageId);
   };
 
   return (
@@ -43,6 +65,16 @@ export function StageSelect({
           </option>
         ))}
       </select>
+      <StageChangeDialog
+        onCancel={() => setPendingStage(null)}
+        onConfirm={(extras) => {
+          if (pendingStage) {
+            applyMove(pendingStage.id, extras);
+          }
+          setPendingStage(null);
+        }}
+        stage={pendingStage}
+      />
     </div>
   );
 }

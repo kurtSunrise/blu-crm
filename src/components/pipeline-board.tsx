@@ -16,9 +16,12 @@ import { moveDealStage } from "@/lib/actions/deal-actions";
 import { formatAudFromCents } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { DealCard } from "./deal-card";
+import { StageChangeDialog, type StageMoveExtras } from "./stage-change-dialog";
 
 export interface BoardStage {
   id: string;
+  isLost: boolean;
+  isWon: boolean;
   name: string;
   position: number;
 }
@@ -86,6 +89,10 @@ export function PipelineBoard({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [boardDeals, setBoardDeals] = useState(deals);
+  const [pendingMove, setPendingMove] = useState<{
+    dealId: string;
+    stage: BoardStage;
+  } | null>(null);
 
   useEffect(() => {
     setBoardDeals(deals);
@@ -103,14 +110,31 @@ export function PipelineBoard({
     })
   );
 
-  const applyMove = (dealId: string, stageId: string) => {
+  const applyMove = (
+    dealId: string,
+    stageId: string,
+    extras: StageMoveExtras = {}
+  ) => {
     setBoardDeals((current) =>
       current.map((item) => (item.id === dealId ? { ...item, stageId } : item))
     );
     startTransition(async () => {
-      await moveDealStage({ dealId, stageId });
+      await moveDealStage({ dealId, stageId, ...extras });
       router.refresh();
     });
+  };
+
+  // Won prompts for handover; Lost / Dormant requires a reason first (FR-1.6).
+  const requestMove = (dealId: string, stageId: string) => {
+    const stage = stages.find((item) => item.id === stageId);
+    if (!stage) {
+      return;
+    }
+    if (stage.isWon || stage.isLost) {
+      setPendingMove({ dealId, stage });
+      return;
+    }
+    applyMove(dealId, stageId);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -123,7 +147,7 @@ export function PipelineBoard({
     if (!moved || moved.stageId === targetStageId) {
       return;
     }
-    applyMove(dealId, targetStageId);
+    requestMove(dealId, targetStageId);
   };
 
   return (
@@ -137,12 +161,22 @@ export function PipelineBoard({
           <StageColumn
             deals={boardDeals.filter((item) => item.stageId === stage.id)}
             key={stage.id}
-            onMove={applyMove}
+            onMove={requestMove}
             stage={stage}
             stages={stages}
           />
         ))}
       </div>
+      <StageChangeDialog
+        onCancel={() => setPendingMove(null)}
+        onConfirm={(extras) => {
+          if (pendingMove) {
+            applyMove(pendingMove.dealId, pendingMove.stage.id, extras);
+          }
+          setPendingMove(null);
+        }}
+        stage={pendingMove?.stage ?? null}
+      />
     </DndContext>
   );
 }

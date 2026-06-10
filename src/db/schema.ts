@@ -1,0 +1,349 @@
+import {
+  boolean,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
+
+// ---------------------------------------------------------------------------
+// Better Auth tables (kept aligned with the Better Auth Drizzle adapter)
+// ---------------------------------------------------------------------------
+
+export const user = pgTable("user", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  emailVerified: boolean("email_verified").notNull().default(false),
+  image: text("image"),
+  role: text("role").notNull().default("sales"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const session = pgTable("session", {
+  id: text("id").primaryKey(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  token: text("token").notNull().unique(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const account = pgTable("account", {
+  id: text("id").primaryKey(),
+  accountId: text("account_id").notNull(),
+  providerId: text("provider_id").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  idToken: text("id_token"),
+  accessTokenExpiresAt: timestamp("access_token_expires_at", {
+    withTimezone: true,
+  }),
+  refreshTokenExpiresAt: timestamp("refresh_token_expires_at", {
+    withTimezone: true,
+  }),
+  scope: text("scope"),
+  password: text("password"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const verification = pgTable("verification", {
+  id: text("id").primaryKey(),
+  identifier: text("identifier").notNull(),
+  value: text("value").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// CRM enums (PRD §7 / FR-1.5)
+// ---------------------------------------------------------------------------
+
+export const leadSource = pgEnum("lead_source", [
+  "web",
+  "instagram",
+  "referral",
+  "repeat_client",
+  "other",
+]);
+
+export const projectType = pgEnum("project_type", [
+  "fit_out",
+  "retail_display",
+  "event_stand",
+  "exhibition",
+  "install",
+  "themed_build",
+  "other",
+]);
+
+export const fixedDateType = pgEnum("fixed_date_type", [
+  "install",
+  "event",
+  "launch",
+]);
+
+export const lostReason = pgEnum("lost_reason", [
+  "price",
+  "timing",
+  "went_elsewhere",
+  "no_response",
+  "parked",
+]);
+
+export const activityType = pgEnum("activity_type", [
+  "call",
+  "email",
+  "site_visit",
+  "meeting",
+  "note",
+  "stage_change",
+  "quote_event",
+]);
+
+export const quoteStatus = pgEnum("quote_status", [
+  "draft",
+  "sent",
+  "viewed",
+  "accepted",
+  "declined",
+]);
+
+// ---------------------------------------------------------------------------
+// CRM tables — money in AUD integer cents, timestamps UTC (displayed AWST),
+// soft-delete via deleted_at on deals/contacts/companies (PRD §7 conventions)
+// ---------------------------------------------------------------------------
+
+export const pipelineStage = pgTable("pipeline_stage", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text("name").notNull(),
+  position: integer("position").notNull(),
+  // Forecast weighting as a percentage (0–100), admin-editable (FR-8.1)
+  weighting: integer("weighting").notNull().default(0),
+  isWon: boolean("is_won").notNull().default(false),
+  isLost: boolean("is_lost").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const company = pgTable("company", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text("name").notNull(),
+  // brand / agency / venue / shopping centre / referral partner
+  kind: text("kind"),
+  website: text("website"),
+  notes: text("notes"),
+  createdBy: text("created_by").references(() => user.id),
+  updatedBy: text("updated_by").references(() => user.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+});
+
+export const contact = pgTable("contact", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text("name").notNull(),
+  email: text("email"),
+  phone: text("phone"),
+  title: text("title"),
+  companyId: text("company_id").references(() => company.id),
+  notes: text("notes"),
+  createdBy: text("created_by").references(() => user.id),
+  updatedBy: text("updated_by").references(() => user.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+});
+
+export const deal = pgTable("deal", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  // BLU-[YYYY]-[###], unique and immutable (FR-1.5)
+  leadId: text("lead_id").notNull().unique(),
+  title: text("title").notNull(),
+  estimatedValueCents: integer("estimated_value_cents"),
+  quotedValueCents: integer("quoted_value_cents"),
+  stageId: text("stage_id")
+    .notNull()
+    .references(() => pipelineStage.id),
+  ownerId: text("owner_id").references(() => user.id),
+  source: leadSource("source").notNull().default("other"),
+  companyId: text("company_id").references(() => company.id),
+  contactId: text("contact_id").references(() => contact.id),
+  projectType: projectType("project_type"),
+  venue: text("venue"),
+  scopeSummary: text("scope_summary"),
+  fixedDate: timestamp("fixed_date", { withTimezone: true }),
+  fixedDateType: fixedDateType("fixed_date_type"),
+  decisionMakerConfirmed: boolean("decision_maker_confirmed")
+    .notNull()
+    .default(false),
+  expectedCloseDate: timestamp("expected_close_date", { withTimezone: true }),
+  lostReason: lostReason("lost_reason"),
+  handoverToDelivery: boolean("handover_to_delivery").notNull().default(false),
+  notes: text("notes"),
+  lastContactAt: timestamp("last_contact_at", { withTimezone: true }),
+  createdBy: text("created_by").references(() => user.id),
+  updatedBy: text("updated_by").references(() => user.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+});
+
+export const activity = pgTable("activity", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  dealId: text("deal_id")
+    .notNull()
+    .references(() => deal.id),
+  contactId: text("contact_id").references(() => contact.id),
+  type: activityType("type").notNull(),
+  content: text("content"),
+  createdBy: text("created_by").references(() => user.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const followUp = pgTable("follow_up", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  dealId: text("deal_id")
+    .notNull()
+    .references(() => deal.id),
+  action: text("action").notNull(),
+  ownerId: text("owner_id")
+    .notNull()
+    .references(() => user.id),
+  dueDate: timestamp("due_date", { withTimezone: true }).notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdBy: text("created_by").references(() => user.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const quote = pgTable("quote", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  dealId: text("deal_id")
+    .notNull()
+    .references(() => deal.id),
+  fileKey: text("file_key"),
+  valueCents: integer("value_cents"),
+  status: quoteStatus("status").notNull().default("draft"),
+  // Tokenised per recipient; exposes only the quote, never the CRM (FR-6.2)
+  viewToken: text("view_token").unique(),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  viewedAt: timestamp("viewed_at", { withTimezone: true }),
+  createdBy: text("created_by").references(() => user.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const attachment = pgTable("attachment", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  dealId: text("deal_id")
+    .notNull()
+    .references(() => deal.id),
+  fileKey: text("file_key").notNull(),
+  fileName: text("file_name").notNull(),
+  contentType: text("content_type"),
+  sizeBytes: integer("size_bytes"),
+  uploadedBy: text("uploaded_by").references(() => user.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const notification = pgTable("notification", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id),
+  type: text("type").notNull(),
+  payload: jsonb("payload"),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// Named aggregate so consumers avoid namespace imports (Ultracite rule)
+export const schema = {
+  account,
+  activity,
+  attachment,
+  company,
+  contact,
+  deal,
+  followUp,
+  notification,
+  pipelineStage,
+  quote,
+  session,
+  user,
+  verification,
+};

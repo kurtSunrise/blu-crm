@@ -316,6 +316,15 @@ export const attachment = pgTable("attachment", {
     .defaultNow(),
 });
 
+// Admin-configurable settings (FR-5.3 AC: stale/closing-soon thresholds)
+export const appSetting = pgTable("app_setting", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const notification = pgTable("notification", {
   id: text("id")
     .primaryKey()
@@ -335,6 +344,7 @@ export const notification = pgTable("notification", {
 export const schema = {
   account,
   activity,
+  appSetting,
   attachment,
   company,
   contact,

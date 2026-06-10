@@ -1,250 +1,253 @@
-import { and, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import Link from "next/link";
+import { CompleteFollowUpButton } from "@/components/complete-follow-up-button";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { db } from "@/db";
-import { deal, followUp, pipelineStage, user } from "@/db/schema";
-import { FollowUpDoneButton } from "@/components/follow-up-done-button";
-import { CLOSING_SOON_DAYS, STALE_DEAL_DAYS } from "@/lib/config";
+import { deal, followUp, user } from "@/db/schema";
 import {
-  daysFromNow,
-  endOfTodayAwst,
-  formatDateAwst,
-  startOfTodayAwst,
-} from "@/lib/format";
+  getAlertThresholds,
+  getClosingSoonDeals,
+  getStaleDeals,
+} from "@/lib/alerts";
+import { awstDayRange, formatDateAwst } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 interface TaskRow {
-  id: string;
   action: string;
-  dueDate: Date;
-  ownerName: string | null;
   dealId: string;
   dealTitle: string;
+  dueDate: Date;
+  id: string;
+  leadId: string;
+  ownerId: string;
+  ownerName: string | null;
 }
 
-function FollowUpList({
-  items,
-  emptyText,
-  overdue = false,
-}: {
-  items: TaskRow[];
-  emptyText: string;
-  overdue?: boolean;
-}) {
-  if (items.length === 0) {
-    return <p className="text-muted-foreground text-sm">{emptyText}</p>;
-  }
+function TaskItem({ task, overdue }: { task: TaskRow; overdue: boolean }) {
   return (
-    <ul className="flex flex-col gap-2">
-      {items.map((item) => (
-        <li
-          className={`flex items-center justify-between gap-2 rounded-md border px-3 py-2 ${
-            overdue ? "border-destructive/50 bg-destructive/10" : ""
-          }`}
-          key={item.id}
-        >
-          <div className="min-w-0">
-            <p className="truncate font-medium text-sm">{item.action}</p>
-            <p className="text-muted-foreground text-xs">
-              <Link
-                className="underline underline-offset-2"
-                href={`/deals/${item.dealId}`}
-              >
-                {item.dealTitle}
-              </Link>
-              {" · "}
-              <span className={overdue ? "text-destructive" : undefined}>
-                {formatDateAwst(item.dueDate)}
-              </span>
-              {item.ownerName ? ` · ${item.ownerName}` : ""}
-            </p>
-          </div>
-          <FollowUpDoneButton followUpId={item.id} label={item.action} />
-        </li>
-      ))}
-    </ul>
+    <li
+      className={cn(
+        "flex items-center gap-3 rounded-lg border bg-card p-3",
+        overdue && "border-destructive/60"
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <p className="font-medium text-sm">{task.action}</p>
+        <p className="truncate text-muted-foreground text-xs">
+          <Link
+            className="underline underline-offset-2"
+            href={`/deals/${task.dealId}`}
+          >
+            {task.dealTitle}
+          </Link>
+          {task.ownerName ? ` · ${task.ownerName.split(" ")[0]}` : ""}
+          {" · due "}
+          <span className={cn(overdue && "font-medium text-destructive")}>
+            {formatDateAwst(task.dueDate)}
+          </span>
+        </p>
+      </div>
+      {overdue && <Badge variant="destructive">Overdue</Badge>}
+      <CompleteFollowUpButton action={task.action} followUpId={task.id} />
+    </li>
   );
 }
 
-export default async function TasksPage() {
-  const todayStart = startOfTodayAwst();
-  const todayEnd = endOfTodayAwst();
+function TaskSection({
+  label,
+  tasks,
+  overdue = false,
+  emptyText,
+}: {
+  label: string;
+  tasks: TaskRow[];
+  overdue?: boolean;
+  emptyText: string;
+}) {
+  return (
+    <section aria-label={label} className="flex flex-col gap-2">
+      <h2 className="font-heading font-medium text-sm">{label}</h2>
+      {tasks.length === 0 ? (
+        <p className="text-muted-foreground text-sm">{emptyText}</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {tasks.map((task) => (
+            <TaskItem key={task.id} overdue={overdue} task={task} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
 
-  const openFollowUps: TaskRow[] = await db
+function AlertSection({
+  label,
+  description,
+  deals,
+}: {
+  label: string;
+  description: string;
+  deals: {
+    id: string;
+    leadId: string;
+    title: string;
+    companyName: string | null;
+    stageName: string;
+    fixedDate: Date | null;
+    expectedCloseDate: Date | null;
+    lastContactAt: Date | null;
+    createdAt: Date;
+  }[];
+}) {
+  return (
+    <section aria-label={label} className="flex flex-col gap-2">
+      <h2 className="font-heading font-medium text-sm">{label}</h2>
+      <p className="text-muted-foreground text-xs">{description}</p>
+      {deals.length === 0 ? (
+        <p className="text-muted-foreground text-sm">Nothing right now.</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {deals.map((item) => {
+            const keyDate = item.fixedDate ?? item.expectedCloseDate;
+            const lastContact = item.lastContactAt ?? item.createdAt;
+            return (
+              <li key={item.id}>
+                <Link
+                  className="flex items-center gap-3 rounded-lg border bg-card p-3"
+                  href={`/deals/${item.id}`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-sm">{item.title}</p>
+                    <p className="truncate text-muted-foreground text-xs">
+                      {item.companyName ?? "No company"}
+                      {keyDate ? ` · date ${formatDateAwst(keyDate)}` : ""}
+                      {` · last contact ${formatDateAwst(lastContact)}`}
+                    </p>
+                  </div>
+                  <Badge variant="secondary">{item.stageName}</Badge>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+export default async function TasksPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ owner?: string }>;
+}) {
+  const { owner } = await searchParams;
+
+  const users = await db
+    .select({ id: user.id, name: user.name })
+    .from(user)
+    .orderBy(asc(user.name));
+
+  const ownerFilter = users.some((person) => person.id === owner)
+    ? owner
+    : undefined;
+
+  const rows = await db
     .select({
       id: followUp.id,
       action: followUp.action,
       dueDate: followUp.dueDate,
+      ownerId: followUp.ownerId,
       ownerName: user.name,
       dealId: deal.id,
       dealTitle: deal.title,
+      leadId: deal.leadId,
     })
     .from(followUp)
     .innerJoin(deal, eq(followUp.dealId, deal.id))
     .leftJoin(user, eq(followUp.ownerId, user.id))
-    .where(isNull(followUp.completedAt))
-    .orderBy(followUp.dueDate);
-
-  // Overdue items are visually distinct and sort above today's (FR-5.2 AC).
-  const overdue = openFollowUps.filter((item) => item.dueDate < todayStart);
-  const dueToday = openFollowUps.filter(
-    (item) => item.dueDate >= todayStart && item.dueDate < todayEnd
-  );
-  const upcoming = openFollowUps.filter((item) => item.dueDate >= todayEnd);
-
-  const openDealFilter = and(
-    isNull(deal.deletedAt),
-    eq(pipelineStage.isWon, false),
-    eq(pipelineStage.isLost, false)
-  );
-
-  const closingCutoff = daysFromNow(CLOSING_SOON_DAYS);
-  const closingSoon = await db
-    .select({
-      id: deal.id,
-      title: deal.title,
-      stageName: pipelineStage.name,
-      fixedDate: deal.fixedDate,
-      expectedCloseDate: deal.expectedCloseDate,
-    })
-    .from(deal)
-    .innerJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
     .where(
       and(
-        openDealFilter,
-        or(
-          and(
-            gte(deal.fixedDate, todayStart),
-            lte(deal.fixedDate, closingCutoff)
-          ),
-          and(
-            gte(deal.expectedCloseDate, todayStart),
-            lte(deal.expectedCloseDate, closingCutoff)
-          )
-        )
+        isNull(followUp.completedAt),
+        isNull(deal.deletedAt),
+        ownerFilter ? eq(followUp.ownerId, ownerFilter) : undefined
       )
     )
-    .orderBy(deal.fixedDate);
+    .orderBy(asc(followUp.dueDate));
 
-  const staleCutoff = daysFromNow(-STALE_DEAL_DAYS);
-  const needsAttention = await db
-    .select({
-      id: deal.id,
-      title: deal.title,
-      stageName: pipelineStage.name,
-      lastContactAt: deal.lastContactAt,
-      createdAt: deal.createdAt,
-    })
-    .from(deal)
-    .innerJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
-    .where(
-      and(
-        openDealFilter,
-        sql`coalesce(${deal.lastContactAt}, ${deal.createdAt}) < ${staleCutoff}`
-      )
-    )
-    .orderBy(deal.updatedAt);
+  // Overdue sorts above today's items (FR-5.2 AC), bucketed by Perth days.
+  const { start, end } = awstDayRange();
+  const overdueTasks = rows.filter((task) => task.dueDate < start);
+  const todayTasks = rows.filter(
+    (task) => task.dueDate >= start && task.dueDate < end
+  );
+  const upcomingTasks = rows.filter((task) => task.dueDate >= end);
+
+  const thresholds = await getAlertThresholds();
+  const staleDeals = await getStaleDeals(thresholds.staleDays);
+  const closingSoonDeals = await getClosingSoonDeals(
+    thresholds.closingSoonDays
+  );
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6">
-      <header>
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6">
+      <header className="flex flex-col gap-3">
         <h1 className="font-semibold text-2xl tracking-tight">Tasks</h1>
-        <p className="text-muted-foreground text-sm">
-          Follow-ups due, deals closing soon, and deals going quiet.
-        </p>
+        <nav aria-label="Filter by owner" className="flex flex-wrap gap-2">
+          <Link
+            className={cn(
+              "flex min-h-9 items-center rounded-full border px-4 text-sm",
+              ownerFilter ? "text-muted-foreground" : "border-blu text-blu"
+            )}
+            href="/tasks"
+          >
+            Everyone
+          </Link>
+          {users.map((person) => (
+            <Link
+              className={cn(
+                "flex min-h-9 items-center rounded-full border px-4 text-sm",
+                ownerFilter === person.id
+                  ? "border-blu text-blu"
+                  : "text-muted-foreground"
+              )}
+              href={`/tasks?owner=${person.id}`}
+              key={person.id}
+            >
+              {person.name.split(" ")[0]}
+            </Link>
+          ))}
+        </nav>
       </header>
 
-      <section aria-label="Overdue" className="flex flex-col gap-2">
-        <h2 className="font-heading font-medium text-destructive text-sm">
-          Overdue ({overdue.length})
-        </h2>
-        <FollowUpList emptyText="Nothing overdue." items={overdue} overdue />
-      </section>
+      <TaskSection
+        emptyText="Nothing overdue. Keep it that way."
+        label="Overdue"
+        overdue
+        tasks={overdueTasks}
+      />
+      <TaskSection
+        emptyText="Nothing due today."
+        label="Today"
+        tasks={todayTasks}
+      />
+      <TaskSection
+        emptyText="Nothing scheduled yet."
+        label="Upcoming"
+        tasks={upcomingTasks}
+      />
 
-      <section aria-label="Due today" className="flex flex-col gap-2">
-        <h2 className="font-heading font-medium text-sm">
-          Due today ({dueToday.length})
-        </h2>
-        <FollowUpList emptyText="Nothing due today." items={dueToday} />
-      </section>
-
-      <section aria-label="Upcoming" className="flex flex-col gap-2">
-        <h2 className="font-heading font-medium text-sm">
-          Upcoming ({upcoming.length})
-        </h2>
-        <FollowUpList emptyText="No upcoming follow-ups." items={upcoming} />
-      </section>
-
-      <Separator />
-
-      <section aria-label="Closing soon" className="flex flex-col gap-2">
-        <h2 className="font-heading font-medium text-sm text-warning">
-          Closing soon — fixed date within {CLOSING_SOON_DAYS} days (
-          {closingSoon.length})
-        </h2>
-        {closingSoon.length === 0 && (
-          <p className="text-muted-foreground text-sm">
-            No deals closing soon.
-          </p>
-        )}
-        <ul className="flex flex-col gap-2">
-          {closingSoon.map((item) => (
-            <li key={item.id}>
-              <Link
-                className="flex items-center justify-between gap-2 rounded-md border px-3 py-3"
-                href={`/deals/${item.id}`}
-              >
-                <span className="truncate font-medium text-sm">
-                  {item.title}
-                </span>
-                <span className="flex shrink-0 items-center gap-2">
-                  {item.fixedDate && (
-                    <span className="text-warning text-xs">
-                      {formatDateAwst(item.fixedDate)}
-                    </span>
-                  )}
-                  <Badge variant="secondary">{item.stageName}</Badge>
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section aria-label="Needs attention" className="flex flex-col gap-2">
-        <h2 className="font-heading font-medium text-sm">
-          Needs attention — no contact for {STALE_DEAL_DAYS}+ days (
-          {needsAttention.length})
-        </h2>
-        {needsAttention.length === 0 && (
-          <p className="text-muted-foreground text-sm">
-            Nothing going quiet. Nice.
-          </p>
-        )}
-        <ul className="flex flex-col gap-2">
-          {needsAttention.map((item) => (
-            <li key={item.id}>
-              <Link
-                className="flex items-center justify-between gap-2 rounded-md border px-3 py-3"
-                href={`/deals/${item.id}`}
-              >
-                <span className="truncate font-medium text-sm">
-                  {item.title}
-                </span>
-                <span className="flex shrink-0 items-center gap-2">
-                  <span className="text-muted-foreground text-xs">
-                    last contact{" "}
-                    {formatDateAwst(item.lastContactAt ?? item.createdAt)}
-                  </span>
-                  <Badge variant="secondary">{item.stageName}</Badge>
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
+      <AlertSection
+        deals={staleDeals}
+        description={`Open deals with no contact for ${thresholds.staleDays}+ days.`}
+        label="Needs attention"
+      />
+      <AlertSection
+        deals={closingSoonDeals}
+        description={`Fixed date or expected close within ${thresholds.closingSoonDays} days.`}
+        label="Closing soon"
+      />
     </main>
   );
 }

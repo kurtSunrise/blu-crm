@@ -1,6 +1,13 @@
 "use client";
 
-import { KanbanSquare, Plus, Users } from "lucide-react";
+import {
+  Bell,
+  KanbanSquare,
+  ListTodo,
+  Plus,
+  Settings,
+  Users,
+} from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -8,6 +15,7 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/pipeline", label: "Pipeline", icon: KanbanSquare },
+  { href: "/tasks", label: "Tasks", icon: ListTodo },
   { href: "/deals/new", label: "Quick add", icon: Plus },
   { href: "/contacts", label: "Contacts", icon: Users },
 ];
@@ -30,6 +38,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               Blu CRM
             </span>
           </Link>
+          <div className="ml-auto flex items-center gap-1">
+            <Link
+              aria-label="Notifications"
+              className="flex min-h-11 min-w-11 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+              href="/notifications"
+            >
+              <Bell aria-hidden className="size-5" />
+            </Link>
+            <Link
+              aria-label="Settings"
+              className="flex min-h-11 min-w-11 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+              href="/settings"
+            >
+              <Settings aria-hidden className="size-5" />
+            </Link>
+          </div>
         </div>
       </header>
       <div className="flex-1 pb-20">{children}</div>

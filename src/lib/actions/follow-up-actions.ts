@@ -25,20 +25,22 @@ export const createFollowUp = async (
   });
 
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+    return { error: parsed.error.issues[0]?.message ?? "Invalid follow-up" };
   }
 
-  const input = parsed.data;
+  const { dealId, action, ownerId, dueDate } = parsed.data;
+
   await db.insert(followUp).values({
-    dealId: input.dealId,
-    action: input.action,
-    ownerId: input.ownerId,
-    dueDate: input.dueDate,
-    createdBy: input.ownerId,
+    dealId,
+    action,
+    ownerId,
+    dueDate,
+    createdBy: ownerId,
   });
 
-  revalidatePath(`/deals/${input.dealId}`);
+  revalidatePath("/");
   revalidatePath("/tasks");
+  revalidatePath(`/deals/${dealId}`);
   return {};
 };
 
@@ -50,15 +52,18 @@ export const completeFollowUp = async (
     return { error: "Invalid follow-up" };
   }
 
-  const [updated] = await db
+  const [completed] = await db
     .update(followUp)
     .set({ completedAt: new Date() })
     .where(eq(followUp.id, parsed.data.followUpId))
     .returning({ dealId: followUp.dealId });
 
-  if (updated) {
-    revalidatePath(`/deals/${updated.dealId}`);
+  if (!completed) {
+    return { error: "Unknown follow-up" };
   }
+
+  revalidatePath("/");
   revalidatePath("/tasks");
+  revalidatePath(`/deals/${completed.dealId}`);
   return {};
 };

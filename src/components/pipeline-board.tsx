@@ -12,18 +12,18 @@ import {
 } from "@dnd-kit/core";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
-import { LostReasonDialog } from "@/components/lost-reason-dialog";
 import { moveDealStage } from "@/lib/actions/deal-actions";
 import { formatAudFromCents } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { DealCard } from "./deal-card";
+import { StageChangeDialog, type StageMoveExtras } from "./stage-change-dialog";
 
 export interface BoardStage {
   id: string;
+  isLost: boolean;
+  isWon: boolean;
   name: string;
   position: number;
-  isWon: boolean;
-  isLost: boolean;
 }
 
 export interface BoardDeal {
@@ -89,6 +89,10 @@ export function PipelineBoard({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [boardDeals, setBoardDeals] = useState(deals);
+  const [pendingMove, setPendingMove] = useState<{
+    dealId: string;
+    stage: BoardStage;
+  } | null>(null);
 
   useEffect(() => {
     setBoardDeals(deals);
@@ -106,27 +110,28 @@ export function PipelineBoard({
     })
   );
 
-  const [pendingLostMove, setPendingLostMove] = useState<{
-    dealId: string;
-    stageId: string;
-  } | null>(null);
-
-  const applyMove = (dealId: string, stageId: string, lostReason?: string) => {
+  const applyMove = (
+    dealId: string,
+    stageId: string,
+    extras: StageMoveExtras = {}
+  ) => {
     setBoardDeals((current) =>
       current.map((item) => (item.id === dealId ? { ...item, stageId } : item))
     );
     startTransition(async () => {
-      await moveDealStage({ dealId, stageId, lostReason });
+      await moveDealStage({ dealId, stageId, ...extras });
       router.refresh();
     });
   };
 
-  // Moving into Lost / Dormant requires a reason (FR-1.6), so the move is
-  // held until the user picks one in the dialog.
+  // Won prompts for handover; Lost / Dormant requires a reason first (FR-1.6).
   const requestMove = (dealId: string, stageId: string) => {
-    const target = stages.find((stage) => stage.id === stageId);
-    if (target?.isLost) {
-      setPendingLostMove({ dealId, stageId });
+    const stage = stages.find((item) => item.id === stageId);
+    if (!stage) {
+      return;
+    }
+    if (stage.isWon || stage.isLost) {
+      setPendingMove({ dealId, stage });
       return;
     }
     applyMove(dealId, stageId);
@@ -162,15 +167,15 @@ export function PipelineBoard({
           />
         ))}
       </div>
-      <LostReasonDialog
-        onCancel={() => setPendingLostMove(null)}
-        onConfirm={(reason) => {
-          if (pendingLostMove) {
-            applyMove(pendingLostMove.dealId, pendingLostMove.stageId, reason);
+      <StageChangeDialog
+        onCancel={() => setPendingMove(null)}
+        onConfirm={(extras) => {
+          if (pendingMove) {
+            applyMove(pendingMove.dealId, pendingMove.stage.id, extras);
           }
-          setPendingLostMove(null);
+          setPendingMove(null);
         }}
-        open={pendingLostMove !== null}
+        stage={pendingMove?.stage ?? null}
       />
     </DndContext>
   );

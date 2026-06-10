@@ -11,8 +11,10 @@ import {
   deal,
   notification,
   pipelineStage,
+  user,
 } from "@/db/schema";
 import { dollarsToCents } from "@/lib/format";
+import { LOST_REASON_LABELS } from "@/lib/labels";
 import { nextLeadId } from "@/lib/lead-id";
 import {
   logActivitySchema,
@@ -120,6 +122,30 @@ const isUniqueViolation = (error: unknown): boolean => {
 
 const LEAD_ID_INSERT_ATTEMPTS = 3;
 
+type NewDealValues = Omit<typeof deal.$inferInsert, "leadId">;
+
+// Lead IDs can race with concurrent quick-adds, so retry on collisions.
+const insertDealWithLeadId = async (
+  values: NewDealValues
+): Promise<string | null> => {
+  for (let attempt = 1; attempt <= LEAD_ID_INSERT_ATTEMPTS; attempt += 1) {
+    try {
+      const [created] = await db
+        .insert(deal)
+        .values({ ...values, leadId: await nextLeadId() })
+        .returning({ id: deal.id });
+      return created?.id ?? null;
+    } catch (error) {
+      const canRetry =
+        isUniqueViolation(error) && attempt < LEAD_ID_INSERT_ATTEMPTS;
+      if (!canRetry) {
+        throw error;
+      }
+    }
+  }
+  return null;
+};
+
 export const createQuickAddDeal = async (
   _prevState: ActionState,
   formData: FormData
@@ -168,7 +194,7 @@ export const createQuickAddDeal = async (
     ? `${input.companyName} - ${projectTypeLabel}`
     : input.companyName;
 
-  const values = {
+  const values: NewDealValues = {
     title,
     estimatedValueCents: input.estimatedValueDollars
       ? dollarsToCents(input.estimatedValueDollars)
@@ -184,62 +210,25 @@ export const createQuickAddDeal = async (
     updatedBy: input.ownerId,
   };
 
-  // Lead IDs can race with concurrent quick-adds, so retry on collisions.
-  let createdDealId: string | null = null;
-  for (let attempt = 1; attempt <= LEAD_ID_INSERT_ATTEMPTS; attempt += 1) {
-    try {
-      const [created] = await db
-        .insert(deal)
-        .values({ ...values, leadId: await nextLeadId() })
-        .returning({ id: deal.id });
-      createdDealId = created?.id ?? null;
-      break;
-    } catch (error) {
-      const canRetry =
-        isUniqueViolation(error) && attempt < LEAD_ID_INSERT_ATTEMPTS;
-      if (!canRetry) {
-        throw error;
-      }
-    }
-  }
+  const createdDealId = await insertDealWithLeadId(values);
 
   if (!createdDealId) {
     return { error: "Failed to create the deal" };
-  }
-
-  if (input.ownerId) {
-    await db.insert(notification).values({
-      userId: input.ownerId,
-      type: "lead_assigned",
-      payload: {
-        dealId: createdDealId,
-        title,
-        message: `New lead assigned: ${title}`,
-      },
-    });
   }
 
   revalidatePath("/pipeline");
   redirect("/pipeline");
 };
 
-const LOST_REASON_LABELS: Record<string, string> = {
-  price: "Price",
-  timing: "Timing",
-  went_elsewhere: "Went elsewhere",
-  no_response: "No response",
-  parked: "Parked",
-};
-
-// The handover-to-delivery flag is routed to Kurt (PM) on Won — FR-1.6.
-const HANDOVER_USER_ID = "kurt";
+// Won handovers are routed to Kurt, who receives delivery (PRD US-10).
+const HANDOVER_RECIPIENT_EMAIL = "kurt@blu.builders";
 
 export const moveDealStage = async (input: unknown): Promise<ActionState> => {
   const parsed = moveDealStageSchema.safeParse(input);
   if (!parsed.success) {
     return { error: "Invalid stage move" };
   }
-  const { dealId, stageId, lostReason } = parsed.data;
+  const { dealId, stageId, lostReason, handoverToDelivery } = parsed.data;
 
   const [stage] = await db
     .select({
@@ -256,7 +245,7 @@ export const moveDealStage = async (input: unknown): Promise<ActionState> => {
     return { error: "Unknown pipeline stage" };
   }
 
-  // FR-1.6 AC: a deal cannot enter Lost/Dormant without a reason.
+  // A deal cannot enter Lost / Dormant without a reason (FR-1.6 AC).
   if (stage.isLost && !lostReason) {
     return { error: "A reason is required to mark a deal Lost / Dormant" };
   }
@@ -266,21 +255,23 @@ export const moveDealStage = async (input: unknown): Promise<ActionState> => {
     .set({
       stageId,
       lostReason: stage.isLost ? lostReason : null,
-      handoverToDelivery: stage.isWon,
+      ...(stage.isWon
+        ? { handoverToDelivery: handoverToDelivery ?? false }
+        : {}),
       updatedAt: new Date(),
     })
     .where(eq(deal.id, dealId))
-    .returning({ id: deal.id, leadId: deal.leadId, title: deal.title });
+    .returning({ id: deal.id, title: deal.title, leadId: deal.leadId });
 
   if (!moved) {
-    return { error: "Deal not found" };
+    return { error: "Unknown deal" };
   }
 
   let content = `Moved to ${stage.name}`;
   if (stage.isLost && lostReason) {
-    content = `Moved to ${stage.name} — reason: ${LOST_REASON_LABELS[lostReason]}`;
-  } else if (stage.isWon) {
-    content = `Moved to ${stage.name} — handover to delivery`;
+    content = `Moved to ${stage.name} (reason: ${LOST_REASON_LABELS[lostReason]})`;
+  } else if (stage.isWon && handoverToDelivery) {
+    content = `Moved to ${stage.name} (handover to delivery flagged)`;
   }
 
   await db.insert(activity).values({
@@ -289,20 +280,24 @@ export const moveDealStage = async (input: unknown): Promise<ActionState> => {
     content,
   });
 
-  if (stage.isWon) {
-    await db.insert(notification).values({
-      userId: HANDOVER_USER_ID,
-      type: "handover",
-      payload: {
-        dealId: moved.id,
-        leadId: moved.leadId,
-        title: moved.title,
-        message: `Won — handover to delivery: ${moved.title}`,
-      },
-    });
+  if (stage.isWon && handoverToDelivery) {
+    const [recipient] = await db
+      .select({ id: user.id })
+      .from(user)
+      .where(eq(user.email, HANDOVER_RECIPIENT_EMAIL))
+      .limit(1);
+    if (recipient) {
+      await db.insert(notification).values({
+        userId: recipient.id,
+        type: "handover_to_delivery",
+        payload: { dealId, dealTitle: moved.title, leadId: moved.leadId },
+      });
+    }
   }
 
+  revalidatePath("/");
   revalidatePath("/pipeline");
+  revalidatePath("/notifications");
   revalidatePath(`/deals/${dealId}`);
   return {};
 };

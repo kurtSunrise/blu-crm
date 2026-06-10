@@ -1,6 +1,6 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { notFound } from "next/navigation";
-import { FollowUpDoneButton } from "@/components/follow-up-done-button";
+import { CompleteFollowUpButton } from "@/components/complete-follow-up-button";
 import { FollowUpForm } from "@/components/follow-up-form";
 import { QuickLogButtons } from "@/components/quick-log-buttons";
 import { StageSelect } from "@/components/stage-select";
@@ -21,6 +21,7 @@ import {
   formatDateAwst,
   formatDateTimeAwst,
 } from "@/lib/format";
+import { LOST_REASON_LABELS } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -32,14 +33,6 @@ const ACTIVITY_LABELS: Record<string, string> = {
   note: "Note",
   stage_change: "Stage change",
   quote_event: "Quote",
-};
-
-const LOST_REASON_LABELS: Record<string, string> = {
-  price: "Price",
-  timing: "Timing",
-  went_elsewhere: "Went elsewhere",
-  no_response: "No response",
-  parked: "Parked",
 };
 
 const PROJECT_TYPE_LABELS: Record<string, string> = {
@@ -74,9 +67,12 @@ export default async function DealPage({
       scopeSummary: deal.scopeSummary,
       fixedDate: deal.fixedDate,
       decisionMakerConfirmed: deal.decisionMakerConfirmed,
+      expectedCloseDate: deal.expectedCloseDate,
       lostReason: deal.lostReason,
       handoverToDelivery: deal.handoverToDelivery,
+      stageIsWon: pipelineStage.isWon,
       notes: deal.notes,
+      ownerId: deal.ownerId,
       companyName: company.name,
       contactId: contact.id,
       contactName: contact.name,
@@ -101,15 +97,16 @@ export default async function DealPage({
     .select({
       id: pipelineStage.id,
       name: pipelineStage.name,
+      isWon: pipelineStage.isWon,
       isLost: pipelineStage.isLost,
     })
     .from(pipelineStage)
     .orderBy(pipelineStage.position);
 
-  const owners = await db
+  const users = await db
     .select({ id: user.id, name: user.name })
     .from(user)
-    .orderBy(user.name);
+    .orderBy(asc(user.name));
 
   const openFollowUps = await db
     .select({
@@ -121,7 +118,7 @@ export default async function DealPage({
     .from(followUp)
     .leftJoin(user, eq(followUp.ownerId, user.id))
     .where(and(eq(followUp.dealId, id), isNull(followUp.completedAt)))
-    .orderBy(followUp.dueDate);
+    .orderBy(asc(followUp.dueDate));
 
   const timeline = await db
     .select({
@@ -164,10 +161,14 @@ export default async function DealPage({
       value: record.decisionMakerConfirmed ? "Yes" : "No",
     },
     {
-      label: "Lost / dormant reason",
-      value: record.lostReason
-        ? LOST_REASON_LABELS[record.lostReason]
+      label: "Expected close",
+      value: record.expectedCloseDate
+        ? formatDateAwst(record.expectedCloseDate)
         : null,
+    },
+    {
+      label: "Lost reason",
+      value: record.lostReason ? LOST_REASON_LABELS[record.lostReason] : null,
     },
   ].filter((fact) => fact.value);
 
@@ -182,10 +183,8 @@ export default async function DealPage({
         </h1>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <Badge variant="secondary">{record.stageName}</Badge>
-          {record.handoverToDelivery && (
-            <Badge className="bg-success text-success-foreground">
-              Handover to delivery → Kurt
-            </Badge>
+          {record.stageIsWon && record.handoverToDelivery && (
+            <Badge>Handover to delivery</Badge>
           )}
           {valueCents != null && (
             <span className="font-medium">
@@ -226,29 +225,37 @@ export default async function DealPage({
 
       <section aria-label="Follow-ups" className="flex flex-col gap-3">
         <h2 className="font-heading font-medium text-sm">Follow-ups</h2>
-        {openFollowUps.length === 0 && (
+        {openFollowUps.length === 0 ? (
           <p className="text-muted-foreground text-sm">
-            No open follow-ups — every open deal should have a next action.
+            No next action set. Every open deal should carry one.
           </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {openFollowUps.map((item) => (
+              <li
+                className="flex items-center gap-3 rounded-lg border bg-card p-3"
+                key={item.id}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm">{item.action}</p>
+                  <p className="text-muted-foreground text-xs">
+                    Due {formatDateAwst(item.dueDate)}
+                    {item.ownerName ? ` · ${item.ownerName}` : ""}
+                  </p>
+                </div>
+                <CompleteFollowUpButton
+                  action={item.action}
+                  followUpId={item.id}
+                />
+              </li>
+            ))}
+          </ul>
         )}
-        <ul className="flex flex-col gap-2">
-          {openFollowUps.map((item) => (
-            <li
-              className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
-              key={item.id}
-            >
-              <div className="min-w-0">
-                <p className="truncate font-medium text-sm">{item.action}</p>
-                <p className="text-muted-foreground text-xs">
-                  {formatDateAwst(item.dueDate)}
-                  {item.ownerName ? ` · ${item.ownerName}` : ""}
-                </p>
-              </div>
-              <FollowUpDoneButton followUpId={item.id} label={item.action} />
-            </li>
-          ))}
-        </ul>
-        <FollowUpForm dealId={record.id} owners={owners} />
+        <FollowUpForm
+          dealId={record.id}
+          defaultOwnerId={record.ownerId}
+          users={users}
+        />
       </section>
 
       <Separator />

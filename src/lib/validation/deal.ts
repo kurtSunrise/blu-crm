@@ -48,15 +48,7 @@ export const quickAddDealSchema = z
 
 export type QuickAddDealInput = z.infer<typeof quickAddDealSchema>;
 
-export const LOST_REASON_OPTIONS = [
-  { value: "price", label: "Price" },
-  { value: "timing", label: "Timing" },
-  { value: "went_elsewhere", label: "Went elsewhere" },
-  { value: "no_response", label: "No response" },
-  { value: "parked", label: "Parked" },
-] as const;
-
-const LOST_REASONS = [
+export const LOST_REASONS = [
   "price",
   "timing",
   "went_elsewhere",
@@ -67,7 +59,10 @@ const LOST_REASONS = [
 export const moveDealStageSchema = z.object({
   dealId: z.string().min(1),
   stageId: z.string().min(1),
+  // Required by the action when the target stage is Lost / Dormant (FR-1.6)
   lostReason: z.enum(LOST_REASONS).optional(),
+  // Only meaningful when the target stage is Won (FR-1.6)
+  handoverToDelivery: z.boolean().optional(),
 });
 
 export type MoveDealStageInput = z.infer<typeof moveDealStageSchema>;

@@ -1,9 +1,12 @@
 import { z } from "zod";
 
+// Shared validation layer: human forms and (later) AI tools both pass
+// through these schemas (PRD §10 architecture note).
+
 export const createFollowUpSchema = z.object({
   dealId: z.string().min(1),
   action: z.string().trim().min(1, "Next action is required").max(500),
-  ownerId: z.string().min(1, "Owner is required"),
+  ownerId: z.string().min(1, "An owner is required"),
   dueDate: z.coerce.date(),
 });
 

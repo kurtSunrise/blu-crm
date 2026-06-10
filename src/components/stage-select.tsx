@@ -2,9 +2,16 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { LostReasonDialog } from "@/components/lost-reason-dialog";
 import { Label } from "@/components/ui/label";
 import { moveDealStage } from "@/lib/actions/deal-actions";
+import { StageChangeDialog, type StageMoveExtras } from "./stage-change-dialog";
+
+export interface SelectStage {
+  id: string;
+  isLost: boolean;
+  isWon: boolean;
+  name: string;
+}
 
 export function StageSelect({
   dealId,
@@ -13,17 +20,15 @@ export function StageSelect({
 }: {
   dealId: string;
   currentStageId: string;
-  stages: { id: string; name: string; isLost: boolean }[];
+  stages: SelectStage[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [pendingLostStageId, setPendingLostStageId] = useState<string | null>(
-    null
-  );
+  const [pendingStage, setPendingStage] = useState<SelectStage | null>(null);
 
-  const applyMove = (stageId: string, lostReason?: string) => {
+  const applyMove = (stageId: string, extras: StageMoveExtras = {}) => {
     startTransition(async () => {
-      await moveDealStage({ dealId, stageId, lostReason });
+      await moveDealStage({ dealId, stageId, ...extras });
       router.refresh();
     });
   };
@@ -32,9 +37,13 @@ export function StageSelect({
     if (stageId === currentStageId) {
       return;
     }
-    const target = stages.find((stage) => stage.id === stageId);
-    if (target?.isLost) {
-      setPendingLostStageId(stageId);
+    const stage = stages.find((item) => item.id === stageId);
+    if (!stage) {
+      return;
+    }
+    // Won prompts for handover; Lost / Dormant requires a reason (FR-1.6).
+    if (stage.isWon || stage.isLost) {
+      setPendingStage(stage);
       return;
     }
     applyMove(stageId);
@@ -56,15 +65,15 @@ export function StageSelect({
           </option>
         ))}
       </select>
-      <LostReasonDialog
-        onCancel={() => setPendingLostStageId(null)}
-        onConfirm={(reason) => {
-          if (pendingLostStageId) {
-            applyMove(pendingLostStageId, reason);
+      <StageChangeDialog
+        onCancel={() => setPendingStage(null)}
+        onConfirm={(extras) => {
+          if (pendingStage) {
+            applyMove(pendingStage.id, extras);
           }
-          setPendingLostStageId(null);
+          setPendingStage(null);
         }}
-        open={pendingLostStageId !== null}
+        stage={pendingStage}
       />
     </div>
   );

@@ -343,12 +343,102 @@ export const notification = pgTable("notification", {
     .defaultNow(),
 });
 
+// ---------------------------------------------------------------------------
+// AI assistant (M4 / FR-7) — persisted chat threads, replayable messages, and
+// an audit trail for every AI-proposed mutation (PRD §9.3 auditability)
+// ---------------------------------------------------------------------------
+
+export const chatThreadStatus = pgEnum("chat_thread_status", [
+  "idle",
+  "awaiting_confirmation",
+]);
+
+export const chatMessageRole = pgEnum("chat_message_role", [
+  "user",
+  "assistant",
+]);
+
+export const aiAuditStatus = pgEnum("ai_audit_status", [
+  "proposed",
+  "confirmed",
+  "denied",
+  "executed",
+  "failed",
+]);
+
+export const chatThread = pgTable("chat_thread", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  title: text("title"),
+  originPage: text("origin_page"),
+  dealId: text("deal_id").references(() => deal.id),
+  contactId: text("contact_id").references(() => contact.id),
+  status: chatThreadStatus("status").notNull().default("idle"),
+  // { toolUseId, toolName, input, heldToolResults? } while a write awaits
+  // user confirmation; cleared once resolved (FR-7.8)
+  pendingToolUse: jsonb("pending_tool_use"),
+  lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const chatMessage = pgTable("chat_message", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  threadId: text("thread_id")
+    .notNull()
+    .references(() => chatThread.id, { onDelete: "cascade" }),
+  role: chatMessageRole("role").notNull(),
+  // Full Anthropic content-block array (text / tool_use / tool_result) so the
+  // agent loop can replay history verbatim, incl. across confirm round-trips
+  content: jsonb("content").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const aiAuditLog = pgTable("ai_audit_log", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  threadId: text("thread_id")
+    .notNull()
+    .references(() => chatThread.id),
+  toolUseId: text("tool_use_id").notNull(),
+  toolName: text("tool_name").notNull(),
+  // Input as proposed by the model; finalInput captures user edits at confirm
+  input: jsonb("input").notNull(),
+  finalInput: jsonb("final_input"),
+  status: aiAuditStatus("status").notNull().default("proposed"),
+  result: jsonb("result"),
+  error: text("error"),
+  userId: text("user_id").references(() => user.id),
+  confirmedBy: text("confirmed_by").references(() => user.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+});
+
 // Named aggregate so consumers avoid namespace imports (Ultracite rule)
 export const schema = {
   account,
   activity,
+  aiAuditLog,
   appSetting,
   attachment,
+  chatMessage,
+  chatThread,
   company,
   contact,
   deal,

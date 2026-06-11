@@ -1,10 +1,13 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
+import { Pencil } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArchiveRecordButton } from "@/components/archive-record-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { db } from "@/db";
 import { company, contact, deal, pipelineStage } from "@/db/schema";
+import { archiveCompany } from "@/lib/actions/company-actions";
 import { formatAudFromCents } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -97,6 +100,15 @@ export default async function CompanyPage({
             {record.website}
           </a>
         )}
+        <div className="flex flex-wrap gap-2">
+          <Link
+            className="flex h-11 items-center gap-2 rounded-md border px-4 text-sm transition-colors hover:border-blu"
+            href={`/companies/${id}/edit`}
+          >
+            <Pencil aria-hidden className="size-4 text-blu" />
+            Edit
+          </Link>
+        </div>
       </header>
 
       <div className="grid grid-cols-3 gap-3">
@@ -182,6 +194,12 @@ export default async function CompanyPage({
           <p className="text-sm">{record.notes}</p>
         </section>
       )}
+
+      <ArchiveRecordButton
+        action={archiveCompany.bind(null, record.id)}
+        confirmCopy={`Archive ${record.name}? It leaves the directory, but its people, deals, and history stay on record.`}
+        triggerLabel="Archive company"
+      />
     </main>
   );
 }

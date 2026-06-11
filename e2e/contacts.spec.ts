@@ -11,9 +11,9 @@ const fillContactsSearch = async (page: Page, query: string) => {
   await expect(async () => {
     await search.fill("");
     await search.fill(query);
-    await expect(
-      page.getByText("No companies match your search.")
-    ).toBeVisible({ timeout: 1000 });
+    await expect(page.getByText("No companies match your search.")).toBeVisible(
+      { timeout: 1000 }
+    );
   }).toPass();
 };
 

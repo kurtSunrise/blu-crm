@@ -3,16 +3,17 @@
 import { Archive } from "lucide-react";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
-import { archiveContact } from "@/lib/actions/contact-actions";
 
-// Soft delete with a two-step confirm: archived contacts leave lists and
-// search, but their deals and history stay (PRD §7, no hard deletes).
-export function ArchiveContactButton({
-  contactId,
-  name,
+// Soft delete with a two-step confirm (PRD §7, no hard deletes). The
+// server action is bound to the record by the calling server component.
+export function ArchiveRecordButton({
+  action,
+  confirmCopy,
+  triggerLabel,
 }: {
-  contactId: string;
-  name: string;
+  action: () => Promise<void>;
+  confirmCopy: string;
+  triggerLabel: string;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -26,24 +27,21 @@ export function ArchiveContactButton({
         variant="outline"
       >
         <Archive aria-hidden className="size-4" />
-        Archive contact
+        {triggerLabel}
       </Button>
     );
   }
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3">
-      <p className="text-sm">
-        Archive {name}? They leave contact lists and search, but their deals and
-        history stay on record.
-      </p>
+      <p className="text-sm">{confirmCopy}</p>
       <div className="flex flex-wrap gap-2">
         <Button
           className="h-11"
           disabled={isPending}
           onClick={() =>
             startTransition(async () => {
-              await archiveContact(contactId);
+              await action();
             })
           }
           type="button"

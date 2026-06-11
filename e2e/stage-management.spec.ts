@@ -8,11 +8,15 @@ const stagesCard = (page: import("@playwright/test").Page) =>
   page.locator('section[aria-label="Pipeline stages"]');
 
 // The rename and remove panels open via React onClick, so a click that
-// lands before hydration is silently lost. Retry until the panel shows.
+// lands before hydration is silently lost. Retry until the panel shows,
+// guarding on visibility so a slow-but-successful open is never re-clicked
+// shut (the trigger toggles).
 const openPanel = async (trigger: Locator, content: Locator) => {
   await expect(async () => {
-    await trigger.click();
-    await expect(content).toBeVisible({ timeout: 1000 });
+    if (!(await content.isVisible())) {
+      await trigger.click();
+    }
+    await expect(content).toBeVisible({ timeout: 2000 });
   }).toPass();
 };
 
@@ -87,12 +91,17 @@ test("removing a stage with deals requires reassigning them (FR-1.3 AC)", async 
       .getByRole("heading", { name: companyName })
   ).toBeVisible();
 
-  // Removing the stage asks where its deals should go.
-  await page.goto("/settings");
-  await openPanel(
-    card.getByRole("button", { name: `Remove ${stageName}` }),
-    card.getByLabel("Move its deals to")
-  );
+  // Removing the stage asks where its deals should go. The board applies
+  // moves optimistically, so the write may still be in flight; reload the
+  // settings page until the server-side deal count reflects it and the
+  // reassign select appears (a fresh goto also resets the panel state).
+  await expect(async () => {
+    await page.goto("/settings");
+    await card.getByRole("button", { name: `Remove ${stageName}` }).click();
+    await expect(card.getByLabel("Move its deals to")).toBeVisible({
+      timeout: 2000,
+    });
+  }).toPass();
   await card
     .getByLabel("Move its deals to")
     .selectOption({ label: "Lead Captured" });

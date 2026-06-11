@@ -2,7 +2,7 @@ import { desc, eq, inArray, or } from "drizzle-orm";
 import { Mail, MessageSquare, Pencil, Phone } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArchiveContactButton } from "@/components/archive-contact-button";
+import { ArchiveRecordButton } from "@/components/archive-record-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { db } from "@/db";
@@ -13,7 +13,9 @@ import {
   deal,
   pipelineStage,
   quote,
+  user,
 } from "@/db/schema";
+import { archiveContact } from "@/lib/actions/contact-actions";
 import {
   formatAudFromCents,
   formatDateAwst,
@@ -102,8 +104,13 @@ export default async function ContactPage({
         type: activity.type,
         content: activity.content,
         createdAt: activity.createdAt,
+        authorName: user.name,
+        dealId: activity.dealId,
+        dealTitle: deal.title,
       })
       .from(activity)
+      .leftJoin(user, eq(activity.createdBy, user.id))
+      .leftJoin(deal, eq(activity.dealId, deal.id))
       .where(historyWhere)
       .orderBy(desc(activity.createdAt))
       .limit(HISTORY_LIMIT),
@@ -267,23 +274,35 @@ export default async function ContactPage({
             </ul>
           </section>
 
-          <section aria-label="History" className="flex flex-col gap-2">
+          <section
+            aria-label="History"
+            className="flex flex-col gap-3 lg:rounded-lg lg:border lg:bg-card/50 lg:p-4"
+          >
             <h2 className="font-heading font-medium text-sm">History</h2>
             {history.length === 0 && (
               <p className="text-muted-foreground text-sm">No activity yet.</p>
             )}
-            <ol className="flex flex-col gap-2">
+            <ol className="flex flex-col gap-3">
               {history.map((entry) => (
-                <li className="flex items-start gap-2 text-sm" key={entry.id}>
-                  <Badge className="shrink-0" variant="outline">
-                    {ACTIVITY_LABELS[entry.type] ?? entry.type}
-                  </Badge>
-                  <span className="min-w-0">
+                <li className="flex flex-col gap-0.5" key={entry.id}>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">
+                      {ACTIVITY_LABELS[entry.type] ?? entry.type}
+                    </Badge>
                     <span className="text-muted-foreground text-xs">
-                      {formatDateTimeAwst(entry.createdAt)} ·{" "}
+                      {formatDateTimeAwst(entry.createdAt)}
+                      {entry.authorName ? ` · ${entry.authorName}` : ""}
                     </span>
-                    {entry.content ?? entry.type}
-                  </span>
+                  </div>
+                  {entry.content && <p className="text-sm">{entry.content}</p>}
+                  {entry.dealTitle && (
+                    <Link
+                      className="w-fit text-blu text-xs underline-offset-2 hover:underline"
+                      href={`/deals/${entry.dealId}`}
+                    >
+                      {entry.dealTitle}
+                    </Link>
+                  )}
                 </li>
               ))}
             </ol>
@@ -357,7 +376,11 @@ export default async function ContactPage({
             )}
           </section>
 
-          <ArchiveContactButton contactId={person.id} name={person.name} />
+          <ArchiveRecordButton
+            action={archiveContact.bind(null, person.id)}
+            confirmCopy={`Archive ${person.name}? They leave contact lists and search, but their deals and history stay on record.`}
+            triggerLabel="Archive contact"
+          />
         </div>
       </div>
     </main>

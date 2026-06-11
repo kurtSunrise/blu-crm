@@ -269,7 +269,7 @@ export default async function DealPage({
       value:
         record.companyId && record.companyName ? (
           <Link
-            className="text-blu underline-offset-2 hover:underline"
+            className="text-blu underline underline-offset-2"
             href={`/companies/${record.companyId}`}
           >
             {record.companyName}
@@ -284,7 +284,7 @@ export default async function DealPage({
         <>
           {record.contactId ? (
             <Link
-              className="text-blu underline-offset-2 hover:underline"
+              className="text-blu underline underline-offset-2"
               href={`/contacts/${record.contactId}`}
             >
               {record.contactName}

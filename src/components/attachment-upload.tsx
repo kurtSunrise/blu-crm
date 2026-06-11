@@ -48,6 +48,7 @@ export function AttachmentUpload({ dealId }: { dealId: string }) {
     <div className="flex flex-col gap-2">
       <input
         accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
+        aria-label="Attachment file"
         className="sr-only"
         id="attachment-file"
         onChange={(event) => handleFiles(event.target.files)}

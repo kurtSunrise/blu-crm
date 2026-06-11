@@ -55,7 +55,7 @@
 }
 
 /* Design tokens shared with Blu Shed so the two portals read as one family.
-   Brand blue: --blu (#005eb1 light / #0082e5 dark). */
+   Brand blue: --blu (#005eb1 light / #1b8df0 dark). */
 :root {
   --background: #f4f5f7;
   --foreground: #0c121a;
@@ -109,15 +109,20 @@
   --secondary: #1a2029;
   --secondary-foreground: #e5e8eb;
   --muted: #1a2029;
-  --muted-foreground: #82868e;
+  /* Minimum 4.5:1 on --muted (#1a2029) for WCAG AA; #82868e was 4.48:1. */
+  --muted-foreground: #868a92;
   --accent: #1a2029;
   --accent-foreground: #e5e8eb;
   --destructive: #ff6568;
   --border: #ffffff1a;
   --input: #ffffff1f;
   --ring: #0074c9;
-  --blu: #0082e5;
-  --blu-foreground: #f7f9fa;
+  /* Lightened from #0082e5 so text-blu keeps 4.5:1 on --accent (#1a2029),
+     e.g. the active sidebar item. */
+  --blu: #1b8df0;
+  /* Dark ink on the bright dark-mode blue: white text was 3.73:1 (AA needs
+     4.5:1); #06090f reaches 5.8:1. */
+  --blu-foreground: #06090f;
   --warning: #f2af48;
   --warning-foreground: #211300;
   --success: #2bbb71;
@@ -130,7 +135,7 @@
   --sidebar: #0b1017;
   --sidebar-foreground: #e5e8eb;
   --sidebar-primary: #0082e5;
-  --sidebar-primary-foreground: #f7f9fa;
+  --sidebar-primary-foreground: #06090f;
   --sidebar-accent: #1a2029;
   --sidebar-accent-foreground: #e5e8eb;
   --sidebar-border: #ffffff1a;

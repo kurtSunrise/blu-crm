@@ -4,6 +4,7 @@ import { Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { assignDealOwner, discardLead } from "@/lib/actions/inbox-actions";
 
 // Inbox triage (FR-3.5): assign an owner or discard, one tap each.
@@ -38,9 +39,9 @@ export function InboxTriage({
 
   return (
     <div className="flex items-center gap-2">
-      <select
+      <NativeSelect
         aria-label={`Assign ${dealTitle} to`}
-        className="flex h-11 flex-1 rounded-md border border-input bg-transparent px-3 text-sm"
+        containerClassName="flex-1"
         defaultValue=""
         disabled={isPending}
         onChange={(event) => assign(event.target.value)}
@@ -53,7 +54,7 @@ export function InboxTriage({
             {person.name}
           </option>
         ))}
-      </select>
+      </NativeSelect>
       <Button
         aria-label={`Discard ${dealTitle}`}
         className="min-h-11 min-w-11 shrink-0"

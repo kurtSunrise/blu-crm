@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   type ActionState,
@@ -19,9 +20,6 @@ const PROJECT_TYPE_OPTIONS = [
   { value: "themed_build", label: "Themed build" },
   { value: "other", label: "Other" },
 ];
-
-const SELECT_CLASSES =
-  "flex h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm";
 
 export function QuickAddForm({
   owners,
@@ -77,19 +75,14 @@ export function QuickAddForm({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
           <Label htmlFor="projectType">Project type</Label>
-          <select
-            className={SELECT_CLASSES}
-            defaultValue=""
-            id="projectType"
-            name="projectType"
-          >
+          <NativeSelect defaultValue="" id="projectType" name="projectType">
             <option value="">Not sure yet</option>
             {PROJECT_TYPE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="estimatedValueDollars">Value guess (AUD)</Label>
@@ -111,19 +104,14 @@ export function QuickAddForm({
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="ownerId">Owner</Label>
-          <select
-            className={SELECT_CLASSES}
-            defaultValue=""
-            id="ownerId"
-            name="ownerId"
-          >
+          <NativeSelect defaultValue="" id="ownerId" name="ownerId">
             <option value="">Unassigned</option>
             {owners.map((owner) => (
               <option key={owner.id} value={owner.id}>
                 {owner.name}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
       </div>
       <div className="flex flex-col gap-2">

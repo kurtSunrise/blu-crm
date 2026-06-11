@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
   manageStages,
   type StageActionState,
@@ -191,8 +192,7 @@ export function StageManager({ stages }: { stages: ManagedStage[] }) {
                       <Label htmlFor={`reassign-${stage.id}`}>
                         Move its deals to
                       </Label>
-                      <select
-                        className="flex h-11 rounded-md border border-input bg-transparent px-3 text-sm"
+                      <NativeSelect
                         defaultValue=""
                         id={`reassign-${stage.id}`}
                         name="reassignToStageId"
@@ -208,7 +208,7 @@ export function StageManager({ stages }: { stages: ManagedStage[] }) {
                               {other.name}
                             </option>
                           ))}
-                      </select>
+                      </NativeSelect>
                     </div>
                   ) : (
                     <p className="text-sm">

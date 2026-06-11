@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
   createFollowUp,
   type FollowUpActionState,
@@ -48,8 +49,7 @@ export function FollowUpForm({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
           <Label htmlFor="follow-up-owner">Owner *</Label>
-          <select
-            className="flex h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+          <NativeSelect
             defaultValue={defaultOwnerId ?? users[0]?.id}
             id="follow-up-owner"
             name="ownerId"
@@ -60,7 +60,7 @@ export function FollowUpForm({
                 {person.name}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="follow-up-due">Due *</Label>

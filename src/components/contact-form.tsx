@@ -3,6 +3,7 @@
 import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useActionState } from "react";
+import { CompanyField } from "@/components/company-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +16,13 @@ import {
 // action echoes submitted values back via state: React resets the form after
 // a server action, and the reset restores these defaultValues, which keeps
 // the form filled through the duplicate-warning round trip.
-export function ContactForm() {
+export function ContactForm({
+  companies,
+  defaultCompanyName = "",
+}: {
+  companies: string[];
+  defaultCompanyName?: string;
+}) {
   const [state, formAction, isPending] = useActionState<
     ContactActionState,
     FormData
@@ -78,11 +85,11 @@ export function ContactForm() {
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="companyName">Company</Label>
-          <Input
-            className="h-11"
-            defaultValue={state.values?.companyName ?? ""}
+          <CompanyField
+            companies={companies}
+            defaultValue={state.values?.companyName ?? defaultCompanyName}
             id="companyName"
-            name="companyName"
+            key={state.values?.companyName ?? "initial"}
           />
         </div>
       </div>

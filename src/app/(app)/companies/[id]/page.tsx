@@ -1,5 +1,5 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
-import { Pencil } from "lucide-react";
+import { Pencil, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArchiveRecordButton } from "@/components/archive-record-button";
@@ -101,6 +101,13 @@ export default async function CompanyPage({
           </a>
         )}
         <div className="flex flex-wrap gap-2">
+          <Link
+            className="flex h-11 items-center gap-2 rounded-md border px-4 text-sm transition-colors hover:border-blu"
+            href={`/contacts/new?company=${encodeURIComponent(record.name)}`}
+          >
+            <UserPlus aria-hidden className="size-4 text-blu" />
+            Add person
+          </Link>
           <Link
             className="flex h-11 items-center gap-2 rounded-md border px-4 text-sm transition-colors hover:border-blu"
             href={`/companies/${id}/edit`}

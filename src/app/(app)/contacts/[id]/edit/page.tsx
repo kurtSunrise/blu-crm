@@ -13,20 +13,27 @@ export default async function EditContactPage({
 }) {
   const { id } = await params;
 
-  const [person] = await db
-    .select({
-      id: contact.id,
-      name: contact.name,
-      email: contact.email,
-      phone: contact.phone,
-      title: contact.title,
-      notes: contact.notes,
-      companyName: company.name,
-    })
-    .from(contact)
-    .leftJoin(company, eq(contact.companyId, company.id))
-    .where(and(eq(contact.id, id), isNull(contact.deletedAt)))
-    .limit(1);
+  const [[person], companies] = await Promise.all([
+    db
+      .select({
+        id: contact.id,
+        name: contact.name,
+        email: contact.email,
+        phone: contact.phone,
+        title: contact.title,
+        notes: contact.notes,
+        companyName: company.name,
+      })
+      .from(contact)
+      .leftJoin(company, eq(contact.companyId, company.id))
+      .where(and(eq(contact.id, id), isNull(contact.deletedAt)))
+      .limit(1),
+    db
+      .select({ name: company.name })
+      .from(company)
+      .where(isNull(company.deletedAt))
+      .orderBy(company.name),
+  ]);
 
   if (!person) {
     notFound();
@@ -42,6 +49,7 @@ export default async function EditContactPage({
         </p>
       </header>
       <ContactEditForm
+        companies={companies.map((entry) => entry.name)}
         contact={{
           id: person.id,
           name: person.name,

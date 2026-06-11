@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { CompanyField } from "@/components/company-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,8 +24,10 @@ const PROJECT_TYPE_OPTIONS = [
 
 export function QuickAddForm({
   owners,
+  companies,
 }: {
   owners: { id: string; name: string }[];
+  companies: string[];
 }) {
   const [state, formAction, isPending] = useActionState<ActionState, FormData>(
     createQuickAddDeal,
@@ -35,11 +38,11 @@ export function QuickAddForm({
     <form action={formAction} className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
         <Label htmlFor="companyName">Client / brand *</Label>
-        <Input
+        <CompanyField
           autoFocus
-          className="h-11"
+          companies={companies}
+          defaultValue=""
           id="companyName"
-          name="companyName"
           placeholder="e.g. Westfield"
           required
         />

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
+import { CompanyField } from "@/components/company-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,7 +24,13 @@ export interface EditableContact {
 
 // Same uncontrolled-inputs pattern as ContactForm: the action echoes
 // submitted values back so a validation error doesn't wipe the fields.
-export function ContactEditForm({ contact }: { contact: EditableContact }) {
+export function ContactEditForm({
+  contact,
+  companies,
+}: {
+  contact: EditableContact;
+  companies: string[];
+}) {
   const [state, formAction, isPending] = useActionState<
     ContactActionState,
     FormData
@@ -77,11 +84,11 @@ export function ContactEditForm({ contact }: { contact: EditableContact }) {
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="companyName">Company</Label>
-          <Input
-            className="h-11"
+          <CompanyField
+            companies={companies}
             defaultValue={state.values?.companyName ?? contact.companyName}
             id="companyName"
-            name="companyName"
+            key={state.values?.companyName ?? "initial"}
           />
         </div>
       </div>

@@ -4,6 +4,7 @@ import { draftTools } from "@/lib/ai/tools/draft-tools";
 import { followUpTools } from "@/lib/ai/tools/follow-up-tools";
 import { queryTools } from "@/lib/ai/tools/query-tools";
 import { quoteTools } from "@/lib/ai/tools/quote-tools";
+import { scoringTools } from "@/lib/ai/tools/scoring-tools";
 import { triageTools } from "@/lib/ai/tools/triage-tools";
 import type {
   AiTool,
@@ -16,6 +17,7 @@ import type {
 // system). Page relevance is steered by the <page_context> block instead.
 const ALL_TOOLS: AiTool[] = [
   ...queryTools,
+  ...scoringTools,
   ...draftTools,
   ...dealWriteTools,
   ...followUpTools,

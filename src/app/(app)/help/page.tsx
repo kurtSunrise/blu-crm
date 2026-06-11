@@ -339,6 +339,54 @@ const SECTIONS: HelpSection[] = [
     ),
   },
   {
+    id: "assistant",
+    title: "The Blu assistant",
+    body: (
+      <>
+        <p className={PARA_CLASSES}>
+          The assistant (the sparkles button in the sidebar, or in the header on
+          a phone) is a chat that works the CRM with you. It reads the live
+          pipeline, never stale snapshots, and it can prepare changes, but
+          nothing is ever applied without your say-so.
+        </p>
+        <ol className={STEP_CLASSES}>
+          <li>
+            <strong>Ask about the pipeline</strong>: "which deals have gone
+            quiet for over a week?", "what's closing this month?", "which deals
+            should I chase first?". Matching deals come back as cards you can
+            tap through to.
+          </li>
+          <li>
+            <strong>Capture a lead</strong> by pasting an enquiry. The assistant
+            fills the intake template and asks for anything important that is
+            missing (budget, fixed date, decision-maker) instead of inventing
+            it.
+          </li>
+          <li>
+            <strong>Drafts</strong>: follow-up emails, SMS, call scripts, and
+            qualification questions arrive as cards you can edit in place and
+            copy. Nothing is sent by the app.
+          </li>
+          <li>
+            <strong>Confirmation gating</strong>: any change (new lead, stage
+            move, follow-up, logged activity) pauses on a review card. Adjust
+            the fields right on the card if needed, then Confirm or Cancel.
+            Cancel means nothing happened.
+          </li>
+          <li>
+            <strong>History</strong>: the clock button lists your recent
+            conversations; pick one to resume it. The pencil button starts a
+            fresh conversation.
+          </li>
+        </ol>
+        <p className={PARA_CLASSES}>
+          If the assistant is offline, the rest of the CRM keeps working exactly
+          as normal.
+        </p>
+      </>
+    ),
+  },
+  {
     id: "appearance",
     title: "Light and dark mode",
     body: (

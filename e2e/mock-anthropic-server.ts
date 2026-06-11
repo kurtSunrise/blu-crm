@@ -150,6 +150,7 @@ const lastUserText = (body: AnthropicRequestBody): string => {
 const INBOX_PATTERN = /inbox/i;
 const CAPTURE_PATTERN = /capture/i;
 const DRAFT_PATTERN = /draft/i;
+const CHASE_PATTERN = /chase|prioriti/i;
 // Specs embed a unique company token so accumulated data on the shared dev
 // DB never causes false positives.
 const COMPANY_TOKEN_PATTERN = /UNIQ-\d+/;
@@ -188,6 +189,9 @@ const respond = (body: AnthropicRequestBody): string => {
       }),
       "tool_use"
     );
+  }
+  if (CHASE_PATTERN.test(userText)) {
+    return messageEnvelope(toolUseEvents("rank_open_deals"), "tool_use");
   }
   if (INBOX_PATTERN.test(userText)) {
     return messageEnvelope(toolUseEvents("get_inbox_leads"), "tool_use");

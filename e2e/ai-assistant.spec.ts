@@ -252,6 +252,38 @@ test("a draft artifact is editable in place", async ({ page }) => {
   await expect(card.getByText("edited draft", { exact: false })).toBeVisible();
 });
 
+test("chase priority runs the scoring tool and renders ranked deals", async ({
+  page,
+  request,
+}) => {
+  // An unassigned inbox lead is still an open deal, so it must appear in
+  // the ranked list with the seeded company name.
+  const stamp = Date.now();
+  const companyName = `Chase Co ${stamp}`;
+  const enquiry = await request.post("/api/enquiries", {
+    data: {
+      company: companyName,
+      email: "chase-e2e@example.com",
+      message: "Scoring fixture lead",
+      name: `Chase Test ${stamp}`,
+    },
+  });
+  expect(enquiry.ok()).toBeTruthy();
+
+  await page.goto("/");
+  await skipUnlessAssistantConfigured(page, test);
+
+  await openAssistant(page);
+  await askAssistant(page, "Which deals should I chase first?");
+
+  const artifact = page.locator('section[aria-label="Deals to chase first"]');
+  await expect(artifact).toBeVisible({ timeout: RESPONSE_TIMEOUT_MS });
+  // Ranked rows carry lead IDs. The seeded lead guarantees a non-empty
+  // ranking, but parallel projects share the DB, so any row satisfies this.
+  await expect(artifact.getByText(/BLU-/).first()).toBeVisible();
+  await expect(page.getByText("Mock summary: all done here.")).toBeVisible();
+});
+
 test("a conversation can be resumed from history", async ({ page }) => {
   await page.goto("/");
   await skipUnlessAssistantConfigured(page, test);

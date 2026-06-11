@@ -88,7 +88,7 @@ interface DealSummaryRow {
   valueCents: number | null;
 }
 
-const toDealSummary = (row: DealSummaryRow): DealSummary => ({
+export const toDealSummary = (row: DealSummaryRow): DealSummary => ({
   company: row.companyName,
   contact: row.contactName,
   daysSinceContact: -awstDayDiff(row.lastContactAt ?? row.createdAt),

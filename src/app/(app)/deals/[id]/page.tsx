@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AttachmentUpload } from "@/components/attachment-upload";
 import { CompleteFollowUpButton } from "@/components/complete-follow-up-button";
+import { DealTimeline } from "@/components/deal-timeline";
 import { FollowUpForm } from "@/components/follow-up-form";
 import { QuickLogButtons } from "@/components/quick-log-buttons";
 import { QuoteForm } from "@/components/quote-form";
@@ -28,7 +29,6 @@ import {
   awstDayDiff,
   formatAudFromCents,
   formatDateAwst,
-  formatDateTimeAwst,
   formatRelativeDayAwst,
   relativeDayLabel,
 } from "@/lib/format";
@@ -42,16 +42,6 @@ import { cn } from "@/lib/utils";
 import { isImageType } from "@/lib/validation/attachment";
 
 export const dynamic = "force-dynamic";
-
-const ACTIVITY_LABELS: Record<string, string> = {
-  call: "Call",
-  email: "Email",
-  site_visit: "Site visit",
-  meeting: "Meeting",
-  note: "Note",
-  stage_change: "Stage change",
-  quote_event: "Quote",
-};
 
 const QUOTE_STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
@@ -521,27 +511,11 @@ export default async function DealPage({
         >
           <h2 className="font-heading font-medium text-sm">Timeline</h2>
           {timeline.length === 0 && (
-            <p className="text-muted-foreground text-sm">No activity yet.</p>
+            <p className="text-muted-foreground text-sm">
+              No activity yet. Log the first call or note below.
+            </p>
           )}
-          <ol className="flex flex-col gap-3">
-            {timeline.map((entry) => (
-              <li className="flex flex-col gap-0.5" key={entry.id}>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline">
-                    {ACTIVITY_LABELS[entry.type] ?? entry.type}
-                  </Badge>
-                  <span className="text-muted-foreground text-xs">
-                    {formatDateTimeAwst(entry.createdAt)}
-                    {entry.authorName ? ` · ${entry.authorName}` : ""}
-                  </span>
-                </div>
-                {entry.content && <p className="text-sm">{entry.content}</p>}
-              </li>
-            ))}
-          </ol>
-          <p className="text-muted-foreground text-xs">
-            Lead created {formatDateTimeAwst(record.createdAt)}
-          </p>
+          <DealTimeline entries={timeline} leadCreatedAt={record.createdAt} />
         </section>
       </div>
     </main>

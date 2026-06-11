@@ -24,3 +24,20 @@ export const createContactSchema = z.object({
 });
 
 export type CreateContactInput = z.infer<typeof createContactSchema>;
+
+const MAX_NOTES_LENGTH = 2000;
+
+const optionalNotes = z
+  .string()
+  .trim()
+  .max(MAX_NOTES_LENGTH)
+  .transform((value) => (value === "" ? undefined : value))
+  .optional();
+
+// Editing reuses the create fields (duplicates were already resolved at
+// create time) and adds the free-text notes (FR-2.2).
+export const updateContactSchema = createContactSchema
+  .omit({ allowDuplicate: true })
+  .extend({ notes: optionalNotes });
+
+export type UpdateContactInput = z.infer<typeof updateContactSchema>;

@@ -1,14 +1,49 @@
 import { desc, eq, inArray, or } from "drizzle-orm";
+import { Mail, MessageSquare, Pencil, Phone } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArchiveContactButton } from "@/components/archive-contact-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { db } from "@/db";
-import { activity, company, contact, deal, pipelineStage } from "@/db/schema";
-import { formatAudFromCents, formatDateTimeAwst } from "@/lib/format";
+import {
+  activity,
+  company,
+  contact,
+  deal,
+  pipelineStage,
+  quote,
+} from "@/db/schema";
+import {
+  formatAudFromCents,
+  formatDateAwst,
+  formatDateTimeAwst,
+} from "@/lib/format";
 
 export const dynamic = "force-dynamic";
+
+const HISTORY_LIMIT = 20;
+
+const ACTIVITY_LABELS: Record<string, string> = {
+  call: "Call",
+  email: "Email",
+  site_visit: "Site visit",
+  meeting: "Meeting",
+  note: "Note",
+  stage_change: "Stage",
+  quote_event: "Quote",
+};
+
+const QUOTE_STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  sent: "Sent",
+  viewed: "Viewed",
+  accepted: "Accepted",
+  declined: "Declined",
+};
+
+const quickActionClasses =
+  "flex h-11 items-center gap-2 rounded-md border px-4 text-sm transition-colors hover:border-blu";
 
 export default async function ContactPage({
   params,
@@ -25,6 +60,7 @@ export default async function ContactPage({
       phone: contact.phone,
       title: contact.title,
       notes: contact.notes,
+      companyId: contact.companyId,
       companyName: company.name,
     })
     .from(contact)
@@ -42,6 +78,8 @@ export default async function ContactPage({
       leadId: deal.leadId,
       title: deal.title,
       stageName: pipelineStage.name,
+      isWon: pipelineStage.isWon,
+      isLost: pipelineStage.isLost,
       estimatedValueCents: deal.estimatedValueCents,
       quotedValueCents: deal.quotedValueCents,
     })
@@ -51,98 +89,277 @@ export default async function ContactPage({
     .orderBy(desc(deal.createdAt));
 
   const dealIds = linkedDeals.map((entry) => entry.id);
-  const history =
+  // The unified history covers activities logged on the contact directly
+  // plus everything on their deals (FR-2.2).
+  const historyWhere =
     dealIds.length > 0
-      ? await db
+      ? or(eq(activity.contactId, id), inArray(activity.dealId, dealIds))
+      : eq(activity.contactId, id);
+  const [history, quotes] = await Promise.all([
+    db
+      .select({
+        id: activity.id,
+        type: activity.type,
+        content: activity.content,
+        createdAt: activity.createdAt,
+      })
+      .from(activity)
+      .where(historyWhere)
+      .orderBy(desc(activity.createdAt))
+      .limit(HISTORY_LIMIT),
+    dealIds.length > 0
+      ? db
           .select({
-            id: activity.id,
-            type: activity.type,
-            content: activity.content,
-            createdAt: activity.createdAt,
+            id: quote.id,
+            dealId: quote.dealId,
+            dealTitle: deal.title,
+            valueCents: quote.valueCents,
+            status: quote.status,
+            sentAt: quote.sentAt,
+            viewedAt: quote.viewedAt,
           })
-          .from(activity)
-          .where(
-            or(eq(activity.contactId, id), inArray(activity.dealId, dealIds))
-          )
-          .orderBy(desc(activity.createdAt))
-          .limit(20)
-      : [];
+          .from(quote)
+          .innerJoin(deal, eq(quote.dealId, deal.id))
+          .where(inArray(quote.dealId, dealIds))
+          .orderBy(desc(quote.createdAt))
+      : Promise.resolve([]),
+  ]);
+
+  const openValueCents = linkedDeals
+    .filter((entry) => !(entry.isWon || entry.isLost))
+    .reduce(
+      (total, entry) =>
+        total + (entry.quotedValueCents ?? entry.estimatedValueCents ?? 0),
+      0
+    );
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6">
-      <header className="flex flex-col gap-1">
-        <h1 className="font-semibold text-2xl tracking-tight">{person.name}</h1>
-        <p className="text-muted-foreground text-sm">
-          {[person.title, person.companyName, person.email, person.phone]
-            .filter(Boolean)
-            .join(" · ")}
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6 lg:max-w-6xl">
+      <header className="flex flex-col gap-3">
+        <p className="text-muted-foreground text-xs">
+          <Link className="underline-offset-2 hover:underline" href="/contacts">
+            Contacts
+          </Link>{" "}
+          / Person
         </p>
+        <div className="flex flex-col gap-1">
+          <h1 className="font-semibold text-2xl tracking-tight">
+            {person.name}
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            {[person.title, person.companyName].filter(Boolean).join(" · ") ||
+              "No role or company recorded yet."}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {person.phone && (
+            <a className={quickActionClasses} href={`tel:${person.phone}`}>
+              <Phone aria-hidden className="size-4 text-blu" />
+              Call
+            </a>
+          )}
+          {person.phone && (
+            <a className={quickActionClasses} href={`sms:${person.phone}`}>
+              <MessageSquare aria-hidden className="size-4 text-blu" />
+              Text
+            </a>
+          )}
+          {person.email && (
+            <a className={quickActionClasses} href={`mailto:${person.email}`}>
+              <Mail aria-hidden className="size-4 text-blu" />
+              Email
+            </a>
+          )}
+          <Link className={quickActionClasses} href={`/contacts/${id}/edit`}>
+            <Pencil aria-hidden className="size-4 text-blu" />
+            Edit
+          </Link>
+        </div>
       </header>
 
-      <section aria-label="Deals" className="flex flex-col gap-2">
-        <h2 className="font-heading font-medium text-sm">Deals</h2>
-        {linkedDeals.length === 0 && (
-          <p className="text-muted-foreground text-sm">No deals yet.</p>
-        )}
-        <ul className="flex flex-col gap-2">
-          {linkedDeals.map((entry) => {
-            const valueCents =
-              entry.quotedValueCents ?? entry.estimatedValueCents;
-            return (
-              <li key={entry.id}>
-                <Link className="block" href={`/deals/${entry.id}`}>
-                  <Card className="py-3 transition-colors hover:border-blu">
-                    <CardContent className="flex items-center justify-between gap-2 px-4">
-                      <div className="min-w-0">
-                        <p className="font-mono text-muted-foreground text-xs">
-                          {entry.leadId}
-                        </p>
-                        <p className="truncate font-medium text-sm">
-                          {entry.title}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {valueCents != null && (
-                          <span className="text-sm">
-                            {formatAudFromCents(valueCents)}
-                          </span>
-                        )}
-                        <Badge variant="secondary">{entry.stageName}</Badge>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
+      <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] lg:items-start lg:gap-10">
+        <div className="flex flex-col gap-5">
+          <section aria-label="Deals" className="flex flex-col gap-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <h2 className="font-heading font-medium text-sm">Deals</h2>
+              {openValueCents > 0 && (
+                <span className="text-muted-foreground text-xs">
+                  {formatAudFromCents(openValueCents)} open
+                </span>
+              )}
+            </div>
+            {linkedDeals.length === 0 && (
+              <p className="text-muted-foreground text-sm">No deals yet.</p>
+            )}
+            <ul className="flex flex-col gap-2">
+              {linkedDeals.map((entry) => {
+                const valueCents =
+                  entry.quotedValueCents ?? entry.estimatedValueCents;
+                return (
+                  <li key={entry.id}>
+                    <Link className="block" href={`/deals/${entry.id}`}>
+                      <Card className="py-3 transition-colors hover:border-blu">
+                        <CardContent className="flex items-center justify-between gap-2 px-4">
+                          <div className="min-w-0">
+                            <p className="font-mono text-muted-foreground text-xs">
+                              {entry.leadId}
+                            </p>
+                            <p className="truncate font-medium text-sm">
+                              {entry.title}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            {valueCents != null && (
+                              <span className="text-sm">
+                                {formatAudFromCents(valueCents)}
+                              </span>
+                            )}
+                            <Badge variant="secondary">{entry.stageName}</Badge>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
 
-      <Separator />
+          <section aria-label="Quotes" className="flex flex-col gap-2">
+            <h2 className="font-heading font-medium text-sm">Quotes</h2>
+            {quotes.length === 0 && (
+              <p className="text-muted-foreground text-sm">No quotes yet.</p>
+            )}
+            <ul className="flex flex-col gap-2">
+              {quotes.map((item) => (
+                <li key={item.id}>
+                  <Link className="block" href={`/deals/${item.dealId}`}>
+                    <Card className="py-3 transition-colors hover:border-blu">
+                      <CardContent className="flex items-center justify-between gap-2 px-4">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-sm">
+                            {item.dealTitle}
+                          </p>
+                          <p className="text-muted-foreground text-xs">
+                            {item.sentAt
+                              ? `Sent ${formatDateAwst(item.sentAt)}`
+                              : "Not sent"}
+                            {item.viewedAt
+                              ? ` · Viewed ${formatDateAwst(item.viewedAt)}`
+                              : ""}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {item.valueCents != null && (
+                            <span className="text-sm">
+                              {formatAudFromCents(item.valueCents)}
+                            </span>
+                          )}
+                          <Badge variant="outline">
+                            {QUOTE_STATUS_LABELS[item.status] ?? item.status}
+                          </Badge>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
 
-      <section aria-label="History" className="flex flex-col gap-2">
-        <h2 className="font-heading font-medium text-sm">History</h2>
-        {history.length === 0 && (
-          <p className="text-muted-foreground text-sm">No activity yet.</p>
-        )}
-        <ol className="flex flex-col gap-2">
-          {history.map((entry) => (
-            <li className="text-sm" key={entry.id}>
-              <span className="text-muted-foreground text-xs">
-                {formatDateTimeAwst(entry.createdAt)} ·{" "}
-              </span>
-              {entry.content ?? entry.type}
-            </li>
-          ))}
-        </ol>
-      </section>
+          <section aria-label="History" className="flex flex-col gap-2">
+            <h2 className="font-heading font-medium text-sm">History</h2>
+            {history.length === 0 && (
+              <p className="text-muted-foreground text-sm">No activity yet.</p>
+            )}
+            <ol className="flex flex-col gap-2">
+              {history.map((entry) => (
+                <li className="flex items-start gap-2 text-sm" key={entry.id}>
+                  <Badge className="shrink-0" variant="outline">
+                    {ACTIVITY_LABELS[entry.type] ?? entry.type}
+                  </Badge>
+                  <span className="min-w-0">
+                    <span className="text-muted-foreground text-xs">
+                      {formatDateTimeAwst(entry.createdAt)} ·{" "}
+                    </span>
+                    {entry.content ?? entry.type}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </section>
+        </div>
 
-      {person.notes && (
-        <section aria-label="Notes" className="flex flex-col gap-2">
-          <h2 className="font-heading font-medium text-sm">Notes</h2>
-          <p className="text-sm">{person.notes}</p>
-        </section>
-      )}
+        <div className="flex flex-col gap-5">
+          <section aria-label="Details" className="flex flex-col gap-3">
+            <h2 className="font-heading font-medium text-sm">Details</h2>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+              <div className="flex flex-col">
+                <dt className="text-muted-foreground text-xs">Email</dt>
+                <dd className="text-sm">
+                  {person.email ? (
+                    <a
+                      className="text-blu underline-offset-2 hover:underline"
+                      href={`mailto:${person.email}`}
+                    >
+                      {person.email}
+                    </a>
+                  ) : (
+                    "Not recorded"
+                  )}
+                </dd>
+              </div>
+              <div className="flex flex-col">
+                <dt className="text-muted-foreground text-xs">Phone</dt>
+                <dd className="text-sm">
+                  {person.phone ? (
+                    <a
+                      className="text-blu underline-offset-2 hover:underline"
+                      href={`tel:${person.phone}`}
+                    >
+                      {person.phone}
+                    </a>
+                  ) : (
+                    "Not recorded"
+                  )}
+                </dd>
+              </div>
+              <div className="flex flex-col">
+                <dt className="text-muted-foreground text-xs">Role / title</dt>
+                <dd className="text-sm">{person.title ?? "Not recorded"}</dd>
+              </div>
+              <div className="flex flex-col">
+                <dt className="text-muted-foreground text-xs">Company</dt>
+                <dd className="text-sm">
+                  {person.companyId && person.companyName ? (
+                    <Link
+                      className="text-blu underline-offset-2 hover:underline"
+                      href={`/companies/${person.companyId}`}
+                    >
+                      {person.companyName}
+                    </Link>
+                  ) : (
+                    "Not recorded"
+                  )}
+                </dd>
+              </div>
+            </dl>
+          </section>
+
+          <section aria-label="Notes" className="flex flex-col gap-2">
+            <h2 className="font-heading font-medium text-sm">Notes</h2>
+            {person.notes ? (
+              <p className="text-sm">{person.notes}</p>
+            ) : (
+              <p className="text-muted-foreground text-sm">
+                No notes yet. Add them from Edit.
+              </p>
+            )}
+          </section>
+
+          <ArchiveContactButton contactId={person.id} name={person.name} />
+        </div>
+      </div>
     </main>
   );
 }

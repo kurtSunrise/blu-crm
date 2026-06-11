@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Locator, test } from "@playwright/test";
 
 // FR-1.3 customisable stages. Tests only ever touch stages they create,
 // so the eight defaults that other specs rely on stay untouched even with
@@ -6,6 +6,15 @@ import { expect, test } from "@playwright/test";
 
 const stagesCard = (page: import("@playwright/test").Page) =>
   page.locator('section[aria-label="Pipeline stages"]');
+
+// The rename and remove panels open via React onClick, so a click that
+// lands before hydration is silently lost. Retry until the panel shows.
+const openPanel = async (trigger: Locator, content: Locator) => {
+  await expect(async () => {
+    await trigger.click();
+    await expect(content).toBeVisible({ timeout: 1000 });
+  }).toPass();
+};
 
 test("a stage can be added, renamed, reordered, and removed (FR-1.3)", async ({
   page,
@@ -28,7 +37,10 @@ test("a stage can be added, renamed, reordered, and removed (FR-1.3)", async ({
   ).toBeVisible();
 
   await page.goto("/settings");
-  await card.getByRole("button", { name: `Rename ${stageName}` }).click();
+  await openPanel(
+    card.getByRole("button", { name: `Rename ${stageName}` }),
+    card.getByLabel(`New name for ${stageName}`)
+  );
   await card.getByLabel(`New name for ${stageName}`).fill(renamedName);
   await card.getByRole("button", { name: "Save name" }).click();
   await expect(card.getByText("Stage renamed.")).toBeVisible();
@@ -37,7 +49,10 @@ test("a stage can be added, renamed, reordered, and removed (FR-1.3)", async ({
   await card.getByRole("button", { name: `Move ${renamedName} up` }).click();
   await expect(card.getByText("Stage order updated.")).toBeVisible();
 
-  await card.getByRole("button", { name: `Remove ${renamedName}` }).click();
+  await openPanel(
+    card.getByRole("button", { name: `Remove ${renamedName}` }),
+    card.getByRole("button", { name: "Remove stage" })
+  );
   await card.getByRole("button", { name: "Remove stage" }).click();
   await expect(card.getByText("Stage removed.")).toBeVisible();
   await expect(card.getByText(renamedName, { exact: true })).toBeHidden();
@@ -74,7 +89,10 @@ test("removing a stage with deals requires reassigning them (FR-1.3 AC)", async 
 
   // Removing the stage asks where its deals should go.
   await page.goto("/settings");
-  await card.getByRole("button", { name: `Remove ${stageName}` }).click();
+  await openPanel(
+    card.getByRole("button", { name: `Remove ${stageName}` }),
+    card.getByLabel("Move its deals to")
+  );
   await card
     .getByLabel("Move its deals to")
     .selectOption({ label: "Lead Captured" });

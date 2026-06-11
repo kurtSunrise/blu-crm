@@ -29,8 +29,7 @@ if (process.release?.name === "node") {
 
 // Neon's HTTP driver only talks to Neon's proxy, so local development against
 // a plain Postgres (localhost DATABASE_URL) uses the node-postgres driver
-// instead. The import stays dynamic so `pg` never enters the Cloudflare
-// Workers bundle; both drivers expose the same Drizzle query-builder API.
+// instead. Both drivers expose the same Drizzle query-builder API.
 const createDb = (): Database => {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
@@ -39,8 +38,15 @@ const createDb = (): Database => {
     );
   }
   if (LOCAL_HOSTS.has(new URL(databaseUrl).hostname)) {
-    const { drizzle: drizzleNodePg } =
-      require("drizzle-orm/node-postgres") as typeof import("drizzle-orm/node-postgres");
+    // Local Postgres is a dev/E2E-only path; the deployed Worker always points
+    // at a remote Neon URL and never reaches this branch. The specifier is
+    // assembled at runtime so esbuild can't constant-fold it back to a literal
+    // and bundle `pg` (and its optional `pg-cloudflare` socket shim) into the
+    // Workers bundle, where `pg-cloudflare` fails to resolve at build time.
+    const nodePostgresModule = ["drizzle-orm", "node-postgres"].join("/");
+    const { drizzle: drizzleNodePg } = require(
+      nodePostgresModule
+    ) as typeof import("drizzle-orm/node-postgres");
     return drizzleNodePg(databaseUrl, { schema }) as unknown as Database;
   }
   return drizzleNeonHttp(neon(databaseUrl), { schema });

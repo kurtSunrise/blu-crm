@@ -9,6 +9,9 @@ export interface AiToolContext {
 
 export interface AiToolOutcome {
   artifacts?: ArtifactPayload[];
+  // Routes a write executed after confirmation emits data_changed for these
+  // paths so the open pages refresh (router.refresh on the client)
+  changedPaths?: string[];
   resultText: string;
 }
 
@@ -30,7 +33,10 @@ const toInputSchema = (schema: z.ZodType): Anthropic.Tool.InputSchema => {
 
 export const defineTool = <TSchema extends z.ZodType>(options: {
   description: string;
-  execute: (input: z.infer<TSchema>, ctx: AiToolContext) => Promise<AiToolOutcome>;
+  execute: (
+    input: z.infer<TSchema>,
+    ctx: AiToolContext
+  ) => Promise<AiToolOutcome>;
   isWrite: boolean;
   name: string;
   schema: TSchema;

@@ -1,4 +1,14 @@
-import { and, asc, desc, eq, ilike, isNull, or, type SQL, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  isNull,
+  or,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
@@ -62,7 +72,7 @@ const dealSummaryColumns = {
   valueCents: dealValue,
 };
 
-type DealSummaryRow = {
+interface DealSummaryRow {
   companyName: string | null;
   contactName: string | null;
   createdAt: Date;
@@ -76,7 +86,7 @@ type DealSummaryRow = {
   stageName: string;
   title: string;
   valueCents: number | null;
-};
+}
 
 const toDealSummary = (row: DealSummaryRow): DealSummary => ({
   company: row.companyName,
@@ -130,7 +140,10 @@ const queryDealsSchema = z.object({
     .positive()
     .optional()
     .describe("Only deals with no logged contact for at least this many days"),
-  stageName: z.string().optional().describe("Filter by stage name (partial ok)"),
+  stageName: z
+    .string()
+    .optional()
+    .describe("Filter by stage name (partial ok)"),
   status: z
     .enum(["open", "won", "lost", "all"])
     .optional()
@@ -145,6 +158,16 @@ const queryDeals = defineTool({
   name: "query_deals",
   schema: queryDealsSchema,
 });
+
+const queryOrder = (input: z.infer<typeof queryDealsSchema>) => {
+  if (input.staleDays !== undefined) {
+    return asc(lastTouch);
+  }
+  if (input.closingWithinDays !== undefined) {
+    return asc(sql`least(${deal.fixedDate}, ${deal.expectedCloseDate})`);
+  }
+  return desc(deal.createdAt);
+};
 
 const runQueryDeals = async (input: z.infer<typeof queryDealsSchema>) => {
   const conditions: SQL[] = [isNull(deal.deletedAt)];
@@ -183,9 +206,7 @@ const runQueryDeals = async (input: z.infer<typeof queryDealsSchema>) => {
     conditions.push(sql`${lastTouch} <= ${cutoff}`);
   }
   if (input.closingWithinDays !== undefined) {
-    const horizon = new Date(
-      Date.now() + input.closingWithinDays * MS_PER_DAY
-    );
+    const horizon = new Date(Date.now() + input.closingWithinDays * MS_PER_DAY);
     const closingCondition = or(
       sql`${deal.fixedDate} <= ${horizon}`,
       sql`${deal.expectedCloseDate} <= ${horizon}`
@@ -205,13 +226,6 @@ const runQueryDeals = async (input: z.infer<typeof queryDealsSchema>) => {
     );
   }
 
-  const orderBy =
-    input.staleDays !== undefined
-      ? asc(lastTouch)
-      : input.closingWithinDays !== undefined
-        ? asc(sql`least(${deal.fixedDate}, ${deal.expectedCloseDate})`)
-        : desc(deal.createdAt);
-
   const rows = await db
     .select(dealSummaryColumns)
     .from(deal)
@@ -220,7 +234,7 @@ const runQueryDeals = async (input: z.infer<typeof queryDealsSchema>) => {
     .leftJoin(contact, eq(deal.contactId, contact.id))
     .leftJoin(user, eq(deal.ownerId, user.id))
     .where(and(...conditions))
-    .orderBy(orderBy)
+    .orderBy(queryOrder(input))
     .limit(input.limit ?? DEFAULT_LIMIT);
 
   const deals = rows.map(toDealSummary);
@@ -236,10 +250,7 @@ const runQueryDeals = async (input: z.infer<typeof queryDealsSchema>) => {
 const getDealSchema = z
   .object({
     dealId: z.string().optional().describe("Internal deal id"),
-    leadId: z
-      .string()
-      .optional()
-      .describe("Lead reference like BLU-2026-014"),
+    leadId: z.string().optional().describe("Lead reference like BLU-2026-014"),
   })
   .refine((value) => Boolean(value.dealId ?? value.leadId), {
     message: "Provide dealId or leadId",

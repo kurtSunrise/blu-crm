@@ -2,8 +2,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "blu-crm",
   "main": ".open-next/worker.js",
-  "compatibility_date": "2026-06-01",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_date": "2026-06-11",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
@@ -12,6 +12,12 @@
     {
       "binding": "PHOTO_BUCKET",
       "bucket_name": "blu-crm-photos"
+    },
+    {
+      // Required by the r2IncrementalCache override in open-next.config.ts.
+      // Create before deploying: npx wrangler r2 bucket create blu-crm-cache
+      "binding": "NEXT_INC_CACHE_R2_BUCKET",
+      "bucket_name": "blu-crm-cache"
     }
   ],
   "observability": {

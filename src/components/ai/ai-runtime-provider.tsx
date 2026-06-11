@@ -5,7 +5,7 @@ import {
   type ChatModelAdapter,
   useLocalRuntime,
 } from "@assistant-ui/react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   type MutableRefObject,
   type ReactNode,
@@ -13,13 +13,17 @@ import {
   useMemo,
   useRef,
 } from "react";
-import { useAiAssistant } from "@/components/ai/ai-context";
+import {
+  type ConfirmationDecision,
+  useAiAssistant,
+} from "@/components/ai/ai-context";
 import { parseStreamLine, type StreamPayload } from "@/lib/ai/stream-protocol";
 
 // Billify's custom ChatModelAdapter pattern: refs carry the live pathname /
-// entity / thread so the adapter (created once) never closes over stale
-// state. Unlike Billify, run() is an async generator so text streams into
-// the thread as it arrives.
+// entity / thread / pending-decision so the adapter (created once) never
+// closes over stale state. run() is an async generator so text streams into
+// the thread as it arrives. A user turn is either a normal message or, when
+// the confirmation card recorded a decision, a confirmation round-trip.
 
 interface RequestContext {
   contactId?: string;
@@ -29,7 +33,17 @@ interface RequestContext {
 }
 
 interface AdapterCallbacks {
+  refresh: () => void;
+  setDecision: (decision: ConfirmationDecision | null) => void;
   setOffline: (offline: boolean) => void;
+  setPendingConfirmation: (
+    pending: {
+      input: unknown;
+      summary: string;
+      toolName: string;
+      toolUseId: string;
+    } | null
+  ) => void;
   setThreadId: (threadId: string | null) => void;
 }
 
@@ -38,6 +52,7 @@ type AssistantContentPart =
   | { type: "data"; name: string; data: unknown };
 
 const HTTP_UNAUTHORIZED = 401;
+const HTTP_CONFLICT = 409;
 const HTTP_SERVICE_UNAVAILABLE = 503;
 
 const OFFLINE_MESSAGE =
@@ -64,6 +79,9 @@ const extractMessageText = (content: unknown): string => {
 const errorTextForStatus = async (response: Response): Promise<string> => {
   if (response.status === HTTP_UNAUTHORIZED) {
     return "Your session has expired. Sign in again to use the assistant.";
+  }
+  if (response.status === HTTP_CONFLICT) {
+    return "That action was already resolved. Tell me what you'd like to do next.";
   }
   try {
     const payload = (await response.json()) as { error?: string };
@@ -105,38 +123,62 @@ async function* streamPayloads(
   }
 }
 
+interface ChatRequestBody {
+  confirmation?: {
+    approved: boolean;
+    finalInput?: unknown;
+    toolUseId: string;
+  };
+  message?: string;
+  pageContext: { contactId?: string; dealId?: string; pathname: string };
+  threadId?: string;
+}
+
 const createAdapter = (
   requestRef: MutableRefObject<RequestContext>,
+  decisionRef: MutableRefObject<ConfirmationDecision | null>,
   callbacksRef: MutableRefObject<AdapterCallbacks>
 ): ChatModelAdapter => ({
   async *run({ messages, abortSignal }) {
-    const lastUserMessage = [...messages]
-      .reverse()
-      .find((message) => message.role === "user");
-    const messageText = extractMessageText(lastUserMessage?.content).trim();
-    if (!messageText) {
-      yield {
-        content: [
-          {
-            text: "Hi! Ask me about the pipeline, a client, or paste an enquiry to capture.",
-            type: "text",
-          },
-        ],
-      };
-      return;
+    const request = requestRef.current;
+    const decision = decisionRef.current;
+
+    const body: ChatRequestBody = {
+      pageContext: {
+        contactId: request.contactId,
+        dealId: request.dealId,
+        pathname: request.pathname,
+      },
+      threadId: request.threadId ?? undefined,
+    };
+
+    if (decision) {
+      // The visible "Approve" / "Cancel" bubble triggered this run; the
+      // payload is the structured confirmation, not the bubble text.
+      body.confirmation = decision;
+      callbacksRef.current.setDecision(null);
+      callbacksRef.current.setPendingConfirmation(null);
+    } else {
+      const lastUserMessage = [...messages]
+        .reverse()
+        .find((message) => message.role === "user");
+      const messageText = extractMessageText(lastUserMessage?.content).trim();
+      if (!messageText) {
+        yield {
+          content: [
+            {
+              text: "Hi! Ask me about the pipeline, a client, or paste an enquiry to capture.",
+              type: "text",
+            },
+          ],
+        };
+        return;
+      }
+      body.message = messageText;
     }
 
-    const request = requestRef.current;
     const response = await fetch("/api/chat", {
-      body: JSON.stringify({
-        message: messageText,
-        pageContext: {
-          contactId: request.contactId,
-          dealId: request.dealId,
-          pathname: request.pathname,
-        },
-        threadId: request.threadId ?? undefined,
-      }),
+      body: JSON.stringify(body),
       headers: { "content-type": "application/json" },
       method: "POST",
       signal: abortSignal,
@@ -193,6 +235,28 @@ const createAdapter = (
           });
           yield { content: snapshot() as never };
           break;
+        case "confirmation_request":
+          dataParts.push({
+            data: {
+              input: payload.input,
+              summary: payload.summary,
+              toolName: payload.toolName,
+              toolUseId: payload.toolUseId,
+            },
+            name: "confirmation_request",
+            type: "data",
+          });
+          callbacksRef.current.setPendingConfirmation({
+            input: payload.input,
+            summary: payload.summary,
+            toolName: payload.toolName,
+            toolUseId: payload.toolUseId,
+          });
+          yield { content: snapshot() as never };
+          break;
+        case "data_changed":
+          callbacksRef.current.refresh();
+          break;
         case "error":
           text =
             text.length > 0 ? `${text}\n\n${payload.message}` : payload.message;
@@ -213,8 +277,17 @@ const createAdapter = (
 });
 
 export function AiRuntimeProvider({ children }: { children: ReactNode }) {
-  const { entity, setOffline, setThreadId, threadId } = useAiAssistant();
+  const {
+    decision,
+    entity,
+    setDecision,
+    setOffline,
+    setPendingConfirmation,
+    setThreadId,
+    threadId,
+  } = useAiAssistant();
   const pathname = usePathname();
+  const router = useRouter();
 
   const requestRef = useRef<RequestContext>({ pathname, threadId });
   useEffect(() => {
@@ -226,14 +299,34 @@ export function AiRuntimeProvider({ children }: { children: ReactNode }) {
     };
   }, [entity, pathname, threadId]);
 
-  const callbacksRef = useRef<AdapterCallbacks>({ setOffline, setThreadId });
+  const decisionRef = useRef<ConfirmationDecision | null>(decision);
   useEffect(() => {
-    callbacksRef.current = { setOffline, setThreadId };
-  }, [setOffline, setThreadId]);
+    decisionRef.current = decision;
+  }, [decision]);
+
+  const callbacksRef = useRef<AdapterCallbacks>({
+    refresh: () => router.refresh(),
+    setDecision,
+    setOffline,
+    setPendingConfirmation,
+    setThreadId,
+  });
+  useEffect(() => {
+    callbacksRef.current = {
+      refresh: () => router.refresh(),
+      setDecision,
+      setOffline,
+      setPendingConfirmation,
+      setThreadId,
+    };
+  }, [router, setDecision, setOffline, setPendingConfirmation, setThreadId]);
 
   // Created once; refs keep it current (recreating the adapter would reset
   // in-flight streams).
-  const adapter = useMemo(() => createAdapter(requestRef, callbacksRef), []);
+  const adapter = useMemo(
+    () => createAdapter(requestRef, decisionRef, callbacksRef),
+    []
+  );
   const runtime = useLocalRuntime(adapter);
 
   return (

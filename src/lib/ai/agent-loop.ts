@@ -1,10 +1,16 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import { recordProposedToolCall } from "@/lib/ai/audit";
 import { getAiModel } from "@/lib/ai/client";
 import type { StreamPayload } from "@/lib/ai/stream-protocol";
 import { SYSTEM_PROMPT } from "@/lib/ai/system-prompt";
-import { executeToolCall, TOOL_DEFINITIONS } from "@/lib/ai/tools";
+import { appendThreadMessage, setThreadPending } from "@/lib/ai/threads";
+import {
+  executeToolCall,
+  isWriteTool,
+  summarizeToolCall,
+  TOOL_DEFINITIONS,
+} from "@/lib/ai/tools";
 import type { AiToolContext } from "@/lib/ai/tools/types";
-import { appendThreadMessage } from "@/lib/ai/threads";
 
 // One request hosts the whole multi-tool turn, so both caps are defensive:
 // the model is also instructed to keep turns focused.
@@ -19,7 +25,7 @@ export interface AgentTurnParams {
   send: (payload: StreamPayload) => void;
 }
 
-const runToolCalls = async (
+const runReadToolCalls = async (
   toolUses: Anthropic.ToolUseBlock[],
   params: AgentTurnParams
 ): Promise<Anthropic.ToolResultBlockParam[]> => {
@@ -49,8 +55,58 @@ const runToolCalls = async (
   return results;
 };
 
-// Manual agentic loop (not the SDK tool runner) because Phase 2 write tools
-// must pause mid-turn for user confirmation instead of executing.
+// A write tool pauses the turn for user confirmation (FR-7.8). Read tools
+// from the same assistant turn run now; their results are held with the
+// pending write so the resume message can answer every tool_use at once.
+// Extra writes beyond the first are declined (one write per turn).
+const pauseForConfirmation = async (
+  toolUses: Anthropic.ToolUseBlock[],
+  params: AgentTurnParams
+): Promise<void> => {
+  const reads = toolUses.filter((block) => !isWriteTool(block.name));
+  const writes = toolUses.filter((block) => isWriteTool(block.name));
+  const [gated, ...extraWrites] = writes;
+  if (!gated) {
+    return;
+  }
+
+  const heldToolResults = await runReadToolCalls(reads, params);
+  for (const extra of extraWrites) {
+    heldToolResults.push({
+      content:
+        "Declined automatically: propose one change at a time and wait for the user's decision before the next.",
+      is_error: true,
+      tool_use_id: extra.id,
+      type: "tool_result",
+    });
+  }
+
+  const summary = summarizeToolCall(gated.name);
+  await setThreadPending(params.ctx.threadId, {
+    heldToolResults,
+    input: gated.input,
+    summary,
+    toolName: gated.name,
+    toolUseId: gated.id,
+  });
+  await recordProposedToolCall({
+    input: gated.input,
+    threadId: params.ctx.threadId,
+    toolName: gated.name,
+    toolUseId: gated.id,
+    userId: params.ctx.userId,
+  });
+  params.send({
+    input: gated.input,
+    summary,
+    toolName: gated.name,
+    toolUseId: gated.id,
+    type: "confirmation_request",
+  });
+};
+
+// Manual agentic loop (not the SDK tool runner) because write tools must
+// pause mid-turn for user confirmation instead of executing.
 export const runAgentTurn = async (params: AgentTurnParams): Promise<void> => {
   const { client, ctx, messages, send } = params;
 
@@ -89,7 +145,12 @@ export const runAgentTurn = async (params: AgentTurnParams): Promise<void> => {
       return;
     }
 
-    const toolResults = await runToolCalls(toolUses, params);
+    if (toolUses.some((block) => isWriteTool(block.name))) {
+      await pauseForConfirmation(toolUses, params);
+      return;
+    }
+
+    const toolResults = await runReadToolCalls(toolUses, params);
     await appendThreadMessage(ctx.threadId, "user", toolResults);
     messages.push({ content: toolResults, role: "user" });
   }

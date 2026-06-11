@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { followUp } from "@/db/schema";
+import { createFollowUpCore } from "@/lib/mutations/follow-up";
 import {
   completeFollowUpSchema,
   createFollowUpSchema,
@@ -28,20 +29,7 @@ export const createFollowUp = async (
     return { error: parsed.error.issues[0]?.message ?? "Invalid follow-up" };
   }
 
-  const { dealId, action, ownerId, dueDate } = parsed.data;
-
-  await db.insert(followUp).values({
-    dealId,
-    action,
-    ownerId,
-    dueDate,
-    createdBy: ownerId,
-  });
-
-  revalidatePath("/");
-  revalidatePath("/tasks");
-  revalidatePath(`/deals/${dealId}`);
-  return {};
+  return await createFollowUpCore(parsed.data);
 };
 
 export const completeFollowUp = async (

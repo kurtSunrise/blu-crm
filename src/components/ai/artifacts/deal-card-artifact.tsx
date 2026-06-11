@@ -89,10 +89,7 @@ export function DealCardArtifact({ data }: { data: DealCardData }) {
           </h4>
           <ul className="mt-1 flex flex-col gap-1">
             {openFollowUps.map((entry) => (
-              <li
-                className="text-sm"
-                key={`${entry.action}-${entry.dueDate}`}
-              >
+              <li className="text-sm" key={`${entry.action}-${entry.dueDate}`}>
                 {entry.action}{" "}
                 <span className="text-muted-foreground text-xs">
                   ({entry.owner}, due {entry.dueDate})

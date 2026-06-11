@@ -13,6 +13,10 @@ import {
   DraftMessageArtifact,
   type DraftMessageData,
 } from "@/components/ai/artifacts/draft-message-artifact";
+import {
+  ConfirmationCard,
+  type ConfirmationRequestData,
+} from "@/components/ai/confirmation-card";
 
 interface DataPart {
   data: unknown;
@@ -49,6 +53,13 @@ export function DataPartsRenderer() {
             return (
               <DraftMessageArtifact
                 data={part.data as DraftMessageData}
+                key={key}
+              />
+            );
+          case "confirmation_request":
+            return (
+              <ConfirmationCard
+                data={part.data as ConfirmationRequestData}
                 key={key}
               />
             );

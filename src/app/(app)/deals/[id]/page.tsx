@@ -100,6 +100,75 @@ function buildKeyDates(
   return keyDates;
 }
 
+// Company and contact names link through to their pages (FR-2).
+function buildFacts(record: {
+  companyId: string | null;
+  companyName: string | null;
+  contactEmail: string | null;
+  contactId: string | null;
+  contactName: string | null;
+  contactPhone: string | null;
+  decisionMakerConfirmed: boolean;
+  lostReason: keyof typeof LOST_REASON_LABELS | null;
+  ownerName: string | null;
+  projectType: keyof typeof PROJECT_TYPE_LABELS | null;
+  source: string;
+  venue: string | null;
+}): { label: string; value: React.ReactNode }[] {
+  return [
+    {
+      label: "Company",
+      value:
+        record.companyId && record.companyName ? (
+          <Link
+            className="text-blu underline underline-offset-2"
+            href={`/companies/${record.companyId}`}
+          >
+            {record.companyName}
+          </Link>
+        ) : (
+          record.companyName
+        ),
+    },
+    {
+      label: "Contact",
+      value: record.contactName ? (
+        <>
+          {record.contactId ? (
+            <Link
+              className="text-blu underline underline-offset-2"
+              href={`/contacts/${record.contactId}`}
+            >
+              {record.contactName}
+            </Link>
+          ) : (
+            record.contactName
+          )}
+          {record.contactEmail ? ` · ${record.contactEmail}` : ""}
+          {record.contactPhone ? ` · ${record.contactPhone}` : ""}
+        </>
+      ) : null,
+    },
+    { label: "Owner", value: record.ownerName ?? "Unassigned" },
+    { label: "Source", value: record.source.replace("_", " ") },
+    {
+      label: "Project type",
+      value: record.projectType
+        ? PROJECT_TYPE_LABELS[record.projectType]
+        : null,
+    },
+    { label: "Venue / location", value: record.venue },
+    {
+      label: "Decision maker confirmed",
+      value: record.decisionMakerConfirmed ? "Yes" : "No",
+    },
+    {
+      label: "Lost reason",
+      value: record.lostReason ? LOST_REASON_LABELS[record.lostReason] : null,
+    },
+  ].filter((fact) => fact.value);
+}
+
 function KeyDateTile({
   label,
   date,
@@ -262,59 +331,7 @@ export default async function DealPage({
 
   const valueCents = record.quotedValueCents ?? record.estimatedValueCents;
 
-  // Company and contact names link through to their pages (FR-2).
-  const facts: { label: string; value: React.ReactNode }[] = [
-    {
-      label: "Company",
-      value:
-        record.companyId && record.companyName ? (
-          <Link
-            className="text-blu underline underline-offset-2"
-            href={`/companies/${record.companyId}`}
-          >
-            {record.companyName}
-          </Link>
-        ) : (
-          record.companyName
-        ),
-    },
-    {
-      label: "Contact",
-      value: record.contactName ? (
-        <>
-          {record.contactId ? (
-            <Link
-              className="text-blu underline underline-offset-2"
-              href={`/contacts/${record.contactId}`}
-            >
-              {record.contactName}
-            </Link>
-          ) : (
-            record.contactName
-          )}
-          {record.contactEmail ? ` · ${record.contactEmail}` : ""}
-          {record.contactPhone ? ` · ${record.contactPhone}` : ""}
-        </>
-      ) : null,
-    },
-    { label: "Owner", value: record.ownerName ?? "Unassigned" },
-    { label: "Source", value: record.source.replace("_", " ") },
-    {
-      label: "Project type",
-      value: record.projectType
-        ? PROJECT_TYPE_LABELS[record.projectType]
-        : null,
-    },
-    { label: "Venue / location", value: record.venue },
-    {
-      label: "Decision maker confirmed",
-      value: record.decisionMakerConfirmed ? "Yes" : "No",
-    },
-    {
-      label: "Lost reason",
-      value: record.lostReason ? LOST_REASON_LABELS[record.lostReason] : null,
-    },
-  ].filter((fact) => fact.value);
+  const facts = buildFacts(record);
 
   const keyDates = buildKeyDates(record, openFollowUps[0]?.dueDate);
 

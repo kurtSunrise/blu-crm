@@ -70,6 +70,39 @@ export const appendThreadMessage = async (
   return inserted.id;
 };
 
+// What the loop parks on the thread while a write tool awaits the user's
+// decision (FR-7.8). heldToolResults carries results for any read tools
+// from the same assistant turn so the resume message answers every
+// tool_use block at once.
+export interface PendingToolUse {
+  heldToolResults: Anthropic.ToolResultBlockParam[];
+  input: unknown;
+  summary: string;
+  toolName: string;
+  toolUseId: string;
+}
+
+export const setThreadPending = async (
+  threadId: string,
+  pending: PendingToolUse
+): Promise<void> => {
+  await db
+    .update(chatThread)
+    .set({
+      pendingToolUse: pending,
+      status: "awaiting_confirmation",
+      updatedAt: new Date(),
+    })
+    .where(eq(chatThread.id, threadId));
+};
+
+export const clearThreadPending = async (threadId: string): Promise<void> => {
+  await db
+    .update(chatThread)
+    .set({ pendingToolUse: null, status: "idle", updatedAt: new Date() })
+    .where(eq(chatThread.id, threadId));
+};
+
 const isPlainUserTurn = (message: Anthropic.MessageParam): boolean => {
   if (message.role !== "user") {
     return false;
@@ -92,16 +125,16 @@ export const loadThreadMessages = async (
     .orderBy(desc(chatMessage.createdAt))
     .limit(REPLAY_MESSAGE_CAP);
 
-  const messages = rows
-    .reverse()
-    .map(
-      (row) =>
-        ({
-          content: row.content as Anthropic.MessageParam["content"],
-          role: row.role,
-        }) as Anthropic.MessageParam
-    );
+  const messages = rows.reverse().map(
+    (row) =>
+      ({
+        content: row.content as Anthropic.MessageParam["content"],
+        role: row.role,
+      }) as Anthropic.MessageParam
+  );
 
   const firstPlainUserTurn = messages.findIndex(isPlainUserTurn);
-  return firstPlainUserTurn <= 0 ? messages : messages.slice(firstPlainUserTurn);
+  return firstPlainUserTurn <= 0
+    ? messages
+    : messages.slice(firstPlainUserTurn);
 };

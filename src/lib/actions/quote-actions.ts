@@ -4,7 +4,8 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { activity, deal, quote } from "@/db/schema";
-import { dollarsToCents, formatAudFromCents } from "@/lib/format";
+import { formatAudFromCents } from "@/lib/format";
+import { createQuoteCore } from "@/lib/mutations/quote";
 import {
   createQuoteSchema,
   sendQuoteSchema,
@@ -28,18 +29,7 @@ export const createQuote = async (
     return { error: parsed.error.issues[0]?.message ?? "Invalid quote" };
   }
 
-  const { dealId, valueDollars } = parsed.data;
-  const valueCents = dollarsToCents(valueDollars);
-
-  await db.insert(quote).values({ dealId, valueCents });
-  await db.insert(activity).values({
-    dealId,
-    type: "quote_event",
-    content: `Quote drafted at ${formatAudFromCents(valueCents)}`,
-  });
-
-  revalidatePath(`/deals/${dealId}`);
-  return {};
+  return await createQuoteCore(parsed.data);
 };
 
 export const sendQuote = async (input: unknown): Promise<QuoteActionState> => {

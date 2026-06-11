@@ -22,9 +22,21 @@ export default defineConfig({
     { name: "tablet", use: { ...devices["iPad Pro 11"] } },
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },
   ],
-  webServer: {
-    command: "npm run dev",
-    url: baseURL,
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: [
+    {
+      // Deterministic Anthropic stand-in for the AI assistant specs.
+      command: "npx tsx e2e/mock-anthropic-server.ts",
+      url: "http://127.0.0.1:4848/health",
+      reuseExistingServer: !process.env.CI,
+    },
+    {
+      command: "npm run dev",
+      url: baseURL,
+      reuseExistingServer: !process.env.CI,
+      env: {
+        ANTHROPIC_API_KEY: "mock-key-for-e2e",
+        ANTHROPIC_BASE_URL: "http://127.0.0.1:4848",
+      },
+    },
+  ],
 });

@@ -15,6 +15,14 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import {
+  AiAssistantProvider,
+  useAiAssistant,
+} from "@/components/ai/ai-context";
+import {
+  AiAssistantDock,
+  AiLauncherButton,
+} from "@/components/ai/chat-launcher";
 import { BrandMark } from "@/components/brand-mark";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
@@ -79,7 +87,16 @@ function SidebarLink({
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <AiAssistantProvider>
+      <AppShellInner>{children}</AppShellInner>
+    </AiAssistantProvider>
+  );
+}
+
+function AppShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { open: assistantOpen } = useAiAssistant();
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -111,6 +128,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           aria-label="Secondary"
           className="flex flex-col gap-1 border-t p-3"
         >
+          <AiLauncherButton withLabel />
           {SECONDARY_NAV.map((item) => (
             <SidebarLink
               active={isActivePath(pathname, item.href)}
@@ -132,6 +150,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </span>
           </Link>
           <div className="ml-auto flex items-center gap-1">
+            <AiLauncherButton />
             {SECONDARY_NAV.map((item) => {
               const Icon = item.icon;
               return (
@@ -153,7 +172,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <div className="flex-1 pb-20 md:pb-8 md:pl-60" id="main-content">
+      <div
+        className={cn(
+          "flex-1 pb-20 md:pb-8 md:pl-60",
+          assistantOpen && "md:pr-[400px]"
+        )}
+        id="main-content"
+      >
         {children}
       </div>
 
@@ -184,6 +209,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </ul>
       </nav>
+
+      <AiAssistantDock />
     </div>
   );
 }

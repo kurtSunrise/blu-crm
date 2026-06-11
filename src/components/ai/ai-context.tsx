@@ -11,7 +11,8 @@ import {
 
 // Shared assistant state (Billify's *-context pattern): panel visibility,
 // the active persisted thread, the on-screen entity registered by detail
-// pages, and the offline flag set when /api/chat reports 503.
+// pages, the offline flag set when /api/chat reports 503, and the pending
+// write-confirmation handshake (FR-7.8).
 
 export interface AiEntityRef {
   contactId?: string;
@@ -19,14 +20,33 @@ export interface AiEntityRef {
   label?: string;
 }
 
+export interface PendingConfirmation {
+  input: unknown;
+  summary: string;
+  toolName: string;
+  toolUseId: string;
+}
+
+// Set by the confirmation card; picked up by the runtime adapter, which
+// sends it to /api/chat as a confirmation instead of a chat message.
+export interface ConfirmationDecision {
+  approved: boolean;
+  finalInput?: unknown;
+  toolUseId: string;
+}
+
 interface AiAssistantContextValue {
   clearEntity: () => void;
+  decision: ConfirmationDecision | null;
   entity: AiEntityRef | null;
   offline: boolean;
   open: boolean;
+  pendingConfirmation: PendingConfirmation | null;
   registerEntity: (entity: AiEntityRef) => void;
+  setDecision: (decision: ConfirmationDecision | null) => void;
   setOffline: (offline: boolean) => void;
   setOpen: (open: boolean) => void;
+  setPendingConfirmation: (pending: PendingConfirmation | null) => void;
   setThreadId: (threadId: string | null) => void;
   threadId: string | null;
 }
@@ -38,6 +58,9 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
   const [offline, setOffline] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [entity, setEntity] = useState<AiEntityRef | null>(null);
+  const [pendingConfirmation, setPendingConfirmation] =
+    useState<PendingConfirmation | null>(null);
+  const [decision, setDecision] = useState<ConfirmationDecision | null>(null);
 
   const registerEntity = useCallback((next: AiEntityRef) => {
     setEntity(next);
@@ -49,16 +72,29 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       clearEntity,
+      decision,
       entity,
       offline,
       open,
+      pendingConfirmation,
       registerEntity,
+      setDecision,
       setOffline,
       setOpen,
+      setPendingConfirmation,
       setThreadId,
       threadId,
     }),
-    [clearEntity, entity, offline, open, registerEntity, threadId]
+    [
+      clearEntity,
+      decision,
+      entity,
+      offline,
+      open,
+      pendingConfirmation,
+      registerEntity,
+      threadId,
+    ]
   );
 
   return (

@@ -29,7 +29,11 @@ const presentDraft = defineTool({
   execute: (input) =>
     Promise.resolve({
       artifacts: [
-        { artifactType: "draft_message" as const, data: input, type: "artifact" as const },
+        {
+          artifactType: "draft_message" as const,
+          data: input,
+          type: "artifact" as const,
+        },
       ],
       resultText:
         "Draft presented to the user as an editable card in the chat panel.",

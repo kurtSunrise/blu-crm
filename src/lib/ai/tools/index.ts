@@ -1,6 +1,10 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import { dealWriteTools } from "@/lib/ai/tools/deal-tools";
 import { draftTools } from "@/lib/ai/tools/draft-tools";
+import { followUpTools } from "@/lib/ai/tools/follow-up-tools";
 import { queryTools } from "@/lib/ai/tools/query-tools";
+import { quoteTools } from "@/lib/ai/tools/quote-tools";
+import { triageTools } from "@/lib/ai/tools/triage-tools";
 import type {
   AiTool,
   AiToolContext,
@@ -10,7 +14,14 @@ import type {
 // The tool set is static across every page and request: swapping tools per
 // surface would invalidate the prompt cache prefix (tools render before
 // system). Page relevance is steered by the <page_context> block instead.
-const ALL_TOOLS: AiTool[] = [...queryTools, ...draftTools];
+const ALL_TOOLS: AiTool[] = [
+  ...queryTools,
+  ...draftTools,
+  ...dealWriteTools,
+  ...followUpTools,
+  ...quoteTools,
+  ...triageTools,
+];
 
 const TOOLS_BY_NAME = new Map(
   ALL_TOOLS.map((tool) => [tool.definition.name, tool])
@@ -22,6 +33,22 @@ export const TOOL_DEFINITIONS: Anthropic.Tool[] = ALL_TOOLS.map(
 
 export const isWriteTool = (name: string): boolean =>
   TOOLS_BY_NAME.get(name)?.isWrite ?? false;
+
+// Short human-readable line shown on the confirmation card (FR-7.8).
+const SUMMARY_LABELS: Record<string, string> = {
+  complete_follow_up: "Mark a follow-up as done",
+  create_follow_up: "Create a follow-up task",
+  create_lead: "Create a new lead",
+  create_quote: "Record a draft quote",
+  log_activity: "Log an activity",
+  move_deal_stage: "Move a deal to another stage",
+  triage_inbox_lead: "Triage an inbox lead",
+  update_contact: "Update a contact",
+  update_deal: "Update a deal",
+};
+
+export const summarizeToolCall = (name: string): string =>
+  SUMMARY_LABELS[name] ?? `Run ${name}`;
 
 export const executeToolCall = async (
   name: string,

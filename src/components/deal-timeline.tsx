@@ -8,12 +8,16 @@ import {
   StickyNote,
   Users,
 } from "lucide-react";
+import Link from "next/link";
 import { formatDateTimeAwst } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export interface TimelineEntry {
   authorName: string | null;
   content: string | null;
+  // Where the entry happened, when the timeline spans records (a contact's
+  // history covers several deals); omitted on the deal page itself.
+  context?: { href: string; label: string };
   createdAt: Date;
   id: string;
   type: string;
@@ -82,6 +86,14 @@ function TimelineItem({ entry }: { entry: TimelineEntry }) {
         {entry.content && (
           <p className="break-words text-sm">{entry.content}</p>
         )}
+        {entry.context && (
+          <Link
+            className="w-fit text-blu text-xs underline-offset-2 hover:underline"
+            href={entry.context.href}
+          >
+            {entry.context.label}
+          </Link>
+        )}
       </div>
     </li>
   );
@@ -90,9 +102,11 @@ function TimelineItem({ entry }: { entry: TimelineEntry }) {
 export function DealTimeline({
   entries,
   leadCreatedAt,
+  footerLabel = "Lead created",
 }: {
   entries: TimelineEntry[];
   leadCreatedAt: Date;
+  footerLabel?: string;
 }) {
   return (
     <ol className="flex flex-col">
@@ -105,7 +119,7 @@ export function DealTimeline({
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5 pt-1">
           <p className="text-xs">
-            <span className="font-medium">Lead created</span>
+            <span className="font-medium">{footerLabel}</span>
             <span className="text-muted-foreground">
               {` · ${formatDateTimeAwst(leadCreatedAt)}`}
             </span>

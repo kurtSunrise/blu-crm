@@ -27,11 +27,15 @@ restyle.
   `action.bind(null, id)`. Contact page refactored onto it,
   `archive-contact-button.tsx` deleted. Labels unchanged, so existing
   specs held.
-- **Contact history restyle** (user feedback): now matches the deal
-  timeline: lg card backing, badge + timestamp + author line, content
-  below, plus a deal-title link per entry (contact history spans deals,
-  so the context link earns its place). Query now joins user (author)
-  and deal (title).
+- **Contact history restyle** (user feedback that the contact logs UI
+  lagged the deal page): a parallel session shipped a rail-style
+  `deal-timeline.tsx` and a shared `NativeSelect` to main mid-task, so
+  after merging, the contact History now renders through the shared
+  `DealTimeline` (extended additively: optional per-entry context link,
+  since a contact's history spans deals, and a configurable footer label,
+  "Contact added" here). The company kind select and the parallel
+  session's stage-manager sweep both use `NativeSelect`. Query joins
+  user (author) and deal (title); contact `createdAt` feeds the footer.
 - **E2E**: new `companies.spec.ts` (edit with kind/website assertions;
   archive removes from directory). 129/129 passing; lint and build clean.
 
@@ -41,6 +45,10 @@ restyle.
   leniently server-side, since the column is free text.
 - One generic ArchiveRecordButton over per-record components: identical
   UX, less code, and bound server actions keep the client dumb.
+- `DealTimeline` was extended additively (optional props with defaults)
+  rather than renamed/forked, to keep the collision surface with the
+  parallel session minimal. Renaming it to ActivityTimeline is a clean
+  follow-up once no other session is active on it.
 
 ## Issues Encountered
 

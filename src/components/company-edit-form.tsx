@@ -5,6 +5,7 @@ import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   type CompanyActionState,
@@ -44,8 +45,7 @@ export function CompanyEditForm({ company }: { company: EditableCompany }) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
           <Label htmlFor="kind">Kind</Label>
-          <select
-            className="flex h-11 rounded-md border border-input bg-transparent px-3 text-sm"
+          <NativeSelect
             defaultValue={state.values?.kind ?? company.kind}
             id="kind"
             name="kind"
@@ -56,7 +56,7 @@ export function CompanyEditForm({ company }: { company: EditableCompany }) {
                 {kind}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="website">Website</Label>

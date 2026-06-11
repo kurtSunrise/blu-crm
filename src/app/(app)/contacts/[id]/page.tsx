@@ -3,6 +3,7 @@ import { Mail, MessageSquare, Pencil, Phone } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArchiveRecordButton } from "@/components/archive-record-button";
+import { DealTimeline } from "@/components/deal-timeline";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { db } from "@/db";
@@ -16,25 +17,11 @@ import {
   user,
 } from "@/db/schema";
 import { archiveContact } from "@/lib/actions/contact-actions";
-import {
-  formatAudFromCents,
-  formatDateAwst,
-  formatDateTimeAwst,
-} from "@/lib/format";
+import { formatAudFromCents, formatDateAwst } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 const HISTORY_LIMIT = 20;
-
-const ACTIVITY_LABELS: Record<string, string> = {
-  call: "Call",
-  email: "Email",
-  site_visit: "Site visit",
-  meeting: "Meeting",
-  note: "Note",
-  stage_change: "Stage",
-  quote_event: "Quote",
-};
 
 const QUOTE_STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
@@ -64,6 +51,7 @@ export default async function ContactPage({
       notes: contact.notes,
       companyId: contact.companyId,
       companyName: company.name,
+      createdAt: contact.createdAt,
     })
     .from(contact)
     .leftJoin(company, eq(contact.companyId, company.id))
@@ -279,33 +267,24 @@ export default async function ContactPage({
             className="flex flex-col gap-3 lg:rounded-lg lg:border lg:bg-card/50 lg:p-4"
           >
             <h2 className="font-heading font-medium text-sm">History</h2>
-            {history.length === 0 && (
-              <p className="text-muted-foreground text-sm">No activity yet.</p>
-            )}
-            <ol className="flex flex-col gap-3">
-              {history.map((entry) => (
-                <li className="flex flex-col gap-0.5" key={entry.id}>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline">
-                      {ACTIVITY_LABELS[entry.type] ?? entry.type}
-                    </Badge>
-                    <span className="text-muted-foreground text-xs">
-                      {formatDateTimeAwst(entry.createdAt)}
-                      {entry.authorName ? ` · ${entry.authorName}` : ""}
-                    </span>
-                  </div>
-                  {entry.content && <p className="text-sm">{entry.content}</p>}
-                  {entry.dealTitle && (
-                    <Link
-                      className="w-fit text-blu text-xs underline-offset-2 hover:underline"
-                      href={`/deals/${entry.dealId}`}
-                    >
-                      {entry.dealTitle}
-                    </Link>
-                  )}
-                </li>
-              ))}
-            </ol>
+            <DealTimeline
+              entries={history.map((entry) => ({
+                id: entry.id,
+                type: entry.type,
+                content: entry.content,
+                createdAt: entry.createdAt,
+                authorName: entry.authorName,
+                // A contact's history spans their deals; link each entry home.
+                context: entry.dealTitle
+                  ? {
+                      href: `/deals/${entry.dealId}`,
+                      label: entry.dealTitle,
+                    }
+                  : undefined,
+              }))}
+              footerLabel="Contact added"
+              leadCreatedAt={person.createdAt}
+            />
           </section>
         </div>
 

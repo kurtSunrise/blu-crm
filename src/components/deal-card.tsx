@@ -41,8 +41,11 @@ export function DealCard({
   stages: BoardStage[];
   onMove: (dealId: string, stageId: string) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } =
-    useDraggable({ id: deal.id });
+  // attributes are unused: no KeyboardSensor is wired, so the keyboard /
+  // screen-reader path for moving a deal is the dropdown menu below.
+  const { listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: deal.id,
+  });
 
   const style = transform
     ? { transform: `translate(${transform.x}px, ${transform.y}px)` }
@@ -53,26 +56,29 @@ export function DealCard({
     : null;
 
   return (
+    // The whole card is the drag surface (drag-by-handle-only reads as
+    // broken). Pointer drags need 6px of travel and touch drags a 200ms
+    // hold, so taps and clicks inside the card keep working, and
+    // touch-manipulation leaves one-finger column scrolling to the browser.
+    // The dropdown menu remains the non-drag way to move a deal.
     <article
       className={cn(
-        "rounded-lg border bg-card p-3 shadow-sm transition-shadow hover:shadow-md",
-        isDragging && "z-50 opacity-90 ring-2 ring-blu"
+        "cursor-grab touch-manipulation select-none rounded-lg border bg-card p-3 shadow-sm transition-shadow hover:shadow-md",
+        isDragging && "z-50 cursor-grabbing opacity-90 ring-2 ring-blu"
       )}
       ref={setNodeRef}
       style={style}
+      {...listeners}
     >
       <div className="flex items-start gap-2">
-        <button
-          aria-label={`Drag ${deal.title}`}
-          className="flex min-h-11 min-w-8 touch-none items-center justify-center text-muted-foreground"
-          type="button"
-          {...attributes}
-          {...listeners}
+        <span
+          aria-hidden
+          className="flex min-h-11 min-w-8 items-center justify-center text-muted-foreground"
         >
-          <GripVertical aria-hidden className="size-4" />
-        </button>
+          <GripVertical className="size-4" />
+        </span>
         <div className="min-w-0 flex-1">
-          <Link className="block" href={`/deals/${deal.id}`}>
+          <Link className="block" draggable={false} href={`/deals/${deal.id}`}>
             <p className="font-mono text-muted-foreground text-xs">
               {deal.leadId}
             </p>

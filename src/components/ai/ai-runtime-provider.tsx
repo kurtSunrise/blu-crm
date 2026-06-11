@@ -3,6 +3,7 @@
 import {
   AssistantRuntimeProvider,
   type ChatModelAdapter,
+  type ThreadMessageLike,
   useLocalRuntime,
 } from "@assistant-ui/react";
 import { usePathname, useRouter } from "next/navigation";
@@ -34,7 +35,6 @@ interface RequestContext {
 
 interface AdapterCallbacks {
   refresh: () => void;
-  setDecision: (decision: ConfirmationDecision | null) => void;
   setOffline: (offline: boolean) => void;
   setPendingConfirmation: (
     pending: {
@@ -156,7 +156,7 @@ const createAdapter = (
       // The visible "Approve" / "Cancel" bubble triggered this run; the
       // payload is the structured confirmation, not the bubble text.
       body.confirmation = decision;
-      callbacksRef.current.setDecision(null);
+      decisionRef.current = null;
       callbacksRef.current.setPendingConfirmation(null);
     } else {
       const lastUserMessage = [...messages]
@@ -276,11 +276,19 @@ const createAdapter = (
   },
 });
 
-export function AiRuntimeProvider({ children }: { children: ReactNode }) {
+// initialMessages seeds the runtime with a resumed thread's transcript; the
+// host remounts this provider (key) when switching threads, since a
+// LocalRuntime reads them once at creation.
+export function AiRuntimeProvider({
+  children,
+  initialMessages,
+}: {
+  children: ReactNode;
+  initialMessages?: ThreadMessageLike[];
+}) {
   const {
-    decision,
+    decisionRef,
     entity,
-    setDecision,
     setOffline,
     setPendingConfirmation,
     setThreadId,
@@ -299,14 +307,8 @@ export function AiRuntimeProvider({ children }: { children: ReactNode }) {
     };
   }, [entity, pathname, threadId]);
 
-  const decisionRef = useRef<ConfirmationDecision | null>(decision);
-  useEffect(() => {
-    decisionRef.current = decision;
-  }, [decision]);
-
   const callbacksRef = useRef<AdapterCallbacks>({
     refresh: () => router.refresh(),
-    setDecision,
     setOffline,
     setPendingConfirmation,
     setThreadId,
@@ -314,20 +316,19 @@ export function AiRuntimeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     callbacksRef.current = {
       refresh: () => router.refresh(),
-      setDecision,
       setOffline,
       setPendingConfirmation,
       setThreadId,
     };
-  }, [router, setDecision, setOffline, setPendingConfirmation, setThreadId]);
+  }, [router, setOffline, setPendingConfirmation, setThreadId]);
 
   // Created once; refs keep it current (recreating the adapter would reset
-  // in-flight streams).
+  // in-flight streams). decisionRef is the context's stable ref instance.
   const adapter = useMemo(
     () => createAdapter(requestRef, decisionRef, callbacksRef),
-    []
+    [decisionRef]
   );
-  const runtime = useLocalRuntime(adapter);
+  const runtime = useLocalRuntime(adapter, { initialMessages });
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>

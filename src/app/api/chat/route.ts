@@ -1,10 +1,8 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { asc } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { db } from "@/db";
-import { user } from "@/db/schema";
 import { runAgentTurn } from "@/lib/ai/agent-loop";
+import { resolveAssistantUser } from "@/lib/ai/assistant-user";
 import { resolveAuditedToolCall } from "@/lib/ai/audit";
 import { createAnthropicClient, isAiConfigured } from "@/lib/ai/client";
 import { buildPageContext } from "@/lib/ai/page-context";
@@ -22,7 +20,6 @@ import {
   type ThreadRecord,
 } from "@/lib/ai/threads";
 import { executeToolCall } from "@/lib/ai/tools";
-import { auth } from "@/lib/auth";
 
 const TITLE_MAX_LENGTH = 60;
 
@@ -56,24 +53,6 @@ const deriveTitle = (message: string): string => {
   return collapsed.length > TITLE_MAX_LENGTH
     ? `${collapsed.slice(0, TITLE_MAX_LENGTH - 1)}…`
     : collapsed;
-};
-
-// Route gating is not wired yet (M0 SSO pending the Entra registration), so
-// like every other surface the assistant falls back to the first seeded team
-// member when there is no session. Tighten to a hard 401 when auth ships.
-const resolveAssistantUser = async (
-  request: Request
-): Promise<{ id: string; name: string } | null> => {
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (session) {
-    return { id: session.user.id, name: session.user.name };
-  }
-  const rows = await db
-    .select({ id: user.id, name: user.name })
-    .from(user)
-    .orderBy(asc(user.createdAt))
-    .limit(1);
-  return rows[0] ?? null;
 };
 
 const getPending = (thread: ThreadRecord): PendingToolUse | null =>

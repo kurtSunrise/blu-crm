@@ -1,9 +1,12 @@
 "use client";
 
-import { SparklesIcon, XIcon } from "lucide-react";
+import type { ThreadMessageLike } from "@assistant-ui/react";
+import { HistoryIcon, SparklesIcon, SquarePenIcon, XIcon } from "lucide-react";
+import { useState } from "react";
 import { useAiAssistant } from "@/components/ai/ai-context";
 import { AiRuntimeProvider } from "@/components/ai/ai-runtime-provider";
 import { ChatPanel } from "@/components/ai/chat-panel";
+import { ThreadHistory } from "@/components/ai/thread-history";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -46,11 +49,68 @@ export function AiLauncherButton({ withLabel }: { withLabel?: boolean }) {
   );
 }
 
+interface ChatSession {
+  epoch: number;
+  initialMessages: ThreadMessageLike[];
+}
+
+const toThreadMessages = (
+  messages: { id: string; role: "user" | "assistant"; text: string }[]
+): ThreadMessageLike[] =>
+  messages.map((message) => ({
+    content: [{ text: message.text, type: "text" as const }],
+    id: message.id,
+    role: message.role,
+  }));
+
 // The assistant surface itself. Stays mounted while closed (hidden via CSS)
 // so the conversation survives open/close. Mobile: full-screen overlay.
 // Desktop: fixed 400px right sidebar; AppShell pads the main content.
+// The runtime is keyed by a session epoch: "new chat" and resuming a thread
+// from history each remount it (a LocalRuntime's messages are fixed at
+// creation), while toggling the history view only hides the live chat.
 export function AiAssistantDock() {
-  const { open, setOpen } = useAiAssistant();
+  const {
+    decisionRef,
+    open,
+    setOpen,
+    setPendingConfirmation,
+    setThreadId,
+    threadId,
+  } = useAiAssistant();
+  const [view, setView] = useState<"chat" | "history">("chat");
+  const [session, setSession] = useState<ChatSession>({
+    epoch: 0,
+    initialMessages: [],
+  });
+
+  const switchSession = (
+    nextThreadId: string | null,
+    initialMessages: ThreadMessageLike[]
+  ) => {
+    setThreadId(nextThreadId);
+    setPendingConfirmation(null);
+    decisionRef.current = null;
+    setSession((current) => ({ epoch: current.epoch + 1, initialMessages }));
+    setView("chat");
+  };
+
+  const startNewChat = () => switchSession(null, []);
+
+  const resumeThread = async (resumeId: string) => {
+    if (resumeId === threadId) {
+      setView("chat");
+      return;
+    }
+    const response = await fetch(`/api/chat/threads/${resumeId}`);
+    if (!response.ok) {
+      return;
+    }
+    const payload = (await response.json()) as {
+      messages: { id: string; role: "user" | "assistant"; text: string }[];
+    };
+    switchSession(resumeId, toThreadMessages(payload.messages));
+  };
 
   return (
     <aside
@@ -65,20 +125,51 @@ export function AiAssistantDock() {
           <SparklesIcon aria-hidden className="size-4 text-blu" />
           <h2 className="font-heading font-semibold text-sm">Blu assistant</h2>
         </div>
-        <Button
-          aria-label="Close assistant"
-          onClick={() => setOpen(false)}
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          <XIcon aria-hidden className="size-5" />
-        </Button>
+        <div className="flex items-center">
+          <Button
+            aria-label="New conversation"
+            onClick={startNewChat}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <SquarePenIcon aria-hidden className="size-4.5" />
+          </Button>
+          <Button
+            aria-label="Conversation history"
+            aria-pressed={view === "history"}
+            onClick={() =>
+              setView((current) => (current === "history" ? "chat" : "history"))
+            }
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <HistoryIcon aria-hidden className="size-4.5" />
+          </Button>
+          <Button
+            aria-label="Close assistant"
+            onClick={() => setOpen(false)}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <XIcon aria-hidden className="size-5" />
+          </Button>
+        </div>
       </header>
       <div className="min-h-0 flex-1">
-        <AiRuntimeProvider>
-          <ChatPanel />
-        </AiRuntimeProvider>
+        <div className={view === "history" ? "hidden" : "h-full"}>
+          <AiRuntimeProvider
+            initialMessages={session.initialMessages}
+            key={session.epoch}
+          >
+            <ChatPanel />
+          </AiRuntimeProvider>
+        </div>
+        {view === "history" ? (
+          <ThreadHistory activeThreadId={threadId} onSelect={resumeThread} />
+        ) : null}
       </div>
     </aside>
   );

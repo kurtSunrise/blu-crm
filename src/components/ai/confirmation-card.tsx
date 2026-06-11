@@ -151,7 +151,7 @@ const initialEdits = (input: unknown): Record<string, string> => {
 // the tool's own zod schema server-side. The user bubble ("Approve" /
 // "Cancel") keeps the thread history honest.
 export function ConfirmationCard({ data }: { data: ConfirmationRequestData }) {
-  const { pendingConfirmation, setDecision } = useAiAssistant();
+  const { decisionRef, pendingConfirmation } = useAiAssistant();
   const threadRuntime = useThreadRuntime();
   const fieldIdPrefix = useId();
   const [resolved, setResolved] = useState<"approved" | "cancelled" | null>(
@@ -168,11 +168,12 @@ export function ConfirmationCard({ data }: { data: ConfirmationRequestData }) {
 
   const decide = (approved: boolean) => {
     const { changed, finalInput } = buildFinalInput(data.input, edits);
-    setDecision({
+    // Written synchronously so the run triggered by append() sees it.
+    decisionRef.current = {
       approved,
       finalInput: approved && changed ? finalInput : undefined,
       toolUseId: data.toolUseId,
-    });
+    };
     setResolved(approved ? "approved" : "cancelled");
     threadRuntime.append(approved ? "Approve" : "Cancel");
   };

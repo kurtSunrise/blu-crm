@@ -2,10 +2,12 @@
 
 import {
   createContext,
+  type MutableRefObject,
   type ReactNode,
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -37,13 +39,17 @@ export interface ConfirmationDecision {
 
 interface AiAssistantContextValue {
   clearEntity: () => void;
-  decision: ConfirmationDecision | null;
+  // A ref, not state: the card writes the decision and appends the
+  // "Approve"/"Cancel" bubble in the same tick, and the adapter must see it
+  // when that run starts. A state setter only lands after a re-render, so
+  // the run would race it and send a plain message (denying the pending
+  // write as superseded).
+  decisionRef: MutableRefObject<ConfirmationDecision | null>;
   entity: AiEntityRef | null;
   offline: boolean;
   open: boolean;
   pendingConfirmation: PendingConfirmation | null;
   registerEntity: (entity: AiEntityRef) => void;
-  setDecision: (decision: ConfirmationDecision | null) => void;
   setOffline: (offline: boolean) => void;
   setOpen: (open: boolean) => void;
   setPendingConfirmation: (pending: PendingConfirmation | null) => void;
@@ -60,7 +66,7 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
   const [entity, setEntity] = useState<AiEntityRef | null>(null);
   const [pendingConfirmation, setPendingConfirmation] =
     useState<PendingConfirmation | null>(null);
-  const [decision, setDecision] = useState<ConfirmationDecision | null>(null);
+  const decisionRef = useRef<ConfirmationDecision | null>(null);
 
   const registerEntity = useCallback((next: AiEntityRef) => {
     setEntity(next);
@@ -72,13 +78,12 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       clearEntity,
-      decision,
+      decisionRef,
       entity,
       offline,
       open,
       pendingConfirmation,
       registerEntity,
-      setDecision,
       setOffline,
       setOpen,
       setPendingConfirmation,
@@ -87,7 +92,6 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
     }),
     [
       clearEntity,
-      decision,
       entity,
       offline,
       open,

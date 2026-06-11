@@ -252,6 +252,48 @@ test("a draft artifact is editable in place", async ({ page }) => {
   await expect(card.getByText("edited draft", { exact: false })).toBeVisible();
 });
 
+test("a conversation can be resumed from history", async ({ page }) => {
+  await page.goto("/");
+  await skipUnlessAssistantConfigured(page, test);
+
+  // The marker lands in the thread title, so this run's thread is
+  // findable in a history list shared across parallel projects.
+  const marker = `HIST-${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+  await openAssistant(page);
+  await askAssistant(page, `${marker} hello`);
+  await expect(page.getByText("Hello from the mock assistant.")).toBeVisible({
+    timeout: RESPONSE_TIMEOUT_MS,
+  });
+
+  // New conversation: the panel resets to the welcome state.
+  await page.getByRole("button", { name: "New conversation" }).click();
+  await expect(page.getByText("Hello from the mock assistant.")).toHaveCount(0);
+  await expect(
+    page.getByText("Ask about the pipeline", { exact: false })
+  ).toBeVisible();
+
+  // Resume the earlier thread from history; its transcript comes back.
+  await page.getByRole("button", { name: "Conversation history" }).click();
+  await page.getByRole("button", { name: new RegExp(marker) }).click();
+  await expect(page.getByText(`${marker} hello`)).toBeVisible({
+    timeout: RESPONSE_TIMEOUT_MS,
+  });
+  await expect(page.getByText("Hello from the mock assistant.")).toBeVisible();
+
+  // Continuing appends to the same persisted thread instead of forking.
+  await askAssistant(page, "hello again");
+  await expect(page.getByText("Hello from the mock assistant.")).toHaveCount(
+    2,
+    { timeout: RESPONSE_TIMEOUT_MS }
+  );
+  const threads = await queryRows<{ count: string }>(
+    "select count(*) as count from chat_thread where title like $1",
+    [`%${marker}%`]
+  );
+  expect(threads[0]?.count).toBe("1");
+});
+
 test("open assistant panel has no WCAG A/AA violations", async ({ page }) => {
   await page.goto("/");
   await skipUnlessAssistantConfigured(page, test);

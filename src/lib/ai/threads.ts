@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { chatMessage, chatThread } from "@/db/schema";
 
@@ -101,6 +101,86 @@ export const clearThreadPending = async (threadId: string): Promise<void> => {
     .update(chatThread)
     .set({ pendingToolUse: null, status: "idle", updatedAt: new Date() })
     .where(eq(chatThread.id, threadId));
+};
+
+const THREAD_LIST_LIMIT = 30;
+
+export interface ThreadListItem {
+  id: string;
+  lastMessageAt: Date | null;
+  originPage: string | null;
+  status: "idle" | "awaiting_confirmation";
+  title: string | null;
+}
+
+// Recent conversations for the history view, most recently active first.
+export const listThreadsForUser = async (
+  userId: string
+): Promise<ThreadListItem[]> =>
+  db
+    .select({
+      id: chatThread.id,
+      lastMessageAt: chatThread.lastMessageAt,
+      originPage: chatThread.originPage,
+      status: chatThread.status,
+      title: chatThread.title,
+    })
+    .from(chatThread)
+    .where(and(eq(chatThread.userId, userId), isNull(chatThread.archivedAt)))
+    .orderBy(sql`${chatThread.lastMessageAt} desc nulls last`)
+    .limit(THREAD_LIST_LIMIT);
+
+export interface DisplayMessage {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+}
+
+const PAGE_CONTEXT_PREFIX = "<page_context>";
+
+const displayTextFromContent = (content: unknown): string => {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return "";
+  }
+  return content
+    .filter(
+      (block): block is { text: string; type: "text" } =>
+        typeof block === "object" &&
+        block !== null &&
+        (block as { type?: string }).type === "text" &&
+        typeof (block as { text?: unknown }).text === "string"
+    )
+    .map((block) => block.text)
+    .filter((text) => !text.startsWith(PAGE_CONTEXT_PREFIX))
+    .join("\n\n");
+};
+
+// The human-readable transcript for resuming a thread in the panel: text
+// only, oldest first. Page-context blocks, tool_use/tool_result plumbing,
+// and confirmation round-trips are model-facing and stay out of the UI.
+export const loadThreadDisplayMessages = async (
+  threadId: string
+): Promise<DisplayMessage[]> => {
+  const rows = await db
+    .select({
+      content: chatMessage.content,
+      id: chatMessage.id,
+      role: chatMessage.role,
+    })
+    .from(chatMessage)
+    .where(eq(chatMessage.threadId, threadId))
+    .orderBy(asc(chatMessage.createdAt));
+
+  return rows
+    .map((row) => ({
+      id: row.id,
+      role: row.role,
+      text: displayTextFromContent(row.content).trim(),
+    }))
+    .filter((message) => message.text.length > 0);
 };
 
 const isPlainUserTurn = (message: Anthropic.MessageParam): boolean => {

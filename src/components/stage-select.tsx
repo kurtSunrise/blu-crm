@@ -3,6 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { moveDealStage } from "@/lib/actions/deal-actions";
 import { StageChangeDialog, type StageMoveExtras } from "./stage-change-dialog";
 
@@ -33,8 +40,8 @@ export function StageSelect({
     });
   };
 
-  const handleChange = (stageId: string) => {
-    if (stageId === currentStageId) {
+  const handleChange = (stageId: string | null) => {
+    if (!stageId || stageId === currentStageId) {
       return;
     }
     const stage = stages.find((item) => item.id === stageId);
@@ -52,19 +59,26 @@ export function StageSelect({
   return (
     <div className="flex flex-col gap-2">
       <Label htmlFor="stage-select">Stage</Label>
-      <select
-        className="flex h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+      <Select
         disabled={isPending}
-        id="stage-select"
-        onChange={(event) => handleChange(event.target.value)}
+        items={stages.map((stage) => ({ value: stage.id, label: stage.name }))}
+        onValueChange={handleChange}
         value={currentStageId}
       >
-        {stages.map((stage) => (
-          <option key={stage.id} value={stage.id}>
-            {stage.name}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger
+          className="w-full px-3 data-[size=default]:h-11"
+          id="stage-select"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {stages.map((stage) => (
+            <SelectItem key={stage.id} value={stage.id}>
+              {stage.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <StageChangeDialog
         onCancel={() => setPendingStage(null)}
         onConfirm={(extras) => {

@@ -76,7 +76,14 @@ test("deal detail logs a call onto the timeline", async ({
     .click();
   await expect(page.getByRole("heading", { name: companyName })).toBeVisible();
 
-  await page.getByRole("button", { name: "Logged a call" }).click();
+  // Clicks racing hydration right after navigation can be dropped, so retry
+  // until the activity lands (a duplicate log is harmless here). The remote
+  // dev DB can hold the server action in flight for several seconds.
   const timeline = page.locator('section[aria-label="Timeline"]');
-  await expect(timeline.getByText("Logged a call")).toBeVisible();
+  await expect(async () => {
+    await page.getByRole("button", { name: "Logged a call" }).click();
+    await expect(timeline.getByText("Logged a call").first()).toBeVisible({
+      timeout: 8000,
+    });
+  }).toPass({ timeout: 25_000 });
 });

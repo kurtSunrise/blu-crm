@@ -1,0 +1,117 @@
+import {
+  ArrowRightLeft,
+  FileText,
+  Mail,
+  MapPin,
+  Phone,
+  Sparkles,
+  StickyNote,
+  Users,
+} from "lucide-react";
+import { formatDateTimeAwst } from "@/lib/format";
+import { cn } from "@/lib/utils";
+
+export interface TimelineEntry {
+  authorName: string | null;
+  content: string | null;
+  createdAt: Date;
+  id: string;
+  type: string;
+}
+
+interface EntryStyle {
+  icon: typeof Phone;
+  label: string;
+  // Marker colouring: brand for pipeline movement, quote tint for quotes,
+  // neutral for day-to-day contact logging.
+  marker: string;
+}
+
+const ENTRY_STYLES: Record<string, EntryStyle> = {
+  call: { label: "Call", icon: Phone, marker: "" },
+  email: { label: "Email", icon: Mail, marker: "" },
+  site_visit: { label: "Site visit", icon: MapPin, marker: "" },
+  meeting: { label: "Meeting", icon: Users, marker: "" },
+  note: { label: "Note", icon: StickyNote, marker: "" },
+  stage_change: {
+    label: "Stage change",
+    icon: ArrowRightLeft,
+    marker: "border-blu/40 bg-blu/10 text-blu",
+  },
+  quote_event: {
+    label: "Quote",
+    icon: FileText,
+    marker: "border-success/40 bg-success/10 text-success",
+  },
+};
+
+const FALLBACK_STYLE: EntryStyle = {
+  label: "Activity",
+  icon: StickyNote,
+  marker: "",
+};
+
+function TimelineItem({ entry }: { entry: TimelineEntry }) {
+  const style = ENTRY_STYLES[entry.type] ?? FALLBACK_STYLE;
+  const Icon = style.icon;
+
+  return (
+    // The "Lead created" marker always follows, so every activity row keeps
+    // its connecting line down to the next item.
+    <li className="relative flex gap-3 pb-5">
+      <span
+        aria-hidden
+        className="absolute top-8 bottom-0 left-4 w-px -translate-x-1/2 bg-border"
+      />
+      <span
+        className={cn(
+          "flex size-8 shrink-0 items-center justify-center rounded-full border bg-card text-muted-foreground",
+          style.marker
+        )}
+      >
+        <Icon aria-hidden className="size-3.5" />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5 pt-1">
+        <p className="text-xs">
+          <span className="font-medium">{style.label}</span>
+          <span className="text-muted-foreground">
+            {entry.authorName ? ` · ${entry.authorName}` : ""}
+            {` · ${formatDateTimeAwst(entry.createdAt)}`}
+          </span>
+        </p>
+        {entry.content && (
+          <p className="break-words text-sm">{entry.content}</p>
+        )}
+      </div>
+    </li>
+  );
+}
+
+export function DealTimeline({
+  entries,
+  leadCreatedAt,
+}: {
+  entries: TimelineEntry[];
+  leadCreatedAt: Date;
+}) {
+  return (
+    <ol className="flex flex-col">
+      {entries.map((entry) => (
+        <TimelineItem entry={entry} key={entry.id} />
+      ))}
+      <li className="relative flex gap-3">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-blu/40 bg-blu/10 text-blu">
+          <Sparkles aria-hidden className="size-3.5" />
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5 pt-1">
+          <p className="text-xs">
+            <span className="font-medium">Lead created</span>
+            <span className="text-muted-foreground">
+              {` · ${formatDateTimeAwst(leadCreatedAt)}`}
+            </span>
+          </p>
+        </div>
+      </li>
+    </ol>
+  );
+}

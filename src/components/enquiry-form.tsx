@@ -4,12 +4,10 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { PROJECT_TYPE_LABELS } from "@/lib/labels";
 import { PROJECT_TYPES } from "@/lib/validation/deal";
-
-const SELECT_CLASSES =
-  "flex h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm";
 
 // Posts to the write-only public endpoint rather than a server action so the
 // form keeps working when embedded cross-origin on blu.builders (FR-3.2).
@@ -100,8 +98,7 @@ export function EnquiryForm() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
           <Label htmlFor="enquiry-project-type">Project type</Label>
-          <select
-            className={SELECT_CLASSES}
+          <NativeSelect
             defaultValue=""
             id="enquiry-project-type"
             name="projectType"
@@ -112,7 +109,7 @@ export function EnquiryForm() {
                 {PROJECT_TYPE_LABELS[value]}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="enquiry-fixed-date">

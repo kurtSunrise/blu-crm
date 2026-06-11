@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { LOST_REASON_LABELS, type LostReason } from "@/lib/labels";
 import { LOST_REASONS } from "@/lib/validation/deal";
 
@@ -84,8 +85,7 @@ export function StageChangeDialog({
         {stage?.isLost ? (
           <div className="flex flex-col gap-2">
             <Label htmlFor="lost-reason">Reason *</Label>
-            <select
-              className="flex h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+            <NativeSelect
               id="lost-reason"
               onChange={(event) =>
                 setLostReason(event.target.value as LostReason | "")
@@ -100,7 +100,7 @@ export function StageChangeDialog({
                   {LOST_REASON_LABELS[reason]}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
         ) : (
           <label className="flex min-h-11 items-center gap-3 text-sm">

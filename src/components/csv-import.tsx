@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
   commitContactImport,
   commitDealImport,
@@ -15,9 +16,6 @@ import {
   CONTACT_IMPORT_FIELDS,
   DEAL_IMPORT_FIELDS,
 } from "@/lib/validation/import";
-
-const SELECT_CLASSES =
-  "flex h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm";
 
 const SKIP_COLUMN = "__skip__";
 const PREVIEW_ROW_COUNT = 10;
@@ -200,8 +198,7 @@ export function CsvImport() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
           <Label htmlFor="import-kind">What are you importing?</Label>
-          <select
-            className={SELECT_CLASSES}
+          <NativeSelect
             id="import-kind"
             onChange={(event) => {
               setKind(event.target.value as ImportKind);
@@ -211,7 +208,7 @@ export function CsvImport() {
           >
             <option value="contacts">Contacts</option>
             <option value="deals">Open deals</option>
-          </select>
+          </NativeSelect>
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="import-file">CSV file</Label>
@@ -240,9 +237,9 @@ export function CsvImport() {
                   <span className="w-1/2 truncate font-mono text-muted-foreground text-xs">
                     {header}
                   </span>
-                  <select
+                  <NativeSelect
                     aria-label={`Map column ${header}`}
-                    className={SELECT_CLASSES}
+                    containerClassName="flex-1"
                     onChange={(event) => {
                       const next = [...mapping];
                       next[columnIndex] = event.target.value;
@@ -256,7 +253,7 @@ export function CsvImport() {
                         {FIELD_LABELS[field] ?? field}
                       </option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </div>
               ))}
             </div>

@@ -1,30 +1,20 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import pg from "pg";
+import { readDatabaseUrl } from "./test-db";
 
 // Resets CRM data in the local test database so E2E runs stay deterministic
 // and fast (alert lists would otherwise grow with every run). Pipeline
 // stages and users are seeded data and are kept.
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);
-const DATABASE_URL_LINE = /^DATABASE_URL="?([^"\n]+)"?$/m;
-
-const readDatabaseUrl = (): string => {
-  if (process.env.DATABASE_URL) {
-    return process.env.DATABASE_URL;
-  }
-  // Playwright runs this from the repo root, where .env.local lives.
-  const envFile = readFileSync(path.join(process.cwd(), ".env.local"), "utf8");
-  const match = envFile.match(DATABASE_URL_LINE);
-  if (!match?.[1]) {
-    throw new Error("DATABASE_URL not found in environment or .env.local");
-  }
-  return match[1];
-};
 
 // Children before parents; quote/attachment/follow_up/activity reference
-// deal, deal references contact/company.
+// deal, deal references contact/company, and the chat tables reference
+// deal/contact too (chat_thread must go before deal or its FK blocks the
+// delete).
 const TABLES_TO_CLEAR = [
+  "ai_audit_log",
+  "chat_message",
+  "chat_thread",
   "notification",
   "activity",
   "follow_up",

@@ -168,7 +168,14 @@ export function PipelineBoard({
       onDragEnd={handleDragEnd}
       sensors={sensors}
     >
-      <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-4">
+      {/* tabIndex makes the horizontal scroller keyboard-scrollable even
+          when the board is empty (axe: scrollable-region-focusable) */}
+      <div
+        aria-label="Pipeline stages"
+        className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-4"
+        role="region"
+        tabIndex={0}
+      >
         {stages.map((stage) => (
           <StageColumn
             deals={boardDeals.filter((item) => item.stageId === stage.id)}

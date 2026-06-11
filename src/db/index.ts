@@ -43,8 +43,14 @@ const createDb = (): Database => {
     // assembled at runtime so esbuild can't constant-fold it back to a literal
     // and bundle `pg` (and its optional `pg-cloudflare` socket shim) into the
     // Workers bundle, where `pg-cloudflare` fails to resolve at build time.
+    // Turbopack's require shim rejects dynamic specifiers outright
+    // ("expression is too dynamic"), so resolve through Node's own module
+    // loader, which both bundlers leave untouched.
     const nodePostgresModule = ["drizzle-orm", "node-postgres"].join("/");
-    const { drizzle: drizzleNodePg } = require(
+    const { createRequire } =
+      require("node:module") as typeof import("node:module");
+    const requireFromDisk = createRequire(`${process.cwd()}/package.json`);
+    const { drizzle: drizzleNodePg } = requireFromDisk(
       nodePostgresModule
     ) as typeof import("drizzle-orm/node-postgres");
     return drizzleNodePg(databaseUrl, { schema }) as unknown as Database;

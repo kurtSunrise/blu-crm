@@ -3,6 +3,7 @@
 import {
   BarChart3,
   Bell,
+  CalendarDays,
   HelpCircle,
   Home,
   Inbox,
@@ -21,6 +22,7 @@ import { cn } from "@/lib/utils";
 const PRIMARY_NAV = [
   { href: "/", label: "Dashboard", icon: Home },
   { href: "/pipeline", label: "Pipeline", icon: KanbanSquare },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/tasks", label: "Tasks", icon: ListTodo },
   { href: "/deals/new", label: "Quick add", icon: Plus },
@@ -35,9 +37,17 @@ const SECONDARY_NAV = [
 ];
 
 // Bottom tabs are a phone pattern: the five core field destinations only.
-// Reports is a sit-down surface, reachable from the dashboard card on phones.
-const MOBILE_NAV = PRIMARY_NAV.filter(
-  (item) => item.href !== "/" && item.href !== "/reports"
+// Reports and Contacts are sit-down surfaces, reachable from the dashboard
+// on phones.
+const MOBILE_TAB_HREFS = [
+  "/pipeline",
+  "/calendar",
+  "/inbox",
+  "/tasks",
+  "/deals/new",
+];
+const MOBILE_NAV = PRIMARY_NAV.filter((item) =>
+  MOBILE_TAB_HREFS.includes(item.href)
 );
 
 const isActivePath = (pathname: string, href: string): boolean =>

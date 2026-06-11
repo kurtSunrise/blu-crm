@@ -138,6 +138,38 @@ const SECTIONS: HelpSection[] = [
     ),
   },
   {
+    id: "calendar",
+    title: "Calendar",
+    body: (
+      <>
+        <p className={PARA_CLASSES}>
+          The Calendar shows the month's key dates in one view so you can see
+          how busy the team is. Three colours cover everything:
+        </p>
+        <ol className={STEP_CLASSES}>
+          <li>
+            <strong>Amber</strong>: fixed dates — the install, event, or launch
+            date the job must hit.
+          </li>
+          <li>
+            <strong>Blue</strong>: expected close dates on open deals.
+          </li>
+          <li>
+            <strong>Green</strong>: follow-ups due that day.
+          </li>
+        </ol>
+        <p className={PARA_CLASSES}>
+          Use the arrows to move between months and Today to jump back. On a
+          phone, tap a day in the grid to jump to its list below; every item
+          links to its deal. Completed follow-ups and Lost / Dormant deals are
+          hidden, and a deal's expected close disappears once it is Won — but
+          its install date stays, because the work still happens. All dates are
+          Perth time.
+        </p>
+      </>
+    ),
+  },
+  {
     id: "follow-ups",
     title: "Follow-ups and the Tasks page",
     body: (
@@ -221,6 +253,32 @@ const SECTIONS: HelpSection[] = [
     ),
   },
   {
+    id: "attachments",
+    title: "Files and photos",
+    body: (
+      <>
+        <p className={PARA_CLASSES}>
+          Every deal has a "Files and photos" section. Use it for site-visit
+          photos, briefs, drawings, and anything else the job needs on hand.
+        </p>
+        <ol className={STEP_CLASSES}>
+          <li>
+            On the deal page, tap the upload button and pick a file — on a phone
+            you can shoot a photo straight from the camera.
+          </li>
+          <li>
+            Photos show as thumbnails; other files show as named tiles. Tap to
+            open.
+          </li>
+          <li>
+            Files are stored privately and only open for signed-in users; there
+            is no public link to share.
+          </li>
+        </ol>
+      </>
+    ),
+  },
+  {
     id: "contacts",
     title: "Contacts, companies, and duplicates",
     body: (
@@ -248,6 +306,46 @@ const SECTIONS: HelpSection[] = [
         overdue follow-ups, quote-viewed alerts, and Won handovers. Unread items
         are highlighted; "Mark all read" clears the lot. Most notifications link
         straight to the deal they are about.
+      </p>
+    ),
+  },
+  {
+    id: "reports",
+    title: "Reports and the dashboard",
+    body: (
+      <>
+        <p className={PARA_CLASSES}>
+          The dashboard is the morning glance: the open pipeline total, deal
+          count, and what needs attention today. Reports is the sit-down view
+          with the same numbers the weekly Monday report uses.
+        </p>
+        <ol className={STEP_CLASSES}>
+          <li>
+            <strong>Pipeline overview</strong> shows the open total and the
+            weighted forecast, which scales each stage's value by its win
+            likelihood (weightings are set in Settings).
+          </li>
+          <li>
+            <strong>Win rate</strong> covers a chosen period: won value, won and
+            lost counts, and the lost reasons so you can see why work slips
+            away.
+          </li>
+          <li>
+            <strong>Copy report</strong> puts the whole thing on the clipboard
+            as plain text, ready to paste into an email or WhatsApp.
+          </li>
+        </ol>
+      </>
+    ),
+  },
+  {
+    id: "appearance",
+    title: "Light and dark mode",
+    body: (
+      <p className={PARA_CLASSES}>
+        The app follows your device's light or dark setting by default. To
+        override it, use the toggle at the bottom of the sidebar on desktop or
+        in the header on a phone. Your choice is remembered on that device.
       </p>
     ),
   },
@@ -293,6 +391,11 @@ const FAQS = [
     answer:
       "The alert fires on the first open of the client view link. If the quote was already Viewed, later opens stay quiet. Check the deal timeline for the full history.",
   },
+  {
+    question: "Why is a deal's install date missing from the calendar?",
+    answer:
+      "Lost / Dormant and discarded deals are hidden from the calendar. If the deal is open or Won and still missing, check that its fixed date is filled in on the deal page.",
+  },
 ];
 
 const GLOSSARY = [
@@ -308,6 +411,10 @@ const GLOSSARY = [
     "A deal whose fixed date or expected close falls within 14 days.",
   ],
   [
+    "Expected close",
+    "The date a deal is forecast to be won; drives the closing-soon alert and shows in blue on the calendar.",
+  ],
+  [
     "Handover to delivery",
     "The flag raised on Won that passes the job to delivery (Kurt).",
   ],
@@ -318,6 +425,16 @@ const GLOSSARY = [
 ];
 
 const WHATS_NEW = [
+  {
+    date: "11/06/2026",
+    items: [
+      "Calendar: a month view of fixed install / event / launch dates (amber), expected closes (blue), and follow-ups (green), with a tap-friendly day list on phones.",
+      "Calendar joined the phone tab bar; Contacts moved to the dashboard, like Reports.",
+      "Deal cards and deal pages now label fixed dates (Install / Event / Launch) and say how far away key dates are; overdue dates show in red.",
+      "Deal pages lead with a key-dates strip linking straight to that month on the calendar.",
+      "Pipeline board polish: clearer stage counts and drop targets.",
+    ],
+  },
   {
     date: "10/06/2026",
     items: [

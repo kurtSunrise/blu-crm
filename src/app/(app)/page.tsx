@@ -418,6 +418,12 @@ export default async function Home() {
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t pt-4 text-muted-foreground text-xs">
         <span>Blu.Builders Pty Ltd · Malaga, Western Australia</span>
         <span className="flex gap-3">
+          <Link className="underline-offset-2 hover:underline" href="/calendar">
+            Calendar
+          </Link>
+          <Link className="underline-offset-2 hover:underline" href="/contacts">
+            Contacts
+          </Link>
           <Link className="underline-offset-2 hover:underline" href="/reports">
             Reports
           </Link>

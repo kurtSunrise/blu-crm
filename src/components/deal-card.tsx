@@ -10,19 +10,26 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { formatAudFromCents, formatDateAwst } from "@/lib/format";
+import {
+  awstDayDiff,
+  formatAudFromCents,
+  formatDateAwst,
+  relativeDayLabel,
+} from "@/lib/format";
+import { FIXED_DATE_TYPE_LABELS } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 import type { BoardDeal, BoardStage } from "./pipeline-board";
 
 const CLOSING_SOON_DAYS = 14;
-const MS_PER_DAY = 86_400_000;
 
-const isClosingSoon = (fixedDate: string | null): boolean => {
-  if (!fixedDate) {
-    return false;
+const fixedDateClass = (dayDiff: number): string => {
+  if (dayDiff < 0) {
+    return "text-destructive";
   }
-  const daysAway = (new Date(fixedDate).getTime() - Date.now()) / MS_PER_DAY;
-  return daysAway <= CLOSING_SOON_DAYS;
+  if (dayDiff <= CLOSING_SOON_DAYS) {
+    return "text-warning";
+  }
+  return "text-muted-foreground";
 };
 
 export function DealCard({
@@ -41,10 +48,14 @@ export function DealCard({
     ? { transform: `translate(${transform.x}px, ${transform.y}px)` }
     : undefined;
 
+  const fixedDayDiff = deal.fixedDate
+    ? awstDayDiff(new Date(deal.fixedDate))
+    : null;
+
   return (
     <article
       className={cn(
-        "rounded-lg border bg-card p-3 shadow-sm",
+        "rounded-lg border bg-card p-3 shadow-sm transition-shadow hover:shadow-md",
         isDragging && "z-50 opacity-90 ring-2 ring-blu"
       )}
       ref={setNodeRef}
@@ -77,17 +88,20 @@ export function DealCard({
                 {formatAudFromCents(deal.valueCents)}
               </p>
             )}
-            {deal.fixedDate && (
+            {deal.fixedDate && fixedDayDiff !== null && (
               <p
                 className={cn(
                   "flex items-center gap-1 text-xs",
-                  isClosingSoon(deal.fixedDate)
-                    ? "text-warning"
-                    : "text-muted-foreground"
+                  fixedDateClass(fixedDayDiff)
                 )}
               >
                 <CalendarClock aria-hidden className="size-3.5" />
+                {deal.fixedDateType
+                  ? `${FIXED_DATE_TYPE_LABELS[deal.fixedDateType]} `
+                  : ""}
                 {formatDateAwst(new Date(deal.fixedDate))}
+                {fixedDayDiff <= CLOSING_SOON_DAYS &&
+                  ` · ${relativeDayLabel(fixedDayDiff)}`}
               </p>
             )}
           </div>

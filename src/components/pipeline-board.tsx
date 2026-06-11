@@ -168,12 +168,10 @@ export function PipelineBoard({
       onDragEnd={handleDragEnd}
       sensors={sensors}
     >
-      {/* tabIndex makes the horizontal scroller keyboard-scrollable even
-          when the board is empty (axe: scrollable-region-focusable) */}
-      <div
+      <section
         aria-label="Pipeline stages"
         className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-4"
-        role="region"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be keyboard-focusable even when it holds no focusable cards (axe: scrollable-region-focusable)
         tabIndex={0}
       >
         {stages.map((stage) => (
@@ -185,7 +183,7 @@ export function PipelineBoard({
             stages={stages}
           />
         ))}
-      </div>
+      </section>
       <StageChangeDialog
         onCancel={() => setPendingMove(null)}
         onConfirm={(extras) => {

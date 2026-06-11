@@ -105,16 +105,23 @@ test("a pipeline question runs a tool and renders deal cards", async ({
 const uniqueCompanyToken = (): string =>
   `UNIQ-${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
-// Latest audit status for the create_lead proposal carrying this token.
-const auditStatusForToken = async (token: string): Promise<string | null> => {
-  const rows = await queryRows<{ status: string }>(
-    `select status from ai_audit_log
+// Latest audit row for the create_lead proposal carrying this token in its
+// model-proposed input; final_input captures any user edits at confirm.
+const auditRowForToken = async (
+  token: string
+): Promise<{ finalInput: string | null; status: string } | null> => {
+  const rows = await queryRows<{ final_input: string | null; status: string }>(
+    `select final_input::text as final_input, status from ai_audit_log
      where tool_name = 'create_lead' and input::text like $1
      order by created_at desc limit 1`,
     [`%${token}%`]
   );
-  return rows[0]?.status ?? null;
+  const row = rows[0];
+  return row ? { finalInput: row.final_input, status: row.status } : null;
 };
+
+const auditStatusForToken = async (token: string): Promise<string | null> =>
+  (await auditRowForToken(token))?.status ?? null;
 
 // Drives the shared first half of the confirmation flow: ask for a capture,
 // wait for the gated write's review card, and return it.
@@ -129,8 +136,8 @@ const requestLeadCapture = async (
   );
   const card = page.locator('section[aria-label="Confirm: Create a new lead"]');
   await expect(card).toBeVisible({ timeout: RESPONSE_TIMEOUT_MS });
-  // The card shows exactly what would change before anything is applied.
-  await expect(card.getByText(token)).toBeVisible();
+  // The card shows exactly what would change, in editable fields.
+  await expect(card.getByLabel("company name")).toHaveValue(token);
   return card;
 };
 
@@ -187,6 +194,62 @@ test("a cancelled write changes nothing", async ({ page }) => {
     page.getByRole("heading", { level: 1, name: "Inbox" })
   ).toBeVisible();
   await expect(page.getByText(token)).toHaveCount(0);
+});
+
+test("an edited confirmation applies the edited values (two-way sync)", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await skipUnlessAssistantConfigured(page, test);
+
+  const proposedToken = uniqueCompanyToken();
+  const editedToken = uniqueCompanyToken();
+  const card = await requestLeadCapture(page, proposedToken);
+
+  // Rework the proposal before approving it; the edit rides the
+  // confirmation as finalInput and is re-validated server-side.
+  await card.getByLabel("company name").fill(editedToken);
+  await card.getByRole("button", { name: "Confirm" }).click();
+
+  await expect(card.getByRole("status")).toHaveText("Approved");
+  await expect(page.getByText("Mock summary: all done here.")).toBeVisible({
+    timeout: RESPONSE_TIMEOUT_MS,
+  });
+  await expect
+    .poll(() => auditStatusForToken(proposedToken), {
+      timeout: RESPONSE_TIMEOUT_MS,
+    })
+    .toBe("executed");
+
+  // The audit trail keeps both: the model's proposal and what was applied.
+  const audit = await auditRowForToken(proposedToken);
+  expect(audit?.finalInput).toContain(editedToken);
+
+  await page.goto("/inbox");
+  await expect(page.getByText(editedToken).first()).toBeVisible();
+  await expect(page.getByText(proposedToken)).toHaveCount(0);
+});
+
+test("a draft artifact is editable in place", async ({ page }) => {
+  await page.goto("/");
+  await skipUnlessAssistantConfigured(page, test);
+
+  await openAssistant(page);
+  await askAssistant(page, "Draft a follow-up email for Westfield");
+
+  const card = page.locator('section[aria-label="Follow-up to Westfield"]');
+  await expect(card).toBeVisible({ timeout: RESPONSE_TIMEOUT_MS });
+  await expect(card.getByText("draft only", { exact: false })).toBeVisible();
+
+  await card.getByRole("button", { name: "Edit draft" }).click();
+  const body = card.getByLabel("Draft body");
+  await body.fill("Hi Sarah,\n\nReworked in place before sending.\n\nCheers");
+  await card.getByRole("button", { name: "Finish editing draft" }).click();
+
+  await expect(
+    card.getByText("Reworked in place before sending.")
+  ).toBeVisible();
+  await expect(card.getByText("edited draft", { exact: false })).toBeVisible();
 });
 
 test("open assistant panel has no WCAG A/AA violations", async ({ page }) => {

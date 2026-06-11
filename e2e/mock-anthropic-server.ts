@@ -149,6 +149,7 @@ const lastUserText = (body: AnthropicRequestBody): string => {
 
 const INBOX_PATTERN = /inbox/i;
 const CAPTURE_PATTERN = /capture/i;
+const DRAFT_PATTERN = /draft/i;
 // Specs embed a unique company token so accumulated data on the shared dev
 // DB never causes false positives.
 const COMPANY_TOKEN_PATTERN = /UNIQ-\d+/;
@@ -173,6 +174,17 @@ const respond = (body: AnthropicRequestBody): string => {
         projectType: "retail_display",
         scopeSummary: "Christmas display for centre court",
         source: "web",
+      }),
+      "tool_use"
+    );
+  }
+  if (DRAFT_PATTERN.test(userText)) {
+    return messageEnvelope(
+      toolUseEvents("present_draft", {
+        body: "Hi Sarah,\n\nThanks for your enquiry about the centre court display. We would love to put a concept together for you.\n\nCheers,\nBlu Builders",
+        kind: "followup_email",
+        subject: "Your Christmas display enquiry",
+        title: "Follow-up to Westfield",
       }),
       "tool_use"
     );

@@ -174,6 +174,7 @@ export default async function DealPage({
       stageIsWon: pipelineStage.isWon,
       notes: deal.notes,
       ownerId: deal.ownerId,
+      companyId: company.id,
       companyName: company.name,
       contactId: contact.id,
       contactName: contact.name,
@@ -261,13 +262,40 @@ export default async function DealPage({
 
   const valueCents = record.quotedValueCents ?? record.estimatedValueCents;
 
-  const facts = [
-    { label: "Company", value: record.companyName },
+  // Company and contact names link through to their pages (FR-2).
+  const facts: { label: string; value: React.ReactNode }[] = [
+    {
+      label: "Company",
+      value:
+        record.companyId && record.companyName ? (
+          <Link
+            className="text-blu underline-offset-2 hover:underline"
+            href={`/companies/${record.companyId}`}
+          >
+            {record.companyName}
+          </Link>
+        ) : (
+          record.companyName
+        ),
+    },
     {
       label: "Contact",
-      value: record.contactName
-        ? `${record.contactName}${record.contactEmail ? ` · ${record.contactEmail}` : ""}${record.contactPhone ? ` · ${record.contactPhone}` : ""}`
-        : null,
+      value: record.contactName ? (
+        <>
+          {record.contactId ? (
+            <Link
+              className="text-blu underline-offset-2 hover:underline"
+              href={`/contacts/${record.contactId}`}
+            >
+              {record.contactName}
+            </Link>
+          ) : (
+            record.contactName
+          )}
+          {record.contactEmail ? ` · ${record.contactEmail}` : ""}
+          {record.contactPhone ? ` · ${record.contactPhone}` : ""}
+        </>
+      ) : null,
     },
     { label: "Owner", value: record.ownerName ?? "Unassigned" },
     { label: "Source", value: record.source.replace("_", " ") },

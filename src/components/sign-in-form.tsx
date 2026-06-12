@@ -72,9 +72,7 @@ export function SignInForm({ microsoftSso }: { microsoftSso: boolean }) {
         <Button
           className="h-12 text-base"
           disabled={isPending}
-          onClick={() =>
-            authClient.signIn.social({ provider: "microsoft" })
-          }
+          onClick={() => authClient.signIn.social({ provider: "microsoft" })}
           type="button"
           variant="secondary"
         >

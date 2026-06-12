@@ -16,6 +16,33 @@ const PARA_CLASSES = "text-muted-foreground text-sm";
 
 const SECTIONS: HelpSection[] = [
   {
+    id: "signing-in",
+    title: "Signing in",
+    body: (
+      <>
+        <p className={PARA_CLASSES}>
+          Blu CRM is private to the team: every page except the public enquiry
+          form and client quote links needs a sign-in.
+        </p>
+        <ol className={STEP_CLASSES}>
+          <li>
+            Sign in with your <strong>@blu.builders email</strong> and password.
+            Your browser stays signed in on that device.
+          </li>
+          <li>
+            Change your password any time under{" "}
+            <strong>Settings, Account</strong>. Do this after your first sign-in
+            if you were given a starter password.
+          </li>
+          <li>
+            <strong>Sign out</strong> lives at the bottom of the sidebar on
+            desktop, or in the header on a phone.
+          </li>
+        </ol>
+      </>
+    ),
+  },
+  {
     id: "getting-started",
     title: "Getting started",
     body: (

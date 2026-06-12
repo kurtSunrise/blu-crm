@@ -127,11 +127,11 @@ export interface CreateLeadInput {
   contactEmail?: string;
   contactName?: string;
   contactPhone?: string;
+  // The signed-in user who performed the capture; falls back to the owner.
+  createdBy?: string;
   estimatedValueCents?: number;
   fixedDate?: Date;
   ownerId?: string;
-  // The signed-in user who performed the capture; falls back to the owner.
-  createdBy?: string;
   projectType?: ProjectType;
   // Raw enquiry text (e.g. a forwarded email body) attached to the timeline
   // so no enquiry is ever silently dropped (FR-3.3 AC).

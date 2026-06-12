@@ -7,12 +7,14 @@ import {
   Globe,
   Inbox,
   KanbanSquare,
+  KeyRound,
   Mail,
   Percent,
   SunMoon,
 } from "lucide-react";
 import Link from "next/link";
 import { AlertThresholdsForm } from "@/components/alert-thresholds-form";
+import { ChangePasswordForm } from "@/components/change-password-form";
 import { CopyLinkButton } from "@/components/copy-link-button";
 import { StageManager } from "@/components/stage-manager";
 import { StageWeightingsForm } from "@/components/stage-weightings-form";
@@ -21,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { db } from "@/db";
 import { deal, pipelineStage } from "@/db/schema";
 import { getAlertThresholds } from "@/lib/alerts";
+import { requireSession } from "@/lib/session";
 
 export const metadata = {
   title: "Settings | Blu CRM",
@@ -68,6 +71,7 @@ function SettingsCard({
 }
 
 export default async function SettingsPage() {
+  const session = await requireSession();
   const thresholds = await getAlertThresholds();
   // Deal counts include discarded deals: they still reference their stage,
   // so removing a stage has to move them too (FR-1.3 AC).
@@ -95,8 +99,7 @@ export default async function SettingsPage() {
         </p>
         <h1 className="font-semibold text-2xl tracking-tight">Settings</h1>
         <p className="text-muted-foreground text-sm">
-          Workspace-wide preferences. Changes apply to everyone straight away;
-          role-based access arrives with sign-in.
+          Workspace-wide preferences. Changes apply to everyone straight away.
         </p>
       </header>
 
@@ -235,7 +238,26 @@ export default async function SettingsPage() {
           </SettingsCard>
 
           <SettingsCard
-            description="Where this workspace is anchored. Users and roles become editable once sign-in lands."
+            description="Your sign-in for this workspace. Replace the initial password with one only you know."
+            icon={KeyRound}
+            label="Account"
+            title="Account"
+          >
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+              <div className="flex flex-col">
+                <dt className="text-muted-foreground text-xs">Signed in as</dt>
+                <dd className="text-sm">{session.user.name}</dd>
+              </div>
+              <div className="flex flex-col">
+                <dt className="text-muted-foreground text-xs">Email</dt>
+                <dd className="text-sm">{session.user.email}</dd>
+              </div>
+            </dl>
+            <ChangePasswordForm />
+          </SettingsCard>
+
+          <SettingsCard
+            description="Where this workspace is anchored. Andy, Kurt, and Jess are the seeded team; richer role management can come later."
             icon={Building2}
             label="Workspace"
             title="Workspace"

@@ -15,6 +15,8 @@ export default defineConfig({
   ],
   use: {
     baseURL,
+    // Session created in e2e/global-setup.ts; the (app) shell requires it.
+    storageState: "output/playwright/.auth/team.json",
     trace: "on-first-retry",
   },
   projects: [
@@ -33,6 +35,8 @@ export default defineConfig({
       command: "npm run dev",
       url: baseURL,
       reuseExistingServer: !process.env.CI,
+      // Cold Turbopack compiles on slow filesystems blow the 60s default.
+      timeout: 240_000,
       env: {
         ANTHROPIC_API_KEY: "mock-key-for-e2e",
         ANTHROPIC_BASE_URL: "http://127.0.0.1:4848",

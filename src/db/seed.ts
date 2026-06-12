@@ -1,7 +1,7 @@
 import { hashPassword } from "better-auth/crypto";
 import { eq } from "drizzle-orm";
-import { account, pipelineStage, user } from "./schema";
 import { db } from "./index";
+import { account, pipelineStage, user } from "./schema";
 
 // Blu's eight default stages (FR-1.2); weightings are first-pass defaults,
 // admin-editable per FR-8.1 and open question Q2.

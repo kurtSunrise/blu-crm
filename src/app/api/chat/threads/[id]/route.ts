@@ -11,7 +11,7 @@ export async function GET(
   const assistantUser = await resolveAssistantUser(request);
   if (!assistantUser) {
     return NextResponse.json(
-      { error: "No team members exist yet; seed a user first" },
+      { error: "Sign in to use the assistant" },
       { status: 401 }
     );
   }

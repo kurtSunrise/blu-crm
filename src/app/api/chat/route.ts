@@ -4,7 +4,7 @@ import { z } from "zod";
 import { runAgentTurn } from "@/lib/ai/agent-loop";
 import { resolveAssistantUser } from "@/lib/ai/assistant-user";
 import { resolveAuditedToolCall } from "@/lib/ai/audit";
-import { createAnthropicClient, isAiConfigured } from "@/lib/ai/client";
+import { isAiConfigured } from "@/lib/ai/client";
 import { buildPageContext } from "@/lib/ai/page-context";
 import {
   encodeStreamPayload,
@@ -268,7 +268,6 @@ export async function POST(request: Request): Promise<Response> {
       const messages = await loadThreadMessages(thread.id);
 
       await runAgentTurn({
-        client: createAnthropicClient(),
         ctx: { threadId: thread.id, userId },
         messages,
         send,

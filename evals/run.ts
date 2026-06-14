@@ -1,9 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import {
-  createAnthropicClient,
-  getAiModel,
-  isAiConfigured,
-} from "@/lib/ai/client";
+import { createMessage, getAiModel, isAiConfigured } from "@/lib/ai/client";
 import { buildPageContext } from "@/lib/ai/page-context";
 import { SYSTEM_PROMPT } from "@/lib/ai/system-prompt";
 import { TOOL_DEFINITIONS } from "@/lib/ai/tools";
@@ -39,7 +35,6 @@ const toGraded = (message: Anthropic.Message): GradedResponse => ({
 });
 
 const runFixture = async (
-  client: Anthropic,
   fixture: (typeof FIXTURES)[number]
 ): Promise<string | null> => {
   // Page-context for plain pathnames is static (no ids, no DB lookups), so
@@ -48,7 +43,7 @@ const runFixture = async (
     { pathname: fixture.pathname },
     "Kurt"
   );
-  const response = await client.messages.create({
+  const response = await createMessage({
     max_tokens: MAX_OUTPUT_TOKENS,
     messages: [
       {
@@ -74,7 +69,6 @@ const main = async (): Promise<void> => {
     return;
   }
 
-  const client = createAnthropicClient();
   process.stdout.write(
     `Running ${FIXTURES.length} fixtures against ${getAiModel()}\n\n`
   );
@@ -83,7 +77,7 @@ const main = async (): Promise<void> => {
   for (const fixture of FIXTURES) {
     let failure: string | null;
     try {
-      failure = await runFixture(client, fixture);
+      failure = await runFixture(fixture);
     } catch (error) {
       failure = `API error: ${error instanceof Error ? error.message : String(error)}`;
     }

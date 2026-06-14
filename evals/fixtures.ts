@@ -19,6 +19,7 @@ export interface EvalFixture {
 }
 
 const EM_DASH = "—";
+const ASKS_FOR_DETAIL = /budget|date|when|venue|decision|deadline|\?/i;
 
 const firstTool = (response: GradedResponse) => response.toolCalls[0];
 
@@ -98,9 +99,7 @@ export const FIXTURES: EvalFixture[] = [
       if (proposedWrites(response).length > 0) {
         return `proposed ${proposedWrites(response)[0]?.name} despite missing budget, date, and decision-maker`;
       }
-      const asked = /budget|date|when|venue|decision|deadline|\?/i.test(
-        response.text
-      );
+      const asked = ASKS_FOR_DETAIL.test(response.text);
       return asked
         ? null
         : `did not ask for the missing details (text: ${response.text.slice(0, 120)})`;

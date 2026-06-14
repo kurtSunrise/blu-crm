@@ -8,6 +8,8 @@ import { expect, test } from "@playwright/test";
 const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 const E2E_EMAIL = "kurt@blu.builders";
 const E2E_PASSWORD = process.env.SEED_USER_PASSWORD ?? "blu-crm-dev";
+const SIGN_IN_URL = /\/sign-in/;
+const ENQUIRE_URL = /\/enquire/;
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
@@ -23,7 +25,7 @@ const signIn = async (
 
 test("unauthenticated visits bounce to the sign-in page", async ({ page }) => {
   await page.goto("/pipeline");
-  await expect(page).toHaveURL(/\/sign-in/);
+  await expect(page).toHaveURL(SIGN_IN_URL);
   await expect(
     page.getByRole("heading", { name: "Sign in to Blu CRM" })
   ).toBeVisible();
@@ -33,7 +35,7 @@ test("a wrong password is rejected with a readable error", async ({ page }) => {
   await page.goto("/sign-in");
   await signIn(page, E2E_EMAIL, "definitely-not-the-password");
   await expect(page.getByRole("alert")).toBeVisible();
-  await expect(page).toHaveURL(/\/sign-in/);
+  await expect(page).toHaveURL(SIGN_IN_URL);
 });
 
 test("sign in and sign out round trip", async ({ page }) => {
@@ -54,16 +56,16 @@ test("sign in and sign out round trip", async ({ page }) => {
     .filter({ visible: true })
     .first()
     .click();
-  await expect(page).toHaveURL(/\/sign-in/);
+  await expect(page).toHaveURL(SIGN_IN_URL);
 
   // The session is really gone: app pages bounce again.
   await page.goto("/tasks");
-  await expect(page).toHaveURL(/\/sign-in/);
+  await expect(page).toHaveURL(SIGN_IN_URL);
 });
 
 test("public surfaces stay reachable signed out", async ({ page }) => {
   await page.goto("/enquire");
-  await expect(page).toHaveURL(/\/enquire/);
+  await expect(page).toHaveURL(ENQUIRE_URL);
   await expect(
     page.getByRole("heading", { name: "Start a project with Blu" })
   ).toBeVisible();

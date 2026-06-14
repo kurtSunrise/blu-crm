@@ -11,6 +11,7 @@ import { queryRows } from "./test-db";
 
 const RESPONSE_TIMEOUT_MS = 20_000;
 const ASSISTANT_BUTTON_NAME = /assistant/i;
+const LEAD_ID_PATTERN = /BLU-/;
 const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 
 const openAssistant = async (page: Page): Promise<void> => {
@@ -280,7 +281,7 @@ test("chase priority runs the scoring tool and renders ranked deals", async ({
   await expect(artifact).toBeVisible({ timeout: RESPONSE_TIMEOUT_MS });
   // Ranked rows carry lead IDs. The seeded lead guarantees a non-empty
   // ranking, but parallel projects share the DB, so any row satisfies this.
-  await expect(artifact.getByText(/BLU-/).first()).toBeVisible();
+  await expect(artifact.getByText(LEAD_ID_PATTERN).first()).toBeVisible();
   await expect(page.getByText("Mock summary: all done here.")).toBeVisible();
 });
 

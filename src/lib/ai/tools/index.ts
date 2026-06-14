@@ -1,4 +1,4 @@
-import type Anthropic from "@anthropic-ai/sdk";
+import type * as Anthropic from "@/lib/ai/anthropic";
 import { dealWriteTools } from "@/lib/ai/tools/deal-tools";
 import { draftTools } from "@/lib/ai/tools/draft-tools";
 import { followUpTools } from "@/lib/ai/tools/follow-up-tools";

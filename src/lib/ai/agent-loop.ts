@@ -1,4 +1,4 @@
-import type Anthropic from "@anthropic-ai/sdk";
+import type * as Anthropic from "@/lib/ai/anthropic";
 import { recordProposedToolCall } from "@/lib/ai/audit";
 import { getAiModel, streamMessage } from "@/lib/ai/client";
 import type { StreamPayload } from "@/lib/ai/stream-protocol";

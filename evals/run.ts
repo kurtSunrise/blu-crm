@@ -1,4 +1,4 @@
-import type Anthropic from "@anthropic-ai/sdk";
+import type * as Anthropic from "@/lib/ai/anthropic";
 import { createMessage, getAiModel, isAiConfigured } from "@/lib/ai/client";
 import { buildPageContext } from "@/lib/ai/page-context";
 import { SYSTEM_PROMPT } from "@/lib/ai/system-prompt";

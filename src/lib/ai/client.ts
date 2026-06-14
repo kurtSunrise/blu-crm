@@ -1,4 +1,4 @@
-import type Anthropic from "@anthropic-ai/sdk";
+import type * as Anthropic from "@/lib/ai/anthropic";
 
 // Direct REST client for the Anthropic Messages API. We call the HTTP
 // endpoint with fetch instead of the official SDK so the SDK stays out of

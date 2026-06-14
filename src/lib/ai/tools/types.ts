@@ -1,5 +1,5 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
+import type * as Anthropic from "@/lib/ai/anthropic";
 import type { ArtifactPayload } from "@/lib/ai/stream-protocol";
 
 export interface AiToolContext {
@@ -25,10 +25,10 @@ export interface AiTool {
 // edited inputs against the same schema); the API gets the derived JSON
 // Schema. Derivation is deterministic, which keeps the tools cache prefix
 // byte-stable.
-const toInputSchema = (schema: z.ZodType): Anthropic.Tool.InputSchema => {
+const toInputSchema = (schema: z.ZodType): Anthropic.ToolInputSchema => {
   const jsonSchema = z.toJSONSchema(schema) as Record<string, unknown>;
   const { $schema: _omitted, ...rest } = jsonSchema;
-  return rest as Anthropic.Tool.InputSchema;
+  return rest as Anthropic.ToolInputSchema;
 };
 
 export const defineTool = <TSchema extends z.ZodType>(options: {

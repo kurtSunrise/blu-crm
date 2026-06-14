@@ -1,7 +1,7 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { chatMessage, chatThread } from "@/db/schema";
+import type * as Anthropic from "@/lib/ai/anthropic";
 
 // Replay cap (least-context): only the tail of long threads goes back to the
 // model. Trimming must land on a plain user turn so tool_use blocks keep

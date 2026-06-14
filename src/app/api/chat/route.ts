@@ -1,7 +1,7 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { runAgentTurn } from "@/lib/ai/agent-loop";
+import type * as Anthropic from "@/lib/ai/anthropic";
 import { resolveAssistantUser } from "@/lib/ai/assistant-user";
 import { resolveAuditedToolCall } from "@/lib/ai/audit";
 import { isAiConfigured } from "@/lib/ai/client";

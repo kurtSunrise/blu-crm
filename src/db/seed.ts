@@ -25,7 +25,7 @@ const TEAM_USERS = [
     email: "andy@blu.builders",
     role: "admin",
   },
-  { id: "kurt", name: "Kurt Weiss", email: "kurt@blu.builders", role: "sales" },
+  { id: "kurt", name: "Kurt Weiss", email: "kurt@blu.builders", role: "admin" },
   {
     id: "jess",
     name: "Jessica Rodin",

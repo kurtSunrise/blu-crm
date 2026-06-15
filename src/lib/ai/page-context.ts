@@ -15,6 +15,26 @@ export interface PageContextInput {
   pathname: string;
 }
 
+// The URL is the reliable source of truth for the open entity: the client may
+// not register it (e.g. the chat was opened on another page first), but the
+// pathname always carries the id. These derive the internal id from the path so
+// the assistant knows which deal/contact/company the user is viewing.
+const DEAL_PATH = /^\/deals\/([^/]+)$/;
+const CONTACT_PATH = /^\/contacts\/([^/]+)$/;
+const COMPANY_PATH = /^\/companies\/([^/]+)$/;
+
+const dealIdFromPath = (pathname: string): string | undefined => {
+  const id = DEAL_PATH.exec(pathname)?.[1];
+  // /deals/new is the quick-add form, not a deal id.
+  return id === "new" ? undefined : id;
+};
+
+const contactIdFromPath = (pathname: string): string | undefined =>
+  CONTACT_PATH.exec(pathname)?.[1];
+
+const companyIdFromPath = (pathname: string): string | undefined =>
+  COMPANY_PATH.exec(pathname)?.[1];
+
 const PAGE_DESCRIPTIONS: Record<string, string> = {
   "/": "the dashboard (today's follow-ups, alerts, pipeline summary)",
   "/calendar": "the calendar of fixed dates and follow-ups",
@@ -96,6 +116,21 @@ const contactHeader = async (contactId: string): Promise<string | null> => {
   return `The user is viewing contact ${row.name}${suffix}. Use get_contact for their full record.`;
 };
 
+const companyHeader = async (companyId: string): Promise<string | null> => {
+  const rows = await db
+    .select({ kind: company.kind, name: company.name })
+    .from(company)
+    .where(eq(company.id, companyId))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) {
+    return null;
+  }
+  const suffix = row.kind ? ` (${row.kind})` : "";
+  return `The user is viewing company ${row.name}${suffix}. Use get_company for its full record.`;
+};
+
 export const buildPageContext = async (
   input: PageContextInput,
   userName: string
@@ -106,14 +141,25 @@ export const buildPageContext = async (
     `They are looking at ${describePage(input.pathname)}.`,
   ];
 
-  if (input.dealId) {
-    const header = await dealHeader(input.dealId);
+  // Prefer the client-registered id, fall back to the id in the pathname.
+  const dealId = input.dealId ?? dealIdFromPath(input.pathname);
+  const contactId = input.contactId ?? contactIdFromPath(input.pathname);
+  const companyId = companyIdFromPath(input.pathname);
+
+  if (dealId) {
+    const header = await dealHeader(dealId);
     if (header) {
       lines.push(header);
     }
   }
-  if (input.contactId) {
-    const header = await contactHeader(input.contactId);
+  if (contactId) {
+    const header = await contactHeader(contactId);
+    if (header) {
+      lines.push(header);
+    }
+  }
+  if (companyId) {
+    const header = await companyHeader(companyId);
     if (header) {
       lines.push(header);
     }

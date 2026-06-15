@@ -54,6 +54,8 @@
     "check": "ultracite check",
     "fix": "ultracite fix",
     "db:seed": "dotenv -e .env.local -- tsx src/db/seed.ts",
+    "knowledge:import": "dotenv -e .env.local -- tsx src/db/knowledge-import.ts",
+    "knowledge:import:prod": "dotenv -e .env.production -- tsx src/db/knowledge-import.ts",
     "ai:eval": "dotenv -e .env.local -- tsx evals/run.ts"
   },
   "version": "0.1.0",

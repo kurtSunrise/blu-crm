@@ -430,6 +430,43 @@ export const aiAuditLog = pgTable("ai_audit_log", {
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
 });
 
+// ---------------------------------------------------------------------------
+// Knowledge base — a small corpus of company "how we work" docs (brand voice,
+// sales process, quoting/pricing rules). The assistant searches it via the
+// search_knowledge_base tool. Retrieval is Postgres full-text search; chunks
+// hold the searchable passages so results stay small and precise.
+// ---------------------------------------------------------------------------
+
+export const knowledgeDoc = pgTable("knowledge_doc", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  // Stable human key; the import upserts by slug so re-runs replace cleanly.
+  slug: text("slug").notNull().unique(),
+  title: text("title").notNull(),
+  category: text("category"),
+  content: text("content").notNull(),
+  source: text("source"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const knowledgeChunk = pgTable("knowledge_chunk", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  docId: text("doc_id")
+    .notNull()
+    .references(() => knowledgeDoc.id, { onDelete: "cascade" }),
+  heading: text("heading"),
+  content: text("content").notNull(),
+  position: integer("position").notNull(),
+});
+
 // Named aggregate so consumers avoid namespace imports (Ultracite rule)
 export const schema = {
   account,
@@ -443,6 +480,8 @@ export const schema = {
   contact,
   deal,
   followUp,
+  knowledgeChunk,
+  knowledgeDoc,
   notification,
   pipelineStage,
   quote,

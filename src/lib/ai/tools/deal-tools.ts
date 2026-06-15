@@ -4,6 +4,10 @@ import { z } from "zod";
 import { db } from "@/db";
 import { deal } from "@/db/schema";
 import { logQuickActivity, moveDealStage } from "@/lib/actions/deal-actions";
+import {
+  DEAL_HANDLE_DESCRIPTION,
+  resolveDealId,
+} from "@/lib/ai/tools/resolve-deal";
 import { type AiTool, defineTool } from "@/lib/ai/tools/types";
 import { dollarsToCents } from "@/lib/format";
 import { createLead } from "@/lib/intake";
@@ -116,7 +120,7 @@ const createLeadTool = defineTool({
 });
 
 const updateDealSchema = z.object({
-  dealId: z.string().describe("Internal deal id from get_deal or query_deals"),
+  dealId: z.string().describe(DEAL_HANDLE_DESCRIPTION),
   decisionMakerConfirmed: z.boolean().optional(),
   estimatedValueDollars: z.number().positive().optional(),
   expectedCloseDate: isoDate.optional(),
@@ -137,7 +141,13 @@ const updateDealTool = defineTool({
   description:
     "Update fields on an existing deal (title, value, venue, scope, project type, dates, decision-maker flag, owner, notes). Only include the fields that should change. Use move_deal_stage for stage changes.",
   execute: async (input, ctx) => {
-    const { dealId, expectedCloseDate, fixedDate, ...rest } = input;
+    const { dealId: dealHandle, expectedCloseDate, fixedDate, ...rest } = input;
+    const dealId = await resolveDealId(dealHandle);
+    if (!dealId) {
+      return {
+        resultText: `No deal found for "${dealHandle}". Use query_deals or get_deal to find it.`,
+      };
+    }
     const outcome = await updateDealFieldsCore({
       ...rest,
       dealId,
@@ -159,7 +169,7 @@ const updateDealTool = defineTool({
 });
 
 const moveDealStageSchema = z.object({
-  dealId: z.string(),
+  dealId: z.string().describe(DEAL_HANDLE_DESCRIPTION),
   handoverToDelivery: z
     .boolean()
     .optional()
@@ -175,12 +185,18 @@ const moveDealStageTool = defineTool({
   description:
     "Move a deal to another pipeline stage. Call list_pipeline_stages first for the stage id. Moving to Lost / Dormant requires a lostReason; moving to Won may flag handoverToDelivery.",
   execute: async (input) => {
-    const outcome = await moveDealStage(input);
+    const dealId = await resolveDealId(input.dealId);
+    if (!dealId) {
+      return {
+        resultText: `No deal found for "${input.dealId}". Use query_deals or get_deal to find it.`,
+      };
+    }
+    const outcome = await moveDealStage({ ...input, dealId });
     if (outcome.error) {
       return { resultText: `Stage move failed: ${outcome.error}` };
     }
     return {
-      changedPaths: ["/", "/pipeline", `/deals/${input.dealId}`],
+      changedPaths: ["/", "/pipeline", `/deals/${dealId}`],
       resultText: "Deal moved.",
     };
   },
@@ -191,7 +207,7 @@ const moveDealStageTool = defineTool({
 
 const logActivitySchema = z.object({
   content: z.string().optional().describe("What happened, in one line"),
-  dealId: z.string(),
+  dealId: z.string().describe(DEAL_HANDLE_DESCRIPTION),
   type: z.enum(QUICK_LOG_TYPES),
 });
 
@@ -199,12 +215,18 @@ const logActivityTool = defineTool({
   description:
     "Log an activity (call, email, site visit, meeting, or note) on a deal's timeline. This also updates the deal's last-contact date, clearing staleness alerts.",
   execute: async (input) => {
-    const outcome = await logQuickActivity(input);
+    const dealId = await resolveDealId(input.dealId);
+    if (!dealId) {
+      return {
+        resultText: `No deal found for "${input.dealId}". Use query_deals or get_deal to find it.`,
+      };
+    }
+    const outcome = await logQuickActivity({ ...input, dealId });
     if (outcome.error) {
       return { resultText: `Logging failed: ${outcome.error}` };
     }
     return {
-      changedPaths: ["/", `/deals/${input.dealId}`],
+      changedPaths: ["/", `/deals/${dealId}`],
       resultText: "Activity logged.",
     };
   },

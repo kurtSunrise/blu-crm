@@ -1,12 +1,16 @@
 import { z } from "zod";
 import { assignDealOwner, discardLead } from "@/lib/actions/inbox-actions";
+import {
+  DEAL_HANDLE_DESCRIPTION,
+  resolveDealId,
+} from "@/lib/ai/tools/resolve-deal";
 import { type AiTool, defineTool } from "@/lib/ai/tools/types";
 import { updateContactFieldsCore } from "@/lib/mutations/contact";
 
 const triageSchema = z
   .object({
     action: z.enum(["assign", "discard"]),
-    dealId: z.string().describe("Deal id from get_inbox_leads"),
+    dealId: z.string().describe(DEAL_HANDLE_DESCRIPTION),
     ownerId: z
       .string()
       .optional()
@@ -20,20 +24,26 @@ const triageInboxLeadTool = defineTool({
   description:
     "Triage an unassigned inbox lead: assign it to a team member (who gets notified) or discard it (soft delete). Call get_inbox_leads first to identify the lead.",
   execute: async (input) => {
+    const dealId = await resolveDealId(input.dealId);
+    if (!dealId) {
+      return {
+        resultText: `No deal found for "${input.dealId}". Use get_inbox_leads to find it.`,
+      };
+    }
     if (input.action === "assign") {
       const outcome = await assignDealOwner({
-        dealId: input.dealId,
+        dealId,
         ownerId: input.ownerId,
       });
       if (outcome.error) {
         return { resultText: `Assignment failed: ${outcome.error}` };
       }
       return {
-        changedPaths: ["/inbox", "/pipeline", `/deals/${input.dealId}`],
+        changedPaths: ["/inbox", "/pipeline", `/deals/${dealId}`],
         resultText: "Lead assigned.",
       };
     }
-    const outcome = await discardLead({ dealId: input.dealId });
+    const outcome = await discardLead({ dealId });
     if (outcome.error) {
       return { resultText: `Discard failed: ${outcome.error}` };
     }

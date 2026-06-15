@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { completeFollowUp } from "@/lib/actions/follow-up-actions";
+import {
+  DEAL_HANDLE_DESCRIPTION,
+  resolveDealId,
+} from "@/lib/ai/tools/resolve-deal";
 import { type AiTool, defineTool } from "@/lib/ai/tools/types";
 import { createFollowUpCore } from "@/lib/mutations/follow-up";
 
@@ -8,7 +12,7 @@ const createFollowUpSchema = z.object({
     .string()
     .min(1)
     .describe("The next action, e.g. 'Call to confirm budget'"),
-  dealId: z.string(),
+  dealId: z.string().describe(DEAL_HANDLE_DESCRIPTION),
   dueDate: z.string().describe("Due date as YYYY-MM-DD"),
   ownerId: z.string().describe("Team member id from list_team_members"),
 });
@@ -21,10 +25,16 @@ const createFollowUpTool = defineTool({
     if (Number.isNaN(dueDate.getTime())) {
       return { resultText: `Invalid due date: ${input.dueDate}` };
     }
+    const dealId = await resolveDealId(input.dealId);
+    if (!dealId) {
+      return {
+        resultText: `No deal found for "${input.dealId}". Use query_deals or get_deal to find it.`,
+      };
+    }
     const outcome = await createFollowUpCore({
       action: input.action,
       createdBy: ctx.userId,
-      dealId: input.dealId,
+      dealId,
       dueDate,
       ownerId: input.ownerId,
     });
@@ -32,7 +42,7 @@ const createFollowUpTool = defineTool({
       return { resultText: `Follow-up failed: ${outcome.error}` };
     }
     return {
-      changedPaths: ["/", "/tasks", `/deals/${input.dealId}`],
+      changedPaths: ["/", "/tasks", `/deals/${dealId}`],
       resultText: "Follow-up created.",
     };
   },

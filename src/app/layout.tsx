@@ -1,8 +1,17 @@
 import type { Metadata } from "next";
 import { DM_Sans, JetBrains_Mono, Outfit } from "next/font/google";
-import Script from "next/script";
 import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
+
+// Defines the SWC/esbuild __name helper before any inline script runs.
+// next-themes inlines a stringified bootstrap function (M.toString()); the
+// `next build --webpack` SWC minifier wraps it with __name() but never defines
+// the helper in that inline <script> scope, so it threw "__name is not defined"
+// and broke React hydration (the sign-in form went inert). Rendered as the
+// first node in <head> so it executes before next-themes' script. Static
+// literal, no user input.
+const NAME_HELPER_POLYFILL =
+  "globalThis.__name=globalThis.__name||function(f){return f};";
 
 const outfit = Outfit({
   variable: "--font-heading",
@@ -49,15 +58,8 @@ export default function RootLayout({
         className="flex min-h-full flex-col bg-background text-foreground"
         suppressHydrationWarning
       >
-        {/* Polyfill the SWC/esbuild __name helper before any inline script
-            runs. next-themes inlines a stringified bootstrap function
-            (M.toString()); the `next build --webpack` SWC minifier wraps it
-            with __name() but never defines the helper in that inline <script>
-            scope, so it threw "__name is not defined", which broke hydration
-            and left the sign-in form inert. */}
-        <Script id="name-helper-polyfill" strategy="beforeInteractive">
-          {"globalThis.__name=globalThis.__name||function(f){return f};"}
-        </Script>
+        {/* biome-ignore lint/security/noDangerouslySetInnerHtml: static __name polyfill (see NAME_HELPER_POLYFILL), no user input */}
+        <script dangerouslySetInnerHTML={{ __html: NAME_HELPER_POLYFILL }} />
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

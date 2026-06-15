@@ -9,6 +9,7 @@ const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 const E2E_EMAIL = "kurt@blu.builders";
 const E2E_PASSWORD = process.env.SEED_USER_PASSWORD ?? "blu-crm-dev";
 const SIGN_IN_URL = /\/sign-in/;
+const ACCOUNT_MENU_NAME = /Account menu for/;
 const ENQUIRE_URL = /\/enquire/;
 
 test.use({ storageState: { cookies: [], origins: [] } });
@@ -51,11 +52,14 @@ test("sign in and sign out round trip", async ({ page }) => {
       .first()
   ).toBeVisible();
 
+  // Sign out lives in the avatar dropdown (sidebar on desktop, header on
+  // mobile); open it, then choose Log out.
   await page
-    .getByRole("button", { name: "Sign out" })
+    .getByRole("button", { name: ACCOUNT_MENU_NAME })
     .filter({ visible: true })
     .first()
     .click();
+  await page.getByRole("menuitem", { name: "Log out" }).click();
   await expect(page).toHaveURL(SIGN_IN_URL);
 
   // The session is really gone: app pages bounce again.

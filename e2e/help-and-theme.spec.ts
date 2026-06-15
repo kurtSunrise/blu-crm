@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const TOGGLE_NAME = /Switch to (light|dark) mode/;
 const DARK_CLASS = /dark/;
+const ACCOUNT_MENU_NAME = /Account menu for/;
 
 test("help area renders contents, sections, FAQ, and glossary", async ({
   page,
@@ -36,11 +37,18 @@ test("theme toggle switches between dark and light mode", async ({ page }) => {
   await page.goto("/");
   const html = page.locator("html");
 
+  // The theme toggle lives inside the avatar dropdown; open it first.
+  await page
+    .getByRole("button", { name: ACCOUNT_MENU_NAME })
+    .filter({ visible: true })
+    .first()
+    .click();
+
   // Default follows the system; Playwright's default emulation is light.
-  const toggle = page.getByRole("button", { name: TOGGLE_NAME }).first();
+  const toggle = page.getByRole("menuitem", { name: TOGGLE_NAME });
   await expect(toggle).toBeVisible();
 
-  const initialLabel = await toggle.getAttribute("aria-label");
+  const initialLabel = await toggle.textContent();
   await toggle.click();
 
   if (initialLabel === "Switch to dark mode") {
@@ -49,8 +57,8 @@ test("theme toggle switches between dark and light mode", async ({ page }) => {
     await expect(html).not.toHaveClass(DARK_CLASS);
   }
 
-  // Toggling back restores the original scheme.
-  await page.getByRole("button", { name: TOGGLE_NAME }).first().click();
+  // The item stays open (closeOnClick is off); toggling back restores it.
+  await page.getByRole("menuitem", { name: TOGGLE_NAME }).click();
   if (initialLabel === "Switch to dark mode") {
     await expect(html).not.toHaveClass(DARK_CLASS);
   } else {

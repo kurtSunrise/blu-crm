@@ -27,8 +27,6 @@ import {
 } from "@/components/ai/chat-launcher";
 import { BrandMark } from "@/components/brand-mark";
 import { SidebarUserMenu } from "@/components/sidebar-user-menu";
-import { SignOutButton } from "@/components/sign-out-button";
-import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Tooltip,
   TooltipContent,
@@ -288,8 +286,13 @@ function AppShellInner({
                   </Link>
                 );
               })}
-              <ThemeToggle />
-              <SignOutButton compact />
+              <SidebarUserMenu
+                collapsed
+                email={userEmail}
+                image={userImage}
+                menuSide="bottom"
+                name={userName}
+              />
             </div>
           </div>
         </header>

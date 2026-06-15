@@ -1,9 +1,17 @@
 "use client";
 
-import { ChevronsUpDown, LogOut, Settings, User } from "lucide-react";
+import {
+  ChevronsUpDown,
+  LogOut,
+  Moon,
+  Settings,
+  Sun,
+  User,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useTheme } from "next-themes";
+import { useEffect, useState, useTransition } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -28,14 +36,29 @@ export function SidebarUserMenu({
   email,
   image = null,
   collapsed = false,
+  menuSide = "top",
 }: {
   name: string;
   email: string;
   image?: string | null;
   collapsed?: boolean;
+  menuSide?: "top" | "bottom";
 }) {
   const router = useRouter();
   const [isSigningOut, startSignOut] = useTransition();
+
+  // next-themes resolves the theme only on the client, so render a stable
+  // label until mounted to avoid an SSR/client mismatch.
+  const { resolvedTheme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  const isDark = mounted && resolvedTheme === "dark";
+  let themeLabel = "Theme";
+  if (mounted) {
+    themeLabel = isDark ? "Switch to light mode" : "Switch to dark mode";
+  }
 
   const initials = getUserInitials(name, email);
 
@@ -95,7 +118,7 @@ export function SidebarUserMenu({
           {triggerInner}
         </DropdownMenuTrigger>
       )}
-      <DropdownMenuContent align="end" className="min-w-56" side="top">
+      <DropdownMenuContent align="end" className="min-w-56" side={menuSide}>
         <DropdownMenuGroup>
           <DropdownMenuLabel className="p-0">
             <div className="flex items-center gap-2 px-1.5 py-1.5">
@@ -124,6 +147,14 @@ export function SidebarUserMenu({
         <DropdownMenuItem render={<Link href="/settings" />}>
           <Settings aria-hidden />
           Settings
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          closeOnClick={false}
+          onClick={() => setTheme(isDark ? "light" : "dark")}
+        >
+          {isDark ? <Sun aria-hidden /> : <Moon aria-hidden />}
+          {themeLabel}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem

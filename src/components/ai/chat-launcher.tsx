@@ -2,6 +2,7 @@
 
 import type { ThreadMessageLike } from "@assistant-ui/react";
 import { HistoryIcon, SparklesIcon, SquarePenIcon, XIcon } from "lucide-react";
+import type * as React from "react";
 import { useState } from "react";
 import { useAiAssistant } from "@/components/ai/ai-context";
 import { AiRuntimeProvider } from "@/components/ai/ai-runtime-provider";
@@ -10,8 +11,14 @@ import { ThreadHistory } from "@/components/ai/thread-history";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-// Launcher button used in the desktop sidebar and the mobile header.
-export function AiLauncherButton({ withLabel }: { withLabel?: boolean }) {
+// Launcher button used in the desktop sidebar and the mobile header. Forwards
+// className/ref/props so it can be composed as a tooltip trigger (Base UI
+// merges the trigger's props onto this button via its `render` prop).
+export function AiLauncherButton({
+  withLabel,
+  className,
+  ...props
+}: { withLabel?: boolean } & React.ComponentProps<"button">) {
   const { open, setOpen } = useAiAssistant();
 
   if (withLabel) {
@@ -22,10 +29,12 @@ export function AiLauncherButton({ withLabel }: { withLabel?: boolean }) {
           "flex min-h-10 w-full items-center gap-3 rounded-md px-3 text-sm transition-colors",
           open
             ? "bg-accent font-medium text-blu"
-            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+          className
         )}
-        onClick={() => setOpen(!open)}
         type="button"
+        {...props}
+        onClick={() => setOpen(!open)}
       >
         <SparklesIcon aria-hidden className="size-4.5" />
         Assistant
@@ -39,10 +48,12 @@ export function AiLauncherButton({ withLabel }: { withLabel?: boolean }) {
       aria-label="Blu assistant"
       className={cn(
         "flex min-h-11 min-w-11 items-center justify-center rounded-md",
-        open ? "text-blu" : "text-muted-foreground hover:text-foreground"
+        open ? "text-blu" : "text-muted-foreground hover:text-foreground",
+        className
       )}
-      onClick={() => setOpen(!open)}
       type="button"
+      {...props}
+      onClick={() => setOpen(!open)}
     >
       <SparklesIcon aria-hidden className="size-5" />
     </button>

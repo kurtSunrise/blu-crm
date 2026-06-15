@@ -12,7 +12,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  Settings,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -53,7 +52,6 @@ const PRIMARY_NAV = [
 const SECONDARY_NAV = [
   { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/help", label: "Help", icon: HelpCircle },
-  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 // Bottom tabs are a phone pattern: the five core field destinations only.

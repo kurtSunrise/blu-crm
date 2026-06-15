@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { baseUrlFromHeaders, getAuth } from "@/lib/auth";
 
 // Auth shipped with M0's email/password sign-in, so the assistant requires
 // a real session: /api/chat and the thread routes return 401 without one.
@@ -6,7 +6,11 @@ import { auth } from "@/lib/auth";
 export const resolveAssistantUser = async (
   request: Request
 ): Promise<{ id: string; name: string } | null> => {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getAuth(
+    baseUrlFromHeaders(request.headers)
+  ).api.getSession({
+    headers: request.headers,
+  });
   if (!session) {
     return null;
   }

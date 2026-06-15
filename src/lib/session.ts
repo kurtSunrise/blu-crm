@@ -1,9 +1,13 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { baseUrlFromHeaders, getAuth } from "@/lib/auth";
 
-export const getSession = async () =>
-  await auth.api.getSession({ headers: await headers() });
+export const getSession = async () => {
+  const requestHeaders = await headers();
+  return await getAuth(baseUrlFromHeaders(requestHeaders)).api.getSession({
+    headers: requestHeaders,
+  });
+};
 
 // For pages inside the app shell: bounce to sign-in when unauthenticated.
 export const requireSession = async () => {

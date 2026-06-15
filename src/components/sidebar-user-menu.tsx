@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -95,24 +96,26 @@ export function SidebarUserMenu({
         </DropdownMenuTrigger>
       )}
       <DropdownMenuContent align="end" className="min-w-56" side="top">
-        <DropdownMenuLabel className="p-0">
-          <div className="flex items-center gap-2 px-1.5 py-1.5">
-            <Avatar>
-              {image ? <AvatarImage alt={name} src={image} /> : null}
-              <AvatarFallback className="bg-primary font-medium text-primary-foreground">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-            <div className="grid flex-1 text-left">
-              <span className="truncate font-medium text-foreground">
-                {name}
-              </span>
-              <span className="truncate text-muted-foreground text-xs">
-                {email}
-              </span>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="p-0">
+            <div className="flex items-center gap-2 px-1.5 py-1.5">
+              <Avatar>
+                {image ? <AvatarImage alt={name} src={image} /> : null}
+                <AvatarFallback className="bg-primary font-medium text-primary-foreground">
+                  {initials}
+                </AvatarFallback>
+              </Avatar>
+              <div className="grid flex-1 text-left">
+                <span className="truncate font-medium text-foreground">
+                  {name}
+                </span>
+                <span className="truncate text-muted-foreground text-xs">
+                  {email}
+                </span>
+              </div>
             </div>
-          </div>
-        </DropdownMenuLabel>
+          </DropdownMenuLabel>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem render={<Link href="/settings/account" />}>
           <User aria-hidden />

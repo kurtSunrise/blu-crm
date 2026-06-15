@@ -117,11 +117,13 @@ export function AppShell({
   children,
   userName,
   userEmail,
+  userImage = null,
   defaultCollapsed = false,
 }: {
   children: React.ReactNode;
   userName: string;
   userEmail: string;
+  userImage?: string | null;
   defaultCollapsed?: boolean;
 }) {
   return (
@@ -129,6 +131,7 @@ export function AppShell({
       <AppShellInner
         defaultCollapsed={defaultCollapsed}
         userEmail={userEmail}
+        userImage={userImage}
         userName={userName}
       >
         {children}
@@ -141,11 +144,13 @@ function AppShellInner({
   children,
   userName,
   userEmail,
+  userImage,
   defaultCollapsed,
 }: {
   children: React.ReactNode;
   userName: string;
   userEmail: string;
+  userImage: string | null;
   defaultCollapsed: boolean;
 }) {
   const pathname = usePathname();
@@ -252,6 +257,7 @@ function AppShellInner({
             <SidebarUserMenu
               collapsed={collapsed}
               email={userEmail}
+              image={userImage}
               name={userName}
             />
           </nav>

@@ -1,18 +1,10 @@
 "use client";
 
-import {
-  ChevronsUpDown,
-  LogOut,
-  Moon,
-  Settings,
-  Sun,
-  User,
-} from "lucide-react";
+import { ChevronsUpDown, LogOut, Settings, User } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTheme } from "next-themes";
-import { useEffect, useState, useTransition } from "react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useTransition } from "react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,53 +19,24 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { authClient } from "@/lib/auth-client";
+import { getUserInitials } from "@/lib/user";
 import { cn } from "@/lib/utils";
-
-const WHITESPACE_RE = /\s+/;
-
-// Initials for the avatar fallback: first + last name initials, else the first
-// two name characters, else the first two email characters.
-function getUserInitials(name: string, email: string): string {
-  const trimmedName = name.trim();
-  if (trimmedName) {
-    const parts = trimmedName.split(WHITESPACE_RE);
-    if (parts.length >= 2) {
-      const first = parts[0].charAt(0);
-      const last = (parts.at(-1) ?? "").charAt(0);
-      return `${first}${last}`.toUpperCase();
-    }
-    return trimmedName.slice(0, 2).toUpperCase();
-  }
-  if (email) {
-    return email.slice(0, 2).toUpperCase();
-  }
-  return "?";
-}
 
 export function SidebarUserMenu({
   name,
   email,
+  image = null,
   collapsed = false,
 }: {
   name: string;
   email: string;
+  image?: string | null;
   collapsed?: boolean;
 }) {
   const router = useRouter();
-  const { resolvedTheme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
   const [isSigningOut, startSignOut] = useTransition();
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   const initials = getUserInitials(name, email);
-  const isDark = mounted && resolvedTheme === "dark";
-  let themeLabel = "Theme";
-  if (mounted) {
-    themeLabel = isDark ? "Light mode" : "Dark mode";
-  }
 
   const signOut = () =>
     startSignOut(async () => {
@@ -90,6 +53,7 @@ export function SidebarUserMenu({
   const triggerInner = (
     <>
       <Avatar>
+        {image ? <AvatarImage alt={name} src={image} /> : null}
         <AvatarFallback className="bg-primary font-medium text-primary-foreground">
           {initials}
         </AvatarFallback>
@@ -134,6 +98,7 @@ export function SidebarUserMenu({
         <DropdownMenuLabel className="p-0">
           <div className="flex items-center gap-2 px-1.5 py-1.5">
             <Avatar>
+              {image ? <AvatarImage alt={name} src={image} /> : null}
               <AvatarFallback className="bg-primary font-medium text-primary-foreground">
                 {initials}
               </AvatarFallback>
@@ -149,20 +114,13 @@ export function SidebarUserMenu({
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem render={<Link href="/settings" />}>
+        <DropdownMenuItem render={<Link href="/settings/account" />}>
           <User aria-hidden />
           Account
         </DropdownMenuItem>
         <DropdownMenuItem render={<Link href="/settings" />}>
           <Settings aria-hidden />
           Settings
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          closeOnClick={false}
-          onClick={() => setTheme(isDark ? "light" : "dark")}
-        >
-          {isDark ? <Sun aria-hidden /> : <Moon aria-hidden />}
-          {themeLabel}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem

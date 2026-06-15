@@ -19,6 +19,7 @@ export default async function AppLayout({
     <AppShell
       defaultCollapsed={defaultCollapsed}
       userEmail={session.user.email}
+      userImage={session.user.image ?? null}
       userName={session.user.name}
     >
       {children}

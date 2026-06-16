@@ -1,3 +1,4 @@
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { runAgentTurn } from "@/lib/ai/agent-loop";
@@ -302,9 +303,16 @@ export async function POST(request: Request): Promise<Response> {
       });
     }
   };
-  run().catch(() => {
-    // run() handles its own errors; nothing can reach here.
-  });
+  // Tie the streamed turn to the request lifecycle. Without waitUntil, the
+  // Workers runtime cancels the detached run() once it considers the
+  // invocation ended, so long turns (model thinking + tool loop) are killed
+  // mid-stream and the user sees no reply.
+  const { ctx } = getCloudflareContext();
+  ctx.waitUntil(
+    run().catch(() => {
+      // run() handles its own errors; nothing can reach here.
+    })
+  );
 
   return new Response(readable, {
     headers: {

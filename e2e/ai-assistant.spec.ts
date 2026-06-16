@@ -342,13 +342,11 @@ test("an attached image rides the next message and clears after send", async ({
 
   // The composer file input is hidden behind the paperclip button; set the
   // fixture directly on it.
-  await page
-    .locator(`${ASSISTANT_PANEL} input[type="file"]`)
-    .setInputFiles({
-      buffer: Buffer.from(PNG_BASE64, "base64"),
-      mimeType: "image/png",
-      name: "blu-brief.png",
-    });
+  await page.locator(`${ASSISTANT_PANEL} input[type="file"]`).setInputFiles({
+    buffer: Buffer.from(PNG_BASE64, "base64"),
+    mimeType: "image/png",
+    name: "blu-brief.png",
+  });
 
   // The staged chip appears once the upload to R2 completes.
   await expect(

@@ -1,6 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { account, session, user, verification } from "@/db/schema";
 
@@ -52,11 +53,35 @@ const buildAuth = (baseURL: string | undefined) => {
           },
         }
       : undefined,
+    databaseHooks: {
+      session: {
+        create: {
+          // Block disabled members from creating a new session (signing in).
+          // Returning false aborts session creation. Defense in depth alongside
+          // the disabled check in getSession.
+          before: async (newSession) => {
+            const [owner] = await db
+              .select({ disabled: user.disabled })
+              .from(user)
+              .where(eq(user.id, newSession.userId))
+              .limit(1);
+            if (owner?.disabled) {
+              return false;
+            }
+          },
+        },
+      },
+    },
     user: {
       additionalFields: {
         role: {
           type: "string",
           defaultValue: "sales",
+          input: false,
+        },
+        disabled: {
+          type: "boolean",
+          defaultValue: false,
           input: false,
         },
       },

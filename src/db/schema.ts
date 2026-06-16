@@ -19,6 +19,10 @@ export const user = pgTable("user", {
   emailVerified: boolean("email_verified").notNull().default(false),
   image: text("image"),
   role: text("role").notNull().default("sales"),
+  // Soft-disable: a disabled member cannot sign in and any live session is
+  // treated as signed out. We never hard-delete users because deal/created_by/
+  // uploaded_by FKs lack cascade (PRD §7: no hard deletes).
+  disabled: boolean("disabled").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

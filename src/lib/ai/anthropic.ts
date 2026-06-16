@@ -68,6 +68,35 @@ export interface ToolResultBlockParam {
   type: "tool_result";
 }
 
+// Vision input. The Messages API also accepts URL and Files-API sources;
+// we only send base64 because our attachments live in a private R2 bucket
+// that Anthropic's servers cannot fetch. HEIC is intentionally absent — the
+// API does not accept it (see AI_READABLE_TYPES).
+export interface Base64ImageSource {
+  data: string;
+  media_type: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+  type: "base64";
+}
+
+export interface ImageBlockParam {
+  cache_control?: CacheControlEphemeral | null;
+  source: Base64ImageSource;
+  type: "image";
+}
+
+export interface Base64PDFSource {
+  data: string;
+  media_type: "application/pdf";
+  type: "base64";
+}
+
+export interface DocumentBlockParam {
+  cache_control?: CacheControlEphemeral | null;
+  source: Base64PDFSource;
+  title?: string | null;
+  type: "document";
+}
+
 export interface ThinkingBlockParam {
   signature: string;
   thinking: string;
@@ -83,6 +112,8 @@ export interface RedactedThinkingBlockParam {
 // content can be pushed straight back into the next request's history.
 export type ContentBlockParam =
   | TextBlockParam
+  | ImageBlockParam
+  | DocumentBlockParam
   | ToolUseBlockParam
   | ToolResultBlockParam
   | ThinkingBlockParam

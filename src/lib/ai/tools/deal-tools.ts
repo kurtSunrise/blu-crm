@@ -7,6 +7,8 @@ import { logQuickActivity, moveDealStage } from "@/lib/actions/deal-actions";
 import {
   DEAL_HANDLE_DESCRIPTION,
   resolveDealId,
+  resolveStageId,
+  STAGE_HANDLE_DESCRIPTION,
 } from "@/lib/ai/tools/resolve-deal";
 import { type AiTool, defineTool } from "@/lib/ai/tools/types";
 import { dollarsToCents } from "@/lib/format";
@@ -178,12 +180,12 @@ const moveDealStageSchema = z.object({
     .enum(LOST_REASONS)
     .optional()
     .describe("Required when moving to Lost / Dormant"),
-  stageId: z.string().describe("Target stage id from list_pipeline_stages"),
+  stage: z.string().describe(STAGE_HANDLE_DESCRIPTION),
 });
 
 const moveDealStageTool = defineTool({
   description:
-    "Move a deal to another pipeline stage. Call list_pipeline_stages first for the stage id. Moving to Lost / Dormant requires a lostReason; moving to Won may flag handoverToDelivery.",
+    "Move a deal to another pipeline stage. Call list_pipeline_stages first and pass the target stage's name. Moving to Lost / Dormant requires a lostReason; moving to Won may flag handoverToDelivery.",
   execute: async (input) => {
     const dealId = await resolveDealId(input.dealId);
     if (!dealId) {
@@ -191,13 +193,24 @@ const moveDealStageTool = defineTool({
         resultText: `No deal found for "${input.dealId}". Use query_deals or get_deal to find it.`,
       };
     }
-    const outcome = await moveDealStage({ ...input, dealId });
+    const stage = await resolveStageId(input.stage);
+    if (!stage) {
+      return {
+        resultText: `No stage matches "${input.stage}". Call list_pipeline_stages for the exact names.`,
+      };
+    }
+    const outcome = await moveDealStage({
+      dealId,
+      handoverToDelivery: input.handoverToDelivery,
+      lostReason: input.lostReason,
+      stageId: stage.id,
+    });
     if (outcome.error) {
       return { resultText: `Stage move failed: ${outcome.error}` };
     }
     return {
       changedPaths: ["/", "/pipeline", `/deals/${dealId}`],
-      resultText: "Deal moved.",
+      resultText: `Deal moved to ${stage.name}.`,
     };
   },
   isWrite: true,

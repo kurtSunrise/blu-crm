@@ -2,13 +2,16 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { request as playwrightRequest } from "@playwright/test";
 import pg from "pg";
+import { sweepTestData } from "./test-data-sweep";
 import { readDatabaseUrl } from "./test-db";
 
-// Resets CRM data in the local test database so E2E runs stay deterministic
-// and fast (alert lists would otherwise grow with every run). Pipeline
-// stages and users are seeded data and are kept. Then signs in once as a
-// seeded team member and saves the storage state every project reuses
-// (the (app) shell requires a session since M0 auth shipped).
+// Keeps E2E runs deterministic by clearing prior test data before each run.
+// A true localhost dev DB is fully reset (no real data lives there). The
+// shared remote Neon DB also holds real projects, so there we sweep only this
+// suite's test-shaped rows (see test-data-sweep) — never real records. Pipeline
+// stages and users are seeded data and are kept. Then signs in once as a seeded
+// team member and saves the storage state every project reuses (the (app)
+// shell requires a session since M0 auth shipped).
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);
 
@@ -64,14 +67,16 @@ const globalSetup = async (): Promise<void> => {
 
   const databaseUrl = readDatabaseUrl();
   const host = new URL(databaseUrl).hostname;
-  if (!LOCAL_HOSTS.has(host)) {
-    // Never wipe a shared database; remote runs keep their data.
-    return;
-  }
-
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();
   try {
+    if (!LOCAL_HOSTS.has(host)) {
+      // Shared DB: remove only this suite's test-shaped rows so prior runs
+      // don't accumulate next to real projects. Real data is never matched.
+      await sweepTestData(client);
+      return;
+    }
+
     for (const table of TABLES_TO_CLEAR) {
       await client.query(`delete from "${table}"`);
     }

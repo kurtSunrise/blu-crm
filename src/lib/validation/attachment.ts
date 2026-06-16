@@ -16,6 +16,16 @@ export const ALLOWED_ATTACHMENT_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ]);
 
+// The subset the AI assistant can actually read. Claude's vision accepts
+// these natively; Word/Excel need text extraction (deferred) and HEIC is not
+// accepted by the API at all, so iPhone photos must be converted first.
+export const AI_READABLE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf",
+]);
+
 export const isImageType = (contentType: string | null): boolean =>
   contentType?.startsWith("image/") ?? false;
 

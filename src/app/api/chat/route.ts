@@ -3,6 +3,11 @@ import { z } from "zod";
 import { runAgentTurn } from "@/lib/ai/agent-loop";
 import type * as Anthropic from "@/lib/ai/anthropic";
 import { resolveAssistantUser } from "@/lib/ai/assistant-user";
+import {
+  type BluMediaBlock,
+  buildMediaRefBlocks,
+  linkAttachmentsToThread,
+} from "@/lib/ai/attachments";
 import { resolveAuditedToolCall } from "@/lib/ai/audit";
 import { isAiConfigured } from "@/lib/ai/client";
 import { buildPageContext } from "@/lib/ai/page-context";
@@ -23,8 +28,13 @@ import { executeToolCall } from "@/lib/ai/tools";
 
 const TITLE_MAX_LENGTH = 60;
 
+const MAX_CHAT_ATTACHMENTS = 5;
+
 const chatRequestSchema = z
   .object({
+    // Ids from /api/chat/attachments; rehydrated to base64 media blocks when
+    // the thread history is sent to the model.
+    attachmentIds: z.array(z.string()).max(MAX_CHAT_ATTACHMENTS).optional(),
     confirmation: z
       .object({
         approved: z.boolean(),
@@ -234,8 +244,9 @@ export async function POST(request: Request): Promise<Response> {
     try {
       send({ threadId: thread.id, type: "thread" });
 
-      // Build the resume/user turn before invoking the loop.
-      const userContent: Anthropic.ContentBlockParam[] = [];
+      // Build the resume/user turn before invoking the loop. blu_media refs
+      // are persisted alongside the text and rehydrated to base64 at replay.
+      const userContent: (Anthropic.ContentBlockParam | BluMediaBlock)[] = [];
 
       if (confirmation && pending) {
         const toolResults = await resolvePendingToolUse({
@@ -262,6 +273,12 @@ export async function POST(request: Request): Promise<Response> {
           { text: pageContext, type: "text" },
           { text: parsedBody.message, type: "text" }
         );
+        if (parsedBody.attachmentIds?.length) {
+          userContent.push(
+            ...(await buildMediaRefBlocks(parsedBody.attachmentIds))
+          );
+          await linkAttachmentsToThread(parsedBody.attachmentIds, thread.id);
+        }
       }
 
       await appendThreadMessage(thread.id, "user", userContent);

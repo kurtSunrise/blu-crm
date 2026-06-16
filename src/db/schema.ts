@@ -411,6 +411,28 @@ export const chatMessage = pgTable("chat_message", {
     .defaultNow(),
 });
 
+// Files the user attaches to the assistant (images, PDFs) for context. Bytes
+// live in the private R2 bucket; the chat message stores only a reference and
+// the model-facing request rehydrates base64 at send time. threadId is
+// nullable so a file can be uploaded before the first message creates the
+// thread, then linked once it exists.
+export const chatAttachment = pgTable("chat_attachment", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  threadId: text("thread_id").references(() => chatThread.id, {
+    onDelete: "cascade",
+  }),
+  fileKey: text("file_key").notNull(),
+  fileName: text("file_name").notNull(),
+  contentType: text("content_type").notNull(),
+  sizeBytes: integer("size_bytes"),
+  uploadedBy: text("uploaded_by").references(() => user.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const aiAuditLog = pgTable("ai_audit_log", {
   id: text("id")
     .primaryKey()

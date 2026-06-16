@@ -484,7 +484,7 @@ const getCompany = defineTool({
 
 const listPipelineStages = defineTool({
   description:
-    "List the pipeline stages with their ids, order, forecast weighting, and won/lost flags. Call this before referring to a stage by name or proposing a stage move.",
+    "List the pipeline stages with their ids, order, forecast weighting, and won/lost flags. Call this before referring to a stage by name or proposing a stage move. Pass the exact stage name (not the id) to move_deal_stage.",
   execute: async () => {
     const rows = await db
       .select({

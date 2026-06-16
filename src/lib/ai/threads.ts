@@ -2,6 +2,10 @@ import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { chatMessage, chatThread } from "@/db/schema";
 import type * as Anthropic from "@/lib/ai/anthropic";
+import {
+  isBluMediaBlock,
+  rehydrateMediaInMessages,
+} from "@/lib/ai/attachments";
 
 // Replay cap (least-context): only the tail of long threads goes back to the
 // model. Trimming must land on a plain user turn so tool_use blocks keep
@@ -138,6 +142,14 @@ export interface DisplayMessage {
 
 const PAGE_CONTEXT_PREFIX = "<page_context>";
 
+const isDisplayTextBlock = (
+  block: unknown
+): block is { text: string; type: "text" } =>
+  typeof block === "object" &&
+  block !== null &&
+  (block as { type?: string }).type === "text" &&
+  typeof (block as { text?: unknown }).text === "string";
+
 const displayTextFromContent = (content: unknown): string => {
   if (typeof content === "string") {
     return content;
@@ -145,17 +157,20 @@ const displayTextFromContent = (content: unknown): string => {
   if (!Array.isArray(content)) {
     return "";
   }
-  return content
-    .filter(
-      (block): block is { text: string; type: "text" } =>
-        typeof block === "object" &&
-        block !== null &&
-        (block as { type?: string }).type === "text" &&
-        typeof (block as { text?: unknown }).text === "string"
-    )
-    .map((block) => block.text)
-    .filter((text) => !text.startsWith(PAGE_CONTEXT_PREFIX))
-    .join("\n\n");
+  const parts: string[] = [];
+  for (const block of content) {
+    if (isBluMediaBlock(block)) {
+      parts.push(`📎 ${block.fileName}`);
+      continue;
+    }
+    if (
+      isDisplayTextBlock(block) &&
+      !block.text.startsWith(PAGE_CONTEXT_PREFIX)
+    ) {
+      parts.push(block.text);
+    }
+  }
+  return parts.join("\n\n");
 };
 
 // The human-readable transcript for resuming a thread in the panel: text
@@ -214,7 +229,7 @@ export const loadThreadMessages = async (
   );
 
   const firstPlainUserTurn = messages.findIndex(isPlainUserTurn);
-  return firstPlainUserTurn <= 0
-    ? messages
-    : messages.slice(firstPlainUserTurn);
+  const trimmed =
+    firstPlainUserTurn <= 0 ? messages : messages.slice(firstPlainUserTurn);
+  return rehydrateMediaInMessages(trimmed);
 };

@@ -16,6 +16,7 @@ import {
 } from "react";
 import {
   type ConfirmationDecision,
+  type UploadedAttachment,
   useAiAssistant,
 } from "@/components/ai/ai-context";
 import { parseStreamLine, type StreamPayload } from "@/lib/ai/stream-protocol";
@@ -36,6 +37,7 @@ interface RequestContext {
 interface AdapterCallbacks {
   refresh: () => void;
   setOffline: (offline: boolean) => void;
+  setPendingAttachments: (attachments: UploadedAttachment[]) => void;
   setPendingConfirmation: (
     pending: {
       input: unknown;
@@ -124,6 +126,7 @@ async function* streamPayloads(
 }
 
 interface ChatRequestBody {
+  attachmentIds?: string[];
   confirmation?: {
     approved: boolean;
     finalInput?: unknown;
@@ -137,6 +140,7 @@ interface ChatRequestBody {
 const createAdapter = (
   requestRef: MutableRefObject<RequestContext>,
   decisionRef: MutableRefObject<ConfirmationDecision | null>,
+  attachmentsRef: MutableRefObject<UploadedAttachment[]>,
   callbacksRef: MutableRefObject<AdapterCallbacks>
 ): ChatModelAdapter => ({
   async *run({ messages, abortSignal }) {
@@ -175,6 +179,14 @@ const createAdapter = (
         return;
       }
       body.message = messageText;
+
+      // Consume any files staged in the composer; clearing the ref+state so
+      // they are not re-sent on the next turn.
+      const attachments = attachmentsRef.current;
+      if (attachments.length > 0) {
+        body.attachmentIds = attachments.map((attachment) => attachment.id);
+        callbacksRef.current.setPendingAttachments([]);
+      }
     }
 
     const response = await fetch("/api/chat", {
@@ -287,9 +299,11 @@ export function AiRuntimeProvider({
   initialMessages?: ThreadMessageLike[];
 }) {
   const {
+    attachmentsRef,
     decisionRef,
     entity,
     setOffline,
+    setPendingAttachments,
     setPendingConfirmation,
     setThreadId,
     threadId,
@@ -310,6 +324,7 @@ export function AiRuntimeProvider({
   const callbacksRef = useRef<AdapterCallbacks>({
     refresh: () => router.refresh(),
     setOffline,
+    setPendingAttachments,
     setPendingConfirmation,
     setThreadId,
   });
@@ -317,16 +332,24 @@ export function AiRuntimeProvider({
     callbacksRef.current = {
       refresh: () => router.refresh(),
       setOffline,
+      setPendingAttachments,
       setPendingConfirmation,
       setThreadId,
     };
-  }, [router, setOffline, setPendingConfirmation, setThreadId]);
+  }, [
+    router,
+    setOffline,
+    setPendingAttachments,
+    setPendingConfirmation,
+    setThreadId,
+  ]);
 
   // Created once; refs keep it current (recreating the adapter would reset
-  // in-flight streams). decisionRef is the context's stable ref instance.
+  // in-flight streams). decisionRef / attachmentsRef are the context's stable
+  // ref instances.
   const adapter = useMemo(
-    () => createAdapter(requestRef, decisionRef, callbacksRef),
-    [decisionRef]
+    () => createAdapter(requestRef, decisionRef, attachmentsRef, callbacksRef),
+    [decisionRef, attachmentsRef]
   );
   const runtime = useLocalRuntime(adapter, { initialMessages });
 

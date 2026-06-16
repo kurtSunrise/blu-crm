@@ -327,6 +327,76 @@ test("a conversation can be resumed from history", async ({ page }) => {
   expect(threads[0]?.count).toBe("1");
 });
 
+// 1x1 red pixel PNG, reused from the deal-attachment fixture.
+const PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+const ASSISTANT_PANEL = 'aside[aria-label="Blu assistant"]';
+
+test("an attached image rides the next message and clears after send", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await skipUnlessAssistantConfigured(page, test);
+  await openAssistant(page);
+
+  // The composer file input is hidden behind the paperclip button; set the
+  // fixture directly on it.
+  await page
+    .locator(`${ASSISTANT_PANEL} input[type="file"]`)
+    .setInputFiles({
+      buffer: Buffer.from(PNG_BASE64, "base64"),
+      mimeType: "image/png",
+      name: "blu-brief.png",
+    });
+
+  // The staged chip appears once the upload to R2 completes.
+  await expect(
+    page.locator(ASSISTANT_PANEL).getByText("blu-brief.png")
+  ).toBeVisible({ timeout: RESPONSE_TIMEOUT_MS });
+
+  // Sending carries the uploaded attachment id to /api/chat.
+  const chatRequest = page.waitForRequest(
+    (request) =>
+      new URL(request.url()).pathname === "/api/chat" &&
+      request.method() === "POST"
+  );
+  await askAssistant(page, "What's in this image?");
+  const sent = await chatRequest;
+  const body = JSON.parse(sent.postData() ?? "{}") as {
+    attachmentIds?: string[];
+  };
+  expect(body.attachmentIds).toHaveLength(1);
+
+  // The reply streams back and the staged chip is consumed.
+  await expect(page.getByText("Hello from the mock assistant.")).toBeVisible({
+    timeout: RESPONSE_TIMEOUT_MS,
+  });
+  await expect(
+    page.locator(ASSISTANT_PANEL).getByText("blu-brief.png")
+  ).toHaveCount(0);
+});
+
+test("the chat upload endpoint rejects unsupported file types", async ({
+  request,
+}) => {
+  const missingFile = await request.post("/api/chat/attachments", {
+    multipart: {},
+  });
+  expect(missingFile.status()).toBe(400);
+
+  const badType = await request.post("/api/chat/attachments", {
+    multipart: {
+      file: {
+        buffer: Buffer.from("echo hi"),
+        mimeType: "application/x-sh",
+        name: "script.sh",
+      },
+    },
+  });
+  expect(badType.status()).toBe(400);
+});
+
 test("open assistant panel has no WCAG A/AA violations", async ({ page }) => {
   await page.goto("/");
   await skipUnlessAssistantConfigured(page, test);

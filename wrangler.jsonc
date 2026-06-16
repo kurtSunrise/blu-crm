@@ -22,5 +22,12 @@
   ],
   "observability": {
     "enabled": true
+  },
+  // Rehydrating chat attachments base64-encodes each file synchronously, which
+  // is pure CPU work. Lift the per-request CPU ceiling to 5 minutes (the max)
+  // so a turn with several large attachments can't trip error 1102. Requires
+  // the Workers Paid plan; the Free plan rejects this with API code 100328.
+  "limits": {
+    "cpu_ms": 300000
   }
 }

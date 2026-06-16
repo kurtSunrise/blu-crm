@@ -72,6 +72,31 @@ risks the 3 MiB Worker limit); HEIC excluded (Anthropic vision rejects it).
 - Follow-up features: Word/Excel text extraction; Files-API or most-recent-only
   rehydration to cut multi-turn token cost.
 
+## Follow-up: error 1102 (Worker CPU limit) on attachment rehydration
+
+**Date**: 2026-06-16T (same session, later)
+
+- **Symptom**: a logged-in session stuck on Cloudflare error 1102; incognito was
+  fine. The session was auto-resuming a thread whose `POST /api/chat` turn
+  rehydrates attachments, and that turn tripped the per-request CPU limit.
+- **Root cause**: `loadMediaBlocksById` (`src/lib/ai/attachments.ts`) read each
+  R2 object sequentially and base64-encodes every file synchronously. The
+  synchronous base64 of several large files is the actual CPU cost.
+- **Fix**:
+  - Parallelised the R2 fetches via `Promise.all` (was a sequential
+    `for…await` loop) — cuts wall-clock latency of the rehydration step.
+  - Raised the Worker CPU ceiling to the 5-minute max
+    (`limits.cpu_ms: 300000`) in `wrangler.jsonc` — the real lever for 1102,
+    giving headroom for the synchronous base64 work.
+- **Verified**: `ultracite check` clean, `npm run build` succeeds. Not yet
+  deployed — user to run `npm run deploy`. E2E unchanged (backend perf only,
+  no behaviour change); the same seed/auth block from the main task still
+  applies.
+- **Deeper optimisation if 1102 recurs**: the chunked base64 helper
+  (`arrayBufferToBase64`) builds one large string via `+=`; could move bytes
+  off the critical path (cache the encoded blob, or use the Anthropic Files API
+  / most-recent-only rehydration noted in Next Steps).
+
 ## Related Files
 
 - `src/lib/ai/anthropic.ts`, `src/lib/ai/attachments.ts`, `src/lib/ai/threads.ts`,

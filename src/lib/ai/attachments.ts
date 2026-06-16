@@ -131,17 +131,25 @@ const loadMediaBlocksById = async (
     .from(chatAttachment)
     .where(inArray(chatAttachment.id, attachmentIds));
   const { env } = getCloudflareContext();
-  for (const row of rows) {
-    const object = await env.PHOTO_BUCKET.get(row.fileKey);
-    if (!object) {
-      continue;
-    }
-    const block = toMediaBlock(
-      row.contentType,
-      arrayBufferToBase64(await object.arrayBuffer())
-    );
-    if (block) {
-      blocks.set(row.id, block);
+  // Fetch every attachment from R2 concurrently. Read sequentially this
+  // serialised the network round-trips, stretching the turn's wall-clock (and
+  // its risk of tripping the Worker CPU limit) with each extra file.
+  const loaded = await Promise.all(
+    rows.map(async (row) => {
+      const object = await env.PHOTO_BUCKET.get(row.fileKey);
+      if (!object) {
+        return null;
+      }
+      const block = toMediaBlock(
+        row.contentType,
+        arrayBufferToBase64(await object.arrayBuffer())
+      );
+      return block ? ([row.id, block] as const) : null;
+    })
+  );
+  for (const entry of loaded) {
+    if (entry) {
+      blocks.set(entry[0], entry[1]);
     }
   }
   return blocks;

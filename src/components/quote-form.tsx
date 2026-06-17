@@ -20,15 +20,17 @@ export function QuoteForm({ dealId }: { dealId: string }) {
       <input name="dealId" type="hidden" value={dealId} />
       <div className="flex flex-1 flex-col gap-2">
         <Label htmlFor="quote-value">Quote value (AUD) *</Label>
+        {/* Text + decimal keypad rather than type="number": a number input
+            silently rejects a pasted "$12,500.00", which the server then
+            normalises. */}
         <Input
           className="h-11"
           id="quote-value"
           inputMode="decimal"
-          min={1}
           name="valueDollars"
+          placeholder="e.g. 12,500"
           required
-          step="0.01"
-          type="number"
+          type="text"
         />
       </div>
       <Button className="h-11" disabled={isPending} type="submit">

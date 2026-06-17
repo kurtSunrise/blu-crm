@@ -6,6 +6,7 @@ import {
   deal,
   followUp,
   pipelineStage,
+  quote,
   user,
 } from "@/db/schema";
 import {
@@ -17,9 +18,19 @@ import {
 import { formatAudFromCents, formatDateAwst, MS_PER_DAY } from "@/lib/format";
 import { LOST_REASON_LABELS, type LostReason } from "@/lib/labels";
 
-// Quoted value wins over the estimate everywhere money is summed (FR-1.4 AC),
-// matching the dashboard so report numbers reconcile exactly (FR-8.2 AC).
-const dealValueCents = sql<number>`coalesce(${deal.quotedValueCents}, ${deal.estimatedValueCents}, 0)`;
+// A deal's value, mirroring the pipeline board exactly so every surface
+// reconciles (FR-1.4 / FR-8.2 AC): an accepted quote wins; otherwise the high
+// end of the live options (draft/sent/viewed — declined are off the table);
+// otherwise the estimate. Correlated subqueries, so this stays a per-deal
+// scalar and never multiplies rows when summed or grouped.
+const dealValueCents = sql<number>`coalesce(
+  (select max(${quote.valueCents}) from ${quote}
+    where ${quote.dealId} = ${deal.id} and ${quote.status} = 'accepted'),
+  (select max(${quote.valueCents}) from ${quote}
+    where ${quote.dealId} = ${deal.id} and ${quote.status} in ('draft', 'sent', 'viewed')),
+  ${deal.estimatedValueCents},
+  0
+)`;
 
 const PERCENT = 100;
 

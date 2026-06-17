@@ -72,6 +72,33 @@ test("follow-ups land on the deal and the daily task list, overdue first (US-07)
   await expect(overdueItem).toHaveCount(0);
 });
 
+test("completing a follow-up records it on the deal timeline", async ({
+  page,
+}, testInfo) => {
+  const stamp = `${testInfo.project.name}-${Date.now()}`;
+  const companyName = `Timeline Co ${stamp}`;
+  const action = `Confirm slab booking ${stamp}`;
+
+  await quickAddDeal(page, companyName);
+  await page
+    .locator('section[aria-label="Lead Captured"]')
+    .getByRole("heading", { name: companyName })
+    .click();
+
+  const followUps = page.locator('section[aria-label="Follow-ups"]');
+  await page.getByLabel("Next action *").fill(action);
+  await page.getByLabel("Due *").fill(awstInputDate(new Date()));
+  await page.getByRole("button", { name: "Add follow-up" }).click();
+  await expect(followUps.getByText(action)).toBeVisible();
+
+  // Completing it drops it from the open list and leaves a timeline trace.
+  await followUps.getByRole("button", { name: `Mark done: ${action}` }).click();
+
+  const timeline = page.locator('section[aria-label="Timeline"]');
+  await expect(timeline.getByText("Follow-up completed")).toBeVisible();
+  await expect(timeline.getByText(action)).toBeVisible();
+});
+
 test("an overdue follow-up raises an in-app notification (FR-11.1)", async ({
   page,
 }, testInfo) => {

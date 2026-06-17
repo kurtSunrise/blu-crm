@@ -16,6 +16,7 @@ export interface UpdateDealFieldsInput {
   ownerId?: string;
   projectType?: ProjectType;
   scopeSummary?: string;
+  sharedFolderUrl?: string | null;
   title?: string;
   updatedBy?: string;
   venue?: string;
@@ -31,6 +32,7 @@ const FIELD_LABELS: Record<string, string> = {
   ownerId: "owner",
   projectType: "project type",
   scopeSummary: "scope",
+  sharedFolderUrl: "shared folder link",
   title: "title",
   venue: "venue",
 };
@@ -75,6 +77,9 @@ export const updateDealFieldsCore = async (
   }
   if (fields.notes !== undefined) {
     changes.notes = fields.notes;
+  }
+  if (fields.sharedFolderUrl !== undefined) {
+    changes.sharedFolderUrl = fields.sharedFolderUrl;
   }
 
   const changedFields = Object.keys(fields).filter(

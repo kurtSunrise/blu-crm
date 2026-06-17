@@ -37,20 +37,12 @@ export interface ConfirmationDecision {
   toolUseId: string;
 }
 
-// A file uploaded via /api/chat/attachments, staged in the composer until the
-// next message is sent.
-export interface UploadedAttachment {
-  contentType: string;
-  fileName: string;
-  id: string;
-  sizeBytes: number;
-}
-
 interface AiAssistantContextValue {
-  // Staged uploads, read and cleared by the adapter when the run starts — a
-  // ref for the same reason as decisionRef below. pendingAttachments mirrors
-  // it as state so the composer chips re-render.
-  attachmentsRef: MutableRefObject<UploadedAttachment[]>;
+  // The last composer attachment upload/validation failure, shown beneath the
+  // input. assistant-ui owns the staged attachments themselves; this is the
+  // one piece of attachment state it cannot surface, since the runtime adapter
+  // does not await add().
+  attachmentError: string | null;
   clearEntity: () => void;
   // A ref, not state: the card writes the decision and appends the
   // "Approve"/"Cancel" bubble in the same tick, and the adapter must see it
@@ -61,12 +53,11 @@ interface AiAssistantContextValue {
   entity: AiEntityRef | null;
   offline: boolean;
   open: boolean;
-  pendingAttachments: UploadedAttachment[];
   pendingConfirmation: PendingConfirmation | null;
   registerEntity: (entity: AiEntityRef) => void;
+  setAttachmentError: (message: string | null) => void;
   setOffline: (offline: boolean) => void;
   setOpen: (open: boolean) => void;
-  setPendingAttachments: (attachments: UploadedAttachment[]) => void;
   setPendingConfirmation: (pending: PendingConfirmation | null) => void;
   setThreadId: (threadId: string | null) => void;
   threadId: string | null;
@@ -81,18 +72,8 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
   const [entity, setEntity] = useState<AiEntityRef | null>(null);
   const [pendingConfirmation, setPendingConfirmation] =
     useState<PendingConfirmation | null>(null);
-  const [pendingAttachments, setPendingAttachmentsState] = useState<
-    UploadedAttachment[]
-  >([]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const decisionRef = useRef<ConfirmationDecision | null>(null);
-  const attachmentsRef = useRef<UploadedAttachment[]>([]);
-
-  // One setter keeps the ref (read by the adapter at run start) and the state
-  // (drives the chips) in lockstep.
-  const setPendingAttachments = useCallback((next: UploadedAttachment[]) => {
-    attachmentsRef.current = next;
-    setPendingAttachmentsState(next);
-  }, []);
 
   const registerEntity = useCallback((next: AiEntityRef) => {
     setEntity(next);
@@ -103,31 +84,29 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
-      attachmentsRef,
+      attachmentError,
       clearEntity,
       decisionRef,
       entity,
       offline,
       open,
-      pendingAttachments,
       pendingConfirmation,
       registerEntity,
+      setAttachmentError,
       setOffline,
       setOpen,
-      setPendingAttachments,
       setPendingConfirmation,
       setThreadId,
       threadId,
     }),
     [
+      attachmentError,
       clearEntity,
       entity,
       offline,
       open,
-      pendingAttachments,
       pendingConfirmation,
       registerEntity,
-      setPendingAttachments,
       threadId,
     ]
   );

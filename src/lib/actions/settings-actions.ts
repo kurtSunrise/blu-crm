@@ -4,9 +4,18 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { appSetting, pipelineStage } from "@/db/schema";
+import { ATTACHMENT_DESCRIPTION_MODE_KEY } from "@/lib/ai/attachment-describe";
 import { CLOSING_SOON_DAYS_KEY, STALE_DAYS_KEY } from "@/lib/alerts";
 import {
+  PIPELINE_TOOLTIP_CONTACT_KEY,
+  PIPELINE_TOOLTIP_ENABLED_KEY,
+  PIPELINE_TOOLTIP_FOLLOWUP_KEY,
+  PIPELINE_TOOLTIP_SCOPE_KEY,
+} from "@/lib/pipeline-tooltip";
+import {
   alertThresholdsSchema,
+  attachmentDescriptionModeSchema,
+  pipelineTooltipSettingsSchema,
   stageWeightingSchema,
 } from "@/lib/validation/settings";
 
@@ -46,6 +55,75 @@ export const updateAlertThresholds = async (
   revalidatePath("/");
   revalidatePath("/tasks");
   revalidatePath("/settings");
+  return { saved: true };
+};
+
+export const updateAttachmentDescriptionMode = async (
+  _prevState: SettingsActionState,
+  formData: FormData
+): Promise<SettingsActionState> => {
+  const parsed = attachmentDescriptionModeSchema.safeParse(
+    formData.get("mode")
+  );
+  if (!parsed.success) {
+    return { error: "Choose when file descriptions are generated" };
+  }
+
+  await db
+    .insert(appSetting)
+    .values({
+      key: ATTACHMENT_DESCRIPTION_MODE_KEY,
+      updatedAt: new Date(),
+      value: parsed.data,
+    })
+    .onConflictDoUpdate({
+      target: appSetting.key,
+      set: { value: parsed.data, updatedAt: new Date() },
+    });
+
+  revalidatePath("/settings/ai");
+  return { saved: true };
+};
+
+// Pipeline deal-card hover tooltip: master switch plus per-field flags. Each
+// checkbox is present in the form only when ticked, so absence means off.
+export const updatePipelineTooltipSettings = async (
+  _prevState: SettingsActionState,
+  formData: FormData
+): Promise<SettingsActionState> => {
+  const parsed = pipelineTooltipSettingsSchema.safeParse({
+    enabled: formData.get("enabled") === "on",
+    scope: formData.get("scope") === "on",
+    contact: formData.get("contact") === "on",
+    followUp: formData.get("followUp") === "on",
+  });
+
+  if (!parsed.success) {
+    return { error: "Could not save the tooltip preferences" };
+  }
+
+  const entries = [
+    { key: PIPELINE_TOOLTIP_ENABLED_KEY, value: String(parsed.data.enabled) },
+    { key: PIPELINE_TOOLTIP_SCOPE_KEY, value: String(parsed.data.scope) },
+    { key: PIPELINE_TOOLTIP_CONTACT_KEY, value: String(parsed.data.contact) },
+    {
+      key: PIPELINE_TOOLTIP_FOLLOWUP_KEY,
+      value: String(parsed.data.followUp),
+    },
+  ];
+
+  for (const entry of entries) {
+    await db
+      .insert(appSetting)
+      .values({ ...entry, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: appSetting.key,
+        set: { value: entry.value, updatedAt: new Date() },
+      });
+  }
+
+  revalidatePath("/settings");
+  revalidatePath("/pipeline");
   return { saved: true };
 };
 

@@ -82,3 +82,16 @@ export const logActivitySchema = z.object({
 });
 
 export type LogActivityInput = z.infer<typeof logActivitySchema>;
+
+// A valid http(s) link, or an empty string which clears the field.
+export const updateSharedFolderSchema = z.object({
+  dealId: z.string().min(1),
+  sharedFolderUrl: z
+    .string()
+    .trim()
+    .max(2000)
+    .url("Enter a valid link (including https://)")
+    .or(z.literal("")),
+});
+
+export type UpdateSharedFolderInput = z.infer<typeof updateSharedFolderSchema>;

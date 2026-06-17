@@ -1,11 +1,46 @@
-import { desc, eq, isNull } from "drizzle-orm";
+import { asc, desc, eq, isNull } from "drizzle-orm";
 import { PipelineBoard } from "@/components/pipeline-board";
 import { db } from "@/db";
-import { company, deal, pipelineStage, user } from "@/db/schema";
+import { company, deal, followUp, pipelineStage, user } from "@/db/schema";
+import { getPipelineTooltipSettings } from "@/lib/pipeline-tooltip";
 
 export const dynamic = "force-dynamic";
 
+interface NextFollowUp {
+  action: string;
+  dueDate: string;
+}
+
+// The soonest open follow-up per deal, for the card hover tooltip. Only run
+// when the tooltip's follow-up field is actually shown, so the board pays no
+// extra query cost when the feature is off.
+const getNextFollowUps = async (): Promise<Map<string, NextFollowUp>> => {
+  const rows = await db
+    .select({
+      dealId: followUp.dealId,
+      action: followUp.action,
+      dueDate: followUp.dueDate,
+    })
+    .from(followUp)
+    .where(isNull(followUp.completedAt))
+    .orderBy(asc(followUp.dueDate));
+
+  const byDeal = new Map<string, NextFollowUp>();
+  for (const row of rows) {
+    // Rows are ascending by due date, so the first seen per deal is soonest.
+    if (!byDeal.has(row.dealId)) {
+      byDeal.set(row.dealId, {
+        action: row.action,
+        dueDate: row.dueDate.toISOString(),
+      });
+    }
+  }
+  return byDeal;
+};
+
 export default async function PipelinePage() {
+  const tooltip = await getPipelineTooltipSettings();
+
   const stages = await db
     .select({
       id: pipelineStage.id,
@@ -29,12 +64,20 @@ export default async function PipelinePage() {
       fixedDateType: deal.fixedDateType,
       companyName: company.name,
       ownerName: user.name,
+      scopeSummary: deal.scopeSummary,
+      lastContactAt: deal.lastContactAt,
+      expectedCloseDate: deal.expectedCloseDate,
     })
     .from(deal)
     .leftJoin(company, eq(deal.companyId, company.id))
     .leftJoin(user, eq(deal.ownerId, user.id))
     .where(isNull(deal.deletedAt))
     .orderBy(desc(deal.createdAt));
+
+  const nextFollowUps =
+    tooltip.enabled && tooltip.followUp
+      ? await getNextFollowUps()
+      : new Map<string, NextFollowUp>();
 
   const deals = rows.map((row) => ({
     id: row.id,
@@ -47,6 +90,10 @@ export default async function PipelinePage() {
     fixedDateType: row.fixedDateType,
     companyName: row.companyName,
     ownerName: row.ownerName,
+    scopeSummary: row.scopeSummary,
+    lastContactAt: row.lastContactAt?.toISOString() ?? null,
+    expectedCloseDate: row.expectedCloseDate?.toISOString() ?? null,
+    nextFollowUp: nextFollowUps.get(row.id) ?? null,
   }));
 
   return (
@@ -54,7 +101,7 @@ export default async function PipelinePage() {
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4">
         <h1 className="font-semibold text-2xl tracking-tight">Pipeline</h1>
       </div>
-      <PipelineBoard deals={deals} stages={stages} />
+      <PipelineBoard deals={deals} stages={stages} tooltip={tooltip} />
     </main>
   );
 }

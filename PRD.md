@@ -676,6 +676,16 @@ patterns, infrastructure, and operating knowledge.
 | Hosting | Cloudflare Workers via `@opennextjs/cloudflare` + `wrangler` |
 | Domain | TBD (`blu-crm` subdomain initially) |
 
+**Production deployment (`kurt-0f6`).** The single live site is
+`https://blu-crm.kurt-0f6.workers.dev`, served by the Paid Cloudflare account
+`0f665cd350543a9c38a78e2c588e7d5e` (the account `kurt@blu.builders` /
+`wrangler` is logged into). This is the only URL the team should use. It is
+deployed **only by a local `npm run deploy`** — `git push` does not deploy it.
+A separate, stale worker at `blu-crm.kurtweiss.workers.dev` exists on a
+different account; it is a decoy, is not kept up to date, and must not be used
+or linked. After deploying, verify with a cache-busted fresh load against the
+`kurt-0f6` URL.
+
 Architecture notes: server actions / route handlers gate all writes through
 the same validation layer the AI tools use, so human edits and AI tool calls
 share one code path. The public enquiry-form endpoint and the quote-view

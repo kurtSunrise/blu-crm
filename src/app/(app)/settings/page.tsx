@@ -1,6 +1,13 @@
 import { asc, count, eq } from "drizzle-orm";
-import { Bell, KanbanSquare, Percent, SunMoon } from "lucide-react";
+import {
+  Bell,
+  KanbanSquare,
+  MousePointer2,
+  Percent,
+  SunMoon,
+} from "lucide-react";
 import { AlertThresholdsForm } from "@/components/alert-thresholds-form";
+import { PipelineTooltipForm } from "@/components/pipeline-tooltip-form";
 import { SettingsPanel, SettingsSection } from "@/components/settings-section";
 import { StageManager } from "@/components/stage-manager";
 import { StageWeightingsForm } from "@/components/stage-weightings-form";
@@ -8,6 +15,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { db } from "@/db";
 import { deal, pipelineStage } from "@/db/schema";
 import { getAlertThresholds } from "@/lib/alerts";
+import { getPipelineTooltipSettings } from "@/lib/pipeline-tooltip";
 import { requireSession } from "@/lib/session";
 
 export const metadata = {
@@ -19,6 +27,7 @@ export const dynamic = "force-dynamic";
 export default async function GeneralSettingsPage() {
   await requireSession();
   const thresholds = await getAlertThresholds();
+  const tooltip = await getPipelineTooltipSettings();
   // Deal counts include discarded deals: they still reference their stage,
   // so removing a stage has to move them too (FR-1.3 AC).
   const stages = await db
@@ -74,6 +83,21 @@ export default async function GeneralSettingsPage() {
           <AlertThresholdsForm
             closingSoonDays={thresholds.closingSoonDays}
             staleDays={thresholds.staleDays}
+          />
+        </SettingsPanel>
+      </SettingsSection>
+
+      <SettingsSection
+        description="Hover a deal on the pipeline board (mouse only) to preview more about it. Choose whether the preview shows, and which details it includes."
+        icon={MousePointer2}
+        title="Pipeline card details"
+      >
+        <SettingsPanel>
+          <PipelineTooltipForm
+            contact={tooltip.contact}
+            enabled={tooltip.enabled}
+            followUp={tooltip.followUp}
+            scope={tooltip.scope}
           />
         </SettingsPanel>
       </SettingsSection>

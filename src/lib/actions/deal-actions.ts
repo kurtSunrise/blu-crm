@@ -8,11 +8,13 @@ import { activity, deal, notification, pipelineStage, user } from "@/db/schema";
 import { dollarsToCents } from "@/lib/format";
 import { createLead } from "@/lib/intake";
 import { LOST_REASON_LABELS } from "@/lib/labels";
+import { updateDealFieldsCore } from "@/lib/mutations/deal";
 import { getSessionUserId } from "@/lib/session";
 import {
   logActivitySchema,
   moveDealStageSchema,
   quickAddDealSchema,
+  updateSharedFolderSchema,
 } from "@/lib/validation/deal";
 
 export interface ActionState {
@@ -182,5 +184,27 @@ export const logQuickActivity = async (
     .where(eq(deal.id, dealId));
 
   revalidatePath(`/deals/${dealId}`);
+  return {};
+};
+
+export const updateDealSharedFolderUrl = async (
+  input: unknown
+): Promise<ActionState> => {
+  const parsed = updateSharedFolderSchema.safeParse(input);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid link" };
+  }
+  const { dealId, sharedFolderUrl } = parsed.data;
+
+  const result = await updateDealFieldsCore({
+    dealId,
+    // An empty submission clears the stored link.
+    sharedFolderUrl: sharedFolderUrl === "" ? null : sharedFolderUrl,
+    updatedBy: (await getSessionUserId()) ?? undefined,
+  });
+
+  if (result.error) {
+    return { error: result.error };
+  }
   return {};
 };

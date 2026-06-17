@@ -16,9 +16,9 @@ import {
 } from "react";
 import {
   type ConfirmationDecision,
-  type UploadedAttachment,
   useAiAssistant,
 } from "@/components/ai/ai-context";
+import { createChatAttachmentAdapter } from "@/components/ai/chat-attachment-adapter";
 import { parseStreamLine, type StreamPayload } from "@/lib/ai/stream-protocol";
 
 // Billify's custom ChatModelAdapter pattern: refs carry the live pathname /
@@ -37,7 +37,6 @@ interface RequestContext {
 interface AdapterCallbacks {
   refresh: () => void;
   setOffline: (offline: boolean) => void;
-  setPendingAttachments: (attachments: UploadedAttachment[]) => void;
   setPendingConfirmation: (
     pending: {
       input: unknown;
@@ -76,6 +75,24 @@ const extractMessageText = (content: unknown): string => {
     )
     .map((part) => part.text)
     .join("\n");
+};
+
+// The trimmed text and uploaded attachment ids from the latest user message.
+// assistant-ui carries the composer's files on that message; each id is the
+// server's chat_attachment id that /api/chat rehydrates for the model.
+const lastUserTurn = (
+  messages: readonly { role: string; content: unknown; attachments?: unknown }[]
+): { attachmentIds: string[]; text: string } => {
+  const lastUserMessage = [...messages]
+    .reverse()
+    .find((message) => message.role === "user");
+  const attachments = lastUserMessage?.attachments as
+    | { id: string }[]
+    | undefined;
+  return {
+    attachmentIds: attachments?.map((attachment) => attachment.id) ?? [],
+    text: extractMessageText(lastUserMessage?.content).trim(),
+  };
 };
 
 const errorTextForStatus = async (response: Response): Promise<string> => {
@@ -140,7 +157,6 @@ interface ChatRequestBody {
 const createAdapter = (
   requestRef: MutableRefObject<RequestContext>,
   decisionRef: MutableRefObject<ConfirmationDecision | null>,
-  attachmentsRef: MutableRefObject<UploadedAttachment[]>,
   callbacksRef: MutableRefObject<AdapterCallbacks>
 ): ChatModelAdapter => ({
   async *run({ messages, abortSignal }) {
@@ -163,11 +179,8 @@ const createAdapter = (
       decisionRef.current = null;
       callbacksRef.current.setPendingConfirmation(null);
     } else {
-      const lastUserMessage = [...messages]
-        .reverse()
-        .find((message) => message.role === "user");
-      const messageText = extractMessageText(lastUserMessage?.content).trim();
-      if (!messageText) {
+      const { attachmentIds, text } = lastUserTurn(messages);
+      if (!text) {
         yield {
           content: [
             {
@@ -178,14 +191,9 @@ const createAdapter = (
         };
         return;
       }
-      body.message = messageText;
-
-      // Consume any files staged in the composer; clearing the ref+state so
-      // they are not re-sent on the next turn.
-      const attachments = attachmentsRef.current;
-      if (attachments.length > 0) {
-        body.attachmentIds = attachments.map((attachment) => attachment.id);
-        callbacksRef.current.setPendingAttachments([]);
+      body.message = text;
+      if (attachmentIds.length > 0) {
+        body.attachmentIds = attachmentIds;
       }
     }
 
@@ -299,11 +307,10 @@ export function AiRuntimeProvider({
   initialMessages?: ThreadMessageLike[];
 }) {
   const {
-    attachmentsRef,
     decisionRef,
     entity,
+    setAttachmentError,
     setOffline,
-    setPendingAttachments,
     setPendingConfirmation,
     setThreadId,
     threadId,
@@ -324,7 +331,6 @@ export function AiRuntimeProvider({
   const callbacksRef = useRef<AdapterCallbacks>({
     refresh: () => router.refresh(),
     setOffline,
-    setPendingAttachments,
     setPendingConfirmation,
     setThreadId,
   });
@@ -332,26 +338,31 @@ export function AiRuntimeProvider({
     callbacksRef.current = {
       refresh: () => router.refresh(),
       setOffline,
-      setPendingAttachments,
       setPendingConfirmation,
       setThreadId,
     };
-  }, [
-    router,
-    setOffline,
-    setPendingAttachments,
-    setPendingConfirmation,
-    setThreadId,
-  ]);
+  }, [router, setOffline, setPendingConfirmation, setThreadId]);
 
   // Created once; refs keep it current (recreating the adapter would reset
-  // in-flight streams). decisionRef / attachmentsRef are the context's stable
-  // ref instances.
+  // in-flight streams). decisionRef is the context's stable ref instance.
   const adapter = useMemo(
-    () => createAdapter(requestRef, decisionRef, attachmentsRef, callbacksRef),
-    [decisionRef, attachmentsRef]
+    () => createAdapter(requestRef, decisionRef, callbacksRef),
+    [decisionRef]
   );
-  const runtime = useLocalRuntime(adapter, { initialMessages });
+  // The attachment adapter reads the live thread id off requestRef and routes
+  // upload failures to the composer error line; both refs are stable.
+  const attachmentAdapter = useMemo(
+    () =>
+      createChatAttachmentAdapter({
+        getThreadId: () => requestRef.current.threadId,
+        onError: (message) => setAttachmentError(message),
+      }),
+    [setAttachmentError]
+  );
+  const runtime = useLocalRuntime(adapter, {
+    adapters: { attachments: attachmentAdapter },
+    initialMessages,
+  });
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>

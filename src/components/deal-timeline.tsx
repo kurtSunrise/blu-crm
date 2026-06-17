@@ -1,5 +1,6 @@
 import {
   ArrowRightLeft,
+  CheckCircle2,
   FileText,
   Mail,
   MapPin,
@@ -45,6 +46,11 @@ const ENTRY_STYLES: Record<string, EntryStyle> = {
   quote_event: {
     label: "Quote",
     icon: FileText,
+    marker: "border-success/40 bg-success/10 text-success",
+  },
+  follow_up: {
+    label: "Follow-up completed",
+    icon: CheckCircle2,
     marker: "border-success/40 bg-success/10 text-success",
   },
 };

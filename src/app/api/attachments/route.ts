@@ -3,6 +3,10 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { activity, attachment, deal } from "@/db/schema";
+import {
+  describeAttachmentsByIds,
+  getAttachmentDescriptionMode,
+} from "@/lib/ai/attachment-describe";
 import { getSessionUserId } from "@/lib/session";
 import {
   ALLOWED_ATTACHMENT_TYPES,
@@ -62,7 +66,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   const fileName = sanitizeFileName(file.name);
   const fileKey = `deals/${dealId}/${crypto.randomUUID()}/${fileName}`;
 
-  const { env } = getCloudflareContext();
+  const { ctx, env } = getCloudflareContext();
   await env.PHOTO_BUCKET.put(fileKey, await file.arrayBuffer(), {
     httpMetadata: { contentType: file.type },
   });
@@ -92,6 +96,14 @@ export async function POST(request: Request): Promise<NextResponse> {
     content: `Attached ${fileName}`,
     createdBy: userId,
   });
+
+  // Eager mode: describe the file now so the assistant has it immediately.
+  // Lazy mode (default) leaves it for the first view_deal_file call. The work
+  // is detached via waitUntil so the upload response is not held up.
+  if ((await getAttachmentDescriptionMode()) === "eager") {
+    const attachmentId = created.id;
+    ctx.waitUntil(describeAttachmentsByIds([attachmentId]));
+  }
 
   return NextResponse.json({ id: created.id }, { status: 201 });
 }

@@ -24,11 +24,21 @@ export interface AgentTurnParams {
   send: (payload: StreamPayload) => void;
 }
 
+// A tool result can diverge: `live` is what the model sees this turn (may
+// carry real image blocks from view_deal_file), `persisted` is the lean text
+// stored in history so replays stay cheap. They are identical for every tool
+// that returns no media.
+interface ToolCallResults {
+  live: Anthropic.ToolResultBlockParam[];
+  persisted: Anthropic.ToolResultBlockParam[];
+}
+
 const runReadToolCalls = async (
   toolUses: Anthropic.ToolUseBlock[],
   params: AgentTurnParams
-): Promise<Anthropic.ToolResultBlockParam[]> => {
-  const results: Anthropic.ToolResultBlockParam[] = [];
+): Promise<ToolCallResults> => {
+  const live: Anthropic.ToolResultBlockParam[] = [];
+  const persisted: Anthropic.ToolResultBlockParam[] = [];
   for (const block of toolUses) {
     params.send({
       toolName: block.name,
@@ -44,14 +54,29 @@ const runReadToolCalls = async (
       toolUseId: block.id,
       type: "tool_done",
     });
-    results.push({
+    persisted.push({
       content: outcome.resultText,
       is_error: outcome.isError,
       tool_use_id: block.id,
       type: "tool_result",
     });
+    // The Messages API accepts image blocks inside a tool_result, but the
+    // SDK's ToolResultBlockParam content type only lists text blocks, so the
+    // mixed array is cast to the param type.
+    const liveContent = outcome.media?.length
+      ? ([
+          { text: outcome.resultText, type: "text" },
+          ...outcome.media,
+        ] as Anthropic.ToolResultBlockParam["content"])
+      : outcome.resultText;
+    live.push({
+      content: liveContent,
+      is_error: outcome.isError,
+      tool_use_id: block.id,
+      type: "tool_result",
+    });
   }
-  return results;
+  return { live, persisted };
 };
 
 // A write tool pauses the turn for user confirmation (FR-7.8). Read tools
@@ -69,7 +94,10 @@ const pauseForConfirmation = async (
     return;
   }
 
-  const heldToolResults = await runReadToolCalls(reads, params);
+  // Held reads resume after the write is confirmed, so they go through the
+  // persisted (text) path; any image media is captured by the cached
+  // description instead.
+  const { persisted: heldToolResults } = await runReadToolCalls(reads, params);
   for (const extra of extraWrites) {
     heldToolResults.push({
       content:
@@ -146,9 +174,9 @@ export const runAgentTurn = async (params: AgentTurnParams): Promise<void> => {
       return;
     }
 
-    const toolResults = await runReadToolCalls(toolUses, params);
-    await appendThreadMessage(ctx.threadId, "user", toolResults);
-    messages.push({ content: toolResults, role: "user" });
+    const { live, persisted } = await runReadToolCalls(toolUses, params);
+    await appendThreadMessage(ctx.threadId, "user", persisted);
+    messages.push({ content: live, role: "user" });
   }
 
   send({

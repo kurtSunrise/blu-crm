@@ -3,7 +3,7 @@
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { followUp } from "@/db/schema";
+import { activity, followUp } from "@/db/schema";
 import { createFollowUpCore } from "@/lib/mutations/follow-up";
 import { getSessionUserId } from "@/lib/session";
 import {
@@ -50,11 +50,21 @@ export const completeFollowUp = async (
     .update(followUp)
     .set({ completedAt: new Date() })
     .where(eq(followUp.id, parsed.data.followUpId))
-    .returning({ dealId: followUp.dealId });
+    .returning({ dealId: followUp.dealId, action: followUp.action });
 
   if (!completed) {
     return { error: "Unknown follow-up" };
   }
+
+  // Leave a trace on the deal timeline so a completed follow-up isn't just
+  // silently dropped from the open list. No session on the AI path → null
+  // author, consistent with how stage changes are attributed.
+  await db.insert(activity).values({
+    dealId: completed.dealId,
+    type: "follow_up",
+    content: completed.action,
+    createdBy: await getSessionUserId(),
+  });
 
   revalidatePath("/");
   revalidatePath("/tasks");

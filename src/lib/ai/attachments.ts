@@ -1,7 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { chatAttachment } from "@/db/schema";
+import { attachment, chatAttachment } from "@/db/schema";
 import type * as Anthropic from "@/lib/ai/anthropic";
 
 // Bridges uploaded chat attachments and the Anthropic Messages API. A user
@@ -24,7 +24,7 @@ const MAX_CHAT_ATTACHMENTS = 5;
 // Chunked so a 10 MB file doesn't blow the call stack via a single spread.
 const BASE64_CHUNK = 0x80_00;
 
-const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+export const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
   const bytes = new Uint8Array(buffer);
   let binary = "";
   for (let offset = 0; offset < bytes.length; offset += BASE64_CHUNK) {
@@ -153,6 +153,60 @@ const loadMediaBlocksById = async (
     }
   }
   return blocks;
+};
+
+// A deal attachment loaded from R2 as a real base64 media block, ready to
+// show the model. Used by the view_deal_file tool (live vision) and by the
+// lazy/eager description generator — both read the bytes once.
+export interface LoadedAttachmentMedia {
+  block: Anthropic.ImageBlockParam | Anthropic.DocumentBlockParam;
+  contentType: string;
+  fileName: string;
+  id: string;
+}
+
+export const loadDealAttachmentMedia = async (
+  attachmentIds: string[]
+): Promise<LoadedAttachmentMedia[]> => {
+  if (attachmentIds.length === 0) {
+    return [];
+  }
+  const rows = await db
+    .select({
+      contentType: attachment.contentType,
+      fileKey: attachment.fileKey,
+      fileName: attachment.fileName,
+      id: attachment.id,
+    })
+    .from(attachment)
+    .where(inArray(attachment.id, attachmentIds));
+  const { env } = getCloudflareContext();
+  const loaded = await Promise.all(
+    rows.map(async (row) => {
+      if (!row.contentType) {
+        return null;
+      }
+      const object = await env.PHOTO_BUCKET.get(row.fileKey);
+      if (!object) {
+        return null;
+      }
+      const block = toMediaBlock(
+        row.contentType,
+        arrayBufferToBase64(await object.arrayBuffer())
+      );
+      return block
+        ? ({
+            block,
+            contentType: row.contentType,
+            fileName: row.fileName,
+            id: row.id,
+          } satisfies LoadedAttachmentMedia)
+        : null;
+    })
+  );
+  return loaded.filter(
+    (entry): entry is LoadedAttachmentMedia => entry !== null
+  );
 };
 
 // Replaces every persisted `blu_media` reference with a real base64 media

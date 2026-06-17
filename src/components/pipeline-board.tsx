@@ -12,9 +12,11 @@ import {
 } from "@dnd-kit/core";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { moveDealStage } from "@/lib/actions/deal-actions";
 import { formatAudFromCents } from "@/lib/format";
 import type { FixedDateType } from "@/lib/labels";
+import type { PipelineTooltipSettings } from "@/lib/pipeline-tooltip";
 import { cn } from "@/lib/utils";
 import { DealCard } from "./deal-card";
 import { StageChangeDialog, type StageMoveExtras } from "./stage-change-dialog";
@@ -27,13 +29,22 @@ export interface BoardStage {
   position: number;
 }
 
+export interface BoardDealFollowUp {
+  action: string;
+  dueDate: string;
+}
+
 export interface BoardDeal {
   companyName: string | null;
+  expectedCloseDate: string | null;
   fixedDate: string | null;
   fixedDateType: FixedDateType | null;
   id: string;
+  lastContactAt: string | null;
   leadId: string;
+  nextFollowUp: BoardDealFollowUp | null;
   ownerName: string | null;
+  scopeSummary: string | null;
   stageId: string;
   title: string;
   valueCents: number;
@@ -42,17 +53,22 @@ export interface BoardDeal {
 const DRAG_ACTIVATION_DISTANCE_PX = 6;
 const TOUCH_DRAG_DELAY_MS = 200;
 const TOUCH_DRAG_TOLERANCE_PX = 8;
+// A short hold before a card's hover preview appears, so it does not flash
+// while the user scans or drags across the board.
+const TOOLTIP_DELAY_MS = 400;
 
 function StageColumn({
   stage,
   deals,
   stages,
   onMove,
+  tooltip,
 }: {
   stage: BoardStage;
   deals: BoardDeal[];
   stages: BoardStage[];
   onMove: (dealId: string, stageId: string) => void;
+  tooltip: PipelineTooltipSettings;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: stage.id });
   const totalCents = deals.reduce((sum, item) => sum + item.valueCents, 0);
@@ -84,7 +100,13 @@ function StageColumn({
           </div>
         )}
         {deals.map((item) => (
-          <DealCard deal={item} key={item.id} onMove={onMove} stages={stages} />
+          <DealCard
+            deal={item}
+            key={item.id}
+            onMove={onMove}
+            stages={stages}
+            tooltip={tooltip}
+          />
         ))}
       </div>
     </section>
@@ -94,9 +116,11 @@ function StageColumn({
 export function PipelineBoard({
   stages,
   deals,
+  tooltip,
 }: {
   stages: BoardStage[];
   deals: BoardDeal[];
+  tooltip: PipelineTooltipSettings;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -168,22 +192,25 @@ export function PipelineBoard({
       onDragEnd={handleDragEnd}
       sensors={sensors}
     >
-      <section
-        aria-label="Pipeline stages"
-        className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-4"
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be keyboard-focusable even when it holds no focusable cards (axe: scrollable-region-focusable)
-        tabIndex={0}
-      >
-        {stages.map((stage) => (
-          <StageColumn
-            deals={boardDeals.filter((item) => item.stageId === stage.id)}
-            key={stage.id}
-            onMove={requestMove}
-            stage={stage}
-            stages={stages}
-          />
-        ))}
-      </section>
+      <TooltipProvider delay={TOOLTIP_DELAY_MS}>
+        <section
+          aria-label="Pipeline stages"
+          className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-4"
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be keyboard-focusable even when it holds no focusable cards (axe: scrollable-region-focusable)
+          tabIndex={0}
+        >
+          {stages.map((stage) => (
+            <StageColumn
+              deals={boardDeals.filter((item) => item.stageId === stage.id)}
+              key={stage.id}
+              onMove={requestMove}
+              stage={stage}
+              stages={stages}
+              tooltip={tooltip}
+            />
+          ))}
+        </section>
+      </TooltipProvider>
       <StageChangeDialog
         onCancel={() => setPendingMove(null)}
         onConfirm={(extras) => {

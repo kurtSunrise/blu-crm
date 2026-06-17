@@ -7,9 +7,11 @@ import { AttachmentUpload } from "@/components/attachment-upload";
 import { CompleteFollowUpButton } from "@/components/complete-follow-up-button";
 import { DealTimeline } from "@/components/deal-timeline";
 import { FollowUpForm } from "@/components/follow-up-form";
+import { NoteComposer } from "@/components/note-composer";
 import { QuickLogButtons } from "@/components/quick-log-buttons";
 import { QuoteForm } from "@/components/quote-form";
 import { QuoteRowActions } from "@/components/quote-row-actions";
+import { SharedFolderLink } from "@/components/shared-folder-link";
 import { StageSelect } from "@/components/stage-select";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -243,6 +245,7 @@ export default async function DealPage({
       handoverToDelivery: deal.handoverToDelivery,
       stageIsWon: pipelineStage.isWon,
       notes: deal.notes,
+      sharedFolderUrl: deal.sharedFolderUrl,
       ownerId: deal.ownerId,
       companyId: company.id,
       companyName: company.name,
@@ -395,13 +398,25 @@ export default async function DealPage({
             {record.scopeSummary && (
               <p className="mt-2 text-sm">{record.scopeSummary}</p>
             )}
+            <div className="mt-2">
+              <SharedFolderLink
+                dealId={record.id}
+                url={record.sharedFolderUrl}
+              />
+            </div>
           </section>
 
           <Separator />
 
-          <section aria-label="Quick log" className="flex flex-col gap-2">
-            <h2 className="font-heading font-medium text-sm">Quick log</h2>
+          <section
+            aria-label="Updates and notes"
+            className="flex flex-col gap-3"
+          >
+            <h2 className="font-heading font-medium text-sm">
+              Updates &amp; notes
+            </h2>
             <QuickLogButtons dealId={record.id} />
+            <NoteComposer dealId={record.id} />
           </section>
 
           <Separator />

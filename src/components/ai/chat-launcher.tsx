@@ -65,10 +65,33 @@ interface ChatSession {
   initialMessages: ThreadMessageLike[];
 }
 
-const toThreadMessages = (
-  messages: { id: string; role: "user" | "assistant"; text: string }[]
-): ThreadMessageLike[] =>
+interface ResumedAttachment {
+  contentType: string;
+  fileName: string;
+  id: string;
+}
+
+interface ResumedMessage {
+  attachments?: ResumedAttachment[];
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+}
+
+const toThreadMessages = (messages: ResumedMessage[]): ThreadMessageLike[] =>
   messages.map((message) => ({
+    // The server attachment id rides on `id`, matching the live composer path,
+    // so the bubble's chip can fetch its thumbnail from the same R2 route.
+    attachments: (message.attachments ?? []).map((attachment) => ({
+      content: [],
+      contentType: attachment.contentType,
+      id: attachment.id,
+      name: attachment.fileName,
+      status: { type: "complete" as const },
+      type: attachment.contentType.startsWith("image/")
+        ? ("image" as const)
+        : ("document" as const),
+    })),
     content: [{ text: message.text, type: "text" as const }],
     id: message.id,
     role: message.role,
@@ -117,9 +140,7 @@ export function AiAssistantDock() {
     if (!response.ok) {
       return;
     }
-    const payload = (await response.json()) as {
-      messages: { id: string; role: "user" | "assistant"; text: string }[];
-    };
+    const payload = (await response.json()) as { messages: ResumedMessage[] };
     switchSession(resumeId, toThreadMessages(payload.messages));
   };
 

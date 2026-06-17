@@ -1,6 +1,7 @@
 import type * as Anthropic from "@/lib/ai/anthropic";
 import { dealWriteTools } from "@/lib/ai/tools/deal-tools";
 import { draftTools } from "@/lib/ai/tools/draft-tools";
+import { fileTools } from "@/lib/ai/tools/file-tools";
 import { followUpTools } from "@/lib/ai/tools/follow-up-tools";
 import { knowledgeTools } from "@/lib/ai/tools/knowledge-tools";
 import { queryTools } from "@/lib/ai/tools/query-tools";
@@ -25,6 +26,7 @@ const ALL_TOOLS: AiTool[] = [
   ...quoteTools,
   ...triageTools,
   ...knowledgeTools,
+  ...fileTools,
 ];
 
 const TOOLS_BY_NAME = new Map(

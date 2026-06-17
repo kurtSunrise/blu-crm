@@ -131,6 +131,7 @@ export const activityType = pgEnum("activity_type", [
   "note",
   "stage_change",
   "quote_event",
+  "follow_up",
 ]);
 
 export const quoteStatus = pgEnum("quote_status", [
@@ -236,6 +237,9 @@ export const deal = pgTable("deal", {
   closedAt: timestamp("closed_at", { withTimezone: true }),
   handoverToDelivery: boolean("handover_to_delivery").notNull().default(false),
   notes: text("notes"),
+  // OneDrive / shared-folder link for the deal's files. Interim until the
+  // Microsoft 365 integration lands; surfaced on the deal page and to the AI.
+  sharedFolderUrl: text("shared_folder_url"),
   lastContactAt: timestamp("last_contact_at", { withTimezone: true }),
   createdBy: text("created_by").references(() => user.id),
   updatedBy: text("updated_by").references(() => user.id),
@@ -318,6 +322,11 @@ export const attachment = pgTable("attachment", {
   contentType: text("content_type"),
   sizeBytes: integer("size_bytes"),
   uploadedBy: text("uploaded_by").references(() => user.id),
+  // Cached AI vision description, generated lazily the first time the
+  // assistant views the file, so later turns reference it cheaply (no image
+  // tokens or Worker CPU re-spent). Null until first viewed.
+  aiDescription: text("ai_description"),
+  aiDescribedAt: timestamp("ai_described_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

@@ -333,16 +333,29 @@ const PNG_BASE64 =
 
 const ASSISTANT_PANEL = 'aside[aria-label="Blu assistant"]';
 
-test("an attached image rides the next message and clears after send", async ({
+// assistant-ui's AddAttachment button opens a transient file input, so the
+// fixture is delivered through the file chooser rather than a static input.
+const attachFixture = async (
+  page: Page,
+  file: { buffer: Buffer; mimeType: string; name: string }
+): Promise<void> => {
+  const chooser = page.waitForEvent("filechooser");
+  await page
+    .getByRole("button", { name: "Attach an image or PDF" })
+    .filter({ visible: true })
+    .first()
+    .click();
+  await (await chooser).setFiles(file);
+};
+
+test("an attached image rides the next message and shows on the sent bubble", async ({
   page,
 }) => {
   await page.goto("/");
   await skipUnlessAssistantConfigured(page, test);
   await openAssistant(page);
 
-  // The composer file input is hidden behind the paperclip button; set the
-  // fixture directly on it.
-  await page.locator(`${ASSISTANT_PANEL} input[type="file"]`).setInputFiles({
+  await attachFixture(page, {
     buffer: Buffer.from(PNG_BASE64, "base64"),
     mimeType: "image/png",
     name: "blu-brief.png",
@@ -366,13 +379,52 @@ test("an attached image rides the next message and clears after send", async ({
   };
   expect(body.attachmentIds).toHaveLength(1);
 
-  // The reply streams back and the staged chip is consumed.
+  // The reply streams back and the file now reads as a chip on the sent
+  // user message instead of vanishing from the conversation.
   await expect(page.getByText("Hello from the mock assistant.")).toBeVisible({
     timeout: RESPONSE_TIMEOUT_MS,
   });
   await expect(
     page.locator(ASSISTANT_PANEL).getByText("blu-brief.png")
+  ).toBeVisible();
+});
+
+test("a resumed conversation still shows its attachment chips", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await skipUnlessAssistantConfigured(page, test);
+  await openAssistant(page);
+
+  const marker = `ATT-${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+  await attachFixture(page, {
+    buffer: Buffer.from(PNG_BASE64, "base64"),
+    mimeType: "image/png",
+    name: "resume-brief.png",
+  });
+  await expect(
+    page.locator(ASSISTANT_PANEL).getByText("resume-brief.png")
+  ).toBeVisible({ timeout: RESPONSE_TIMEOUT_MS });
+
+  await askAssistant(page, `${marker} look at this`);
+  await expect(page.getByText("Hello from the mock assistant.")).toBeVisible({
+    timeout: RESPONSE_TIMEOUT_MS,
+  });
+
+  // Start fresh, then resume the thread from history; the persisted blu_media
+  // reference must rebuild into a visible chip, not a stray "📎" text line.
+  await page.getByRole("button", { name: "New conversation" }).click();
+  await expect(
+    page.locator(ASSISTANT_PANEL).getByText("resume-brief.png")
   ).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Conversation history" }).click();
+  await page.getByRole("button", { name: new RegExp(marker) }).click();
+  await expect(
+    page.locator(ASSISTANT_PANEL).getByText("resume-brief.png")
+  ).toBeVisible({ timeout: RESPONSE_TIMEOUT_MS });
+  await expect(page.getByText(`${marker} look at this`)).toBeVisible();
 });
 
 test("the chat upload endpoint rejects unsupported file types", async ({

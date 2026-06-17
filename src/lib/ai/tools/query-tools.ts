@@ -13,6 +13,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import {
   activity,
+  attachment,
   company,
   contact,
   deal,
@@ -33,6 +34,7 @@ import {
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 const ACTIVITY_LIMIT = 10;
+const ATTACHMENT_LIST_LIMIT = 25;
 const CENTS_PER_DOLLAR = 100;
 
 export interface DealSummary {
@@ -258,7 +260,7 @@ const getDealSchema = z
 
 const getDeal = defineTool({
   description:
-    "Fetch one deal's full record: fields, recent activity timeline, open follow-ups, and quotes. Call this before summarising, discussing, or proposing changes to a specific deal.",
+    "Fetch one deal's full record: fields, recent activity timeline, open follow-ups, quotes, and the list of files/photos (with cached descriptions and ids for view_deal_file). Call this before summarising, discussing, or proposing changes to a specific deal.",
   execute: async (input) => {
     const matcher = input.dealId
       ? eq(deal.id, input.dealId)
@@ -271,6 +273,7 @@ const getDeal = defineTool({
         notes: deal.notes,
         projectType: deal.projectType,
         scopeSummary: deal.scopeSummary,
+        sharedFolderUrl: deal.sharedFolderUrl,
         source: deal.source,
         venue: deal.venue,
       })
@@ -287,7 +290,7 @@ const getDeal = defineTool({
       return { resultText: "No deal found for that id." };
     }
 
-    const [activities, followUps, quotes] = await Promise.all([
+    const [activities, followUps, quotes, files] = await Promise.all([
       db
         .select({
           content: activity.content,
@@ -318,6 +321,18 @@ const getDeal = defineTool({
         .from(quote)
         .where(eq(quote.dealId, row.id))
         .orderBy(desc(quote.createdAt)),
+      db
+        .select({
+          aiDescription: attachment.aiDescription,
+          contentType: attachment.contentType,
+          createdAt: attachment.createdAt,
+          fileName: attachment.fileName,
+          id: attachment.id,
+        })
+        .from(attachment)
+        .where(eq(attachment.dealId, row.id))
+        .orderBy(desc(attachment.createdAt))
+        .limit(ATTACHMENT_LIST_LIMIT),
     ]);
 
     const detail = {
@@ -328,6 +343,16 @@ const getDeal = defineTool({
         type: entry.type,
       })),
       decisionMakerConfirmed: row.decisionMakerConfirmed,
+      // Files and photos on the deal. `description` is the cached AI vision
+      // summary (null until first viewed); use view_deal_file with the `id`
+      // to look at an image directly.
+      files: files.map((entry) => ({
+        date: formatDateAwst(entry.createdAt),
+        description: entry.aiDescription,
+        fileName: entry.fileName,
+        id: entry.id,
+        type: entry.contentType,
+      })),
       followUps: followUps.map((entry) => ({
         action: entry.action,
         done: entry.completedAt !== null,
@@ -336,6 +361,7 @@ const getDeal = defineTool({
       })),
       notes: row.notes,
       projectType: row.projectType,
+      sharedFolderUrl: row.sharedFolderUrl,
       quotes: quotes.map((entry) => ({
         sentAt: entry.sentAt ? formatDateAwst(entry.sentAt) : null,
         status: entry.status,

@@ -12,6 +12,10 @@ export interface AiToolOutcome {
   // Routes a write executed after confirmation emits data_changed for these
   // paths so the open pages refresh (router.refresh on the client)
   changedPaths?: string[];
+  // Real image blocks the model should see this turn (e.g. view_deal_file).
+  // The agent loop puts these in the live tool result only; the persisted
+  // result keeps just resultText so history stays lean and replay-cheap.
+  media?: Anthropic.ImageBlockParam[];
   resultText: string;
 }
 

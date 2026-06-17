@@ -2,24 +2,21 @@
 
 import {
   AssistantIf,
+  AttachmentPrimitive,
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  useAttachment,
 } from "@assistant-ui/react";
 import {
   ArrowUpIcon,
   FileTextIcon,
-  Loader2Icon,
   PaperclipIcon,
   SparklesIcon,
   SquareIcon,
   XIcon,
 } from "lucide-react";
-import { type ChangeEvent, useRef, useState } from "react";
-import {
-  type UploadedAttachment,
-  useAiAssistant,
-} from "@/components/ai/ai-context";
+import { useAiAssistant } from "@/components/ai/ai-context";
 import { DataPartsRenderer } from "@/components/ai/data-parts-renderer";
 import { MarkdownText } from "@/components/ai/markdown-text";
 import { Button } from "@/components/ui/button";
@@ -30,22 +27,16 @@ const SUGGESTIONS = [
   "What's in the inbox?",
 ];
 
-// Mirrors the server's AI_READABLE_TYPES / MAX_ATTACHMENT_BYTES so the user
-// gets immediate feedback; the upload route re-validates authoritatively.
-const ACCEPTED_UPLOAD_TYPES = "image/jpeg,image/png,image/webp,application/pdf";
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
-const MAX_STAGED_ATTACHMENTS = 5;
-
-function AttachmentChip({
-  attachment,
-  onRemove,
-}: {
-  attachment: UploadedAttachment;
-  onRemove: () => void;
-}) {
+// One chip serves both the composer (with a remove control) and the sent
+// message bubble (read-only), reading its attachment from assistant-ui's
+// attachment context. Images preview through the private /api/chat/attachments
+// route; everything else shows a file icon.
+function AttachmentChip() {
+  const attachment = useAttachment();
   const isImage = attachment.contentType.startsWith("image/");
+  const inComposer = attachment.source !== "message";
   return (
-    <span className="flex items-center gap-1.5 rounded-lg border bg-background py-1 pr-1 pl-2 text-xs">
+    <span className="flex items-center gap-1.5 rounded-lg border bg-background py-1 pr-1 pl-2 text-foreground text-xs">
       {isImage ? (
         // biome-ignore lint/performance/noImgElement: private R2 route, not a static asset for next/image
         <img
@@ -58,20 +49,27 @@ function AttachmentChip({
       ) : (
         <FileTextIcon aria-hidden className="size-4 text-muted-foreground" />
       )}
-      <span className="max-w-32 truncate">{attachment.fileName}</span>
-      <Button
-        aria-label={`Remove ${attachment.fileName}`}
-        className="size-6"
-        onClick={onRemove}
-        size="icon"
-        type="button"
-        variant="ghost"
-      >
-        <XIcon aria-hidden className="size-3.5" />
-      </Button>
+      <span className="max-w-32 truncate">{attachment.name}</span>
+      {inComposer ? (
+        <AttachmentPrimitive.Remove asChild>
+          <Button
+            aria-label={`Remove ${attachment.name}`}
+            className="size-6"
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <XIcon aria-hidden className="size-3.5" />
+          </Button>
+        </AttachmentPrimitive.Remove>
+      ) : null}
     </span>
   );
 }
+
+// Stable reference so assistant-ui's memoised attachment list does not
+// re-render on every parent render.
+const ATTACHMENT_COMPONENTS = { Attachment: AttachmentChip };
 
 function ThreadWelcome() {
   return (
@@ -114,8 +112,11 @@ function ThreadWelcome() {
 
 function UserMessage() {
   return (
-    <MessagePrimitive.Root className="flex justify-end py-1.5">
-      <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-blu px-3.5 py-2 text-sm text-white">
+    <MessagePrimitive.Root className="flex flex-col items-end gap-1.5 py-1.5">
+      <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5 empty:hidden">
+        <MessagePrimitive.Attachments components={ATTACHMENT_COMPONENTS} />
+      </div>
+      <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-blu px-3.5 py-2 text-sm text-white empty:hidden">
         <MessagePrimitive.Parts />
       </div>
     </MessagePrimitive.Root>
@@ -134,122 +135,30 @@ function AssistantMessage() {
 }
 
 function Composer() {
-  const { pendingAttachments, setPendingAttachments, threadId } =
-    useAiAssistant();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadingCount, setUploadingCount] = useState(0);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-
-  const uploadOne = async (file: File): Promise<UploadedAttachment | null> => {
-    const form = new FormData();
-    form.append("file", file);
-    if (threadId) {
-      form.append("threadId", threadId);
-    }
-    const response = await fetch("/api/chat/attachments", {
-      body: form,
-      method: "POST",
-    });
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: string;
-      };
-      setUploadError(payload.error ?? "That file could not be uploaded.");
-      return null;
-    }
-    return (await response.json()) as UploadedAttachment;
-  };
-
-  const handleFiles = async (event: ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(event.target.files ?? []);
-    event.target.value = "";
-    if (selected.length === 0) {
-      return;
-    }
-    setUploadError(null);
-
-    const room = MAX_STAGED_ATTACHMENTS - pendingAttachments.length;
-    const accepted: File[] = [];
-    for (const file of selected.slice(0, Math.max(room, 0))) {
-      if (file.size > MAX_UPLOAD_BYTES) {
-        setUploadError("Files must be 10 MB or smaller.");
-        continue;
-      }
-      accepted.push(file);
-    }
-    if (accepted.length === 0) {
-      return;
-    }
-
-    setUploadingCount((count) => count + accepted.length);
-    const uploaded = await Promise.all(accepted.map(uploadOne));
-    setUploadingCount((count) => count - accepted.length);
-
-    const ready = uploaded.filter(
-      (item): item is UploadedAttachment => item !== null
-    );
-    if (ready.length > 0) {
-      setPendingAttachments([...pendingAttachments, ...ready]);
-    }
-  };
-
-  const removeAttachment = (id: string) => {
-    setPendingAttachments(
-      pendingAttachments.filter((attachment) => attachment.id !== id)
-    );
-  };
-
-  const atLimit = pendingAttachments.length >= MAX_STAGED_ATTACHMENTS;
+  const { attachmentError } = useAiAssistant();
 
   return (
     <div className="flex w-full flex-col gap-2">
-      {pendingAttachments.length > 0 || uploadingCount > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
-          {pendingAttachments.map((attachment) => (
-            <AttachmentChip
-              attachment={attachment}
-              key={attachment.id}
-              onRemove={() => removeAttachment(attachment.id)}
-            />
-          ))}
-          {uploadingCount > 0 ? (
-            <span
-              className="flex items-center gap-1.5 rounded-lg border bg-background px-2 py-1 text-muted-foreground text-xs"
-              role="status"
-            >
-              <Loader2Icon aria-hidden className="size-3.5 animate-spin" />
-              Uploading…
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-      {uploadError ? (
+      <div className="flex flex-wrap gap-1.5 empty:hidden">
+        <ComposerPrimitive.Attachments components={ATTACHMENT_COMPONENTS} />
+      </div>
+      {attachmentError ? (
         <p className="text-destructive text-xs" role="alert">
-          {uploadError}
+          {attachmentError}
         </p>
       ) : null}
       <ComposerPrimitive.Root className="flex w-full items-end gap-2 rounded-2xl border bg-muted/30 p-2 transition-shadow has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring/20">
-        <input
-          accept={ACCEPTED_UPLOAD_TYPES}
-          aria-hidden
-          className="hidden"
-          multiple
-          onChange={handleFiles}
-          ref={fileInputRef}
-          tabIndex={-1}
-          type="file"
-        />
-        <Button
-          aria-label="Attach an image or PDF"
-          className="size-11 shrink-0 rounded-full"
-          disabled={atLimit}
-          onClick={() => fileInputRef.current?.click()}
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          <PaperclipIcon aria-hidden className="size-5" />
-        </Button>
+        <ComposerPrimitive.AddAttachment asChild multiple>
+          <Button
+            aria-label="Attach an image or PDF"
+            className="size-11 shrink-0 rounded-full"
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <PaperclipIcon aria-hidden className="size-5" />
+          </Button>
+        </ComposerPrimitive.AddAttachment>
         <ComposerPrimitive.Input
           aria-label="Message the assistant"
           className="max-h-40 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground"

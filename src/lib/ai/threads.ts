@@ -134,7 +134,14 @@ export const listThreadsForUser = async (
     .orderBy(sql`${chatThread.lastMessageAt} desc nulls last`)
     .limit(THREAD_LIST_LIMIT);
 
+export interface DisplayMessageAttachment {
+  contentType: string;
+  fileName: string;
+  id: string;
+}
+
 export interface DisplayMessage {
+  attachments: DisplayMessageAttachment[];
   id: string;
   role: "user" | "assistant";
   text: string;
@@ -159,10 +166,6 @@ const displayTextFromContent = (content: unknown): string => {
   }
   const parts: string[] = [];
   for (const block of content) {
-    if (isBluMediaBlock(block)) {
-      parts.push(`📎 ${block.fileName}`);
-      continue;
-    }
     if (
       isDisplayTextBlock(block) &&
       !block.text.startsWith(PAGE_CONTEXT_PREFIX)
@@ -173,9 +176,31 @@ const displayTextFromContent = (content: unknown): string => {
   return parts.join("\n\n");
 };
 
-// The human-readable transcript for resuming a thread in the panel: text
-// only, oldest first. Page-context blocks, tool_use/tool_result plumbing,
-// and confirmation round-trips are model-facing and stay out of the UI.
+// The attachments carried by a persisted user turn, rebuilt from the
+// `blu_media` references so the resumed conversation can re-render their chips.
+const displayAttachmentsFromContent = (
+  content: unknown
+): DisplayMessageAttachment[] => {
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  const attachments: DisplayMessageAttachment[] = [];
+  for (const block of content) {
+    if (isBluMediaBlock(block)) {
+      attachments.push({
+        contentType: block.contentType,
+        fileName: block.fileName,
+        id: block.attachmentId,
+      });
+    }
+  }
+  return attachments;
+};
+
+// The human-readable transcript for resuming a thread in the panel: text and
+// attachment chips, oldest first. Page-context blocks, tool_use/tool_result
+// plumbing, and confirmation round-trips are model-facing and stay out of the
+// UI.
 export const loadThreadDisplayMessages = async (
   threadId: string
 ): Promise<DisplayMessage[]> => {
@@ -191,11 +216,14 @@ export const loadThreadDisplayMessages = async (
 
   return rows
     .map((row) => ({
+      attachments: displayAttachmentsFromContent(row.content),
       id: row.id,
       role: row.role,
       text: displayTextFromContent(row.content).trim(),
     }))
-    .filter((message) => message.text.length > 0);
+    .filter(
+      (message) => message.text.length > 0 || message.attachments.length > 0
+    );
 };
 
 const isPlainUserTurn = (message: Anthropic.MessageParam): boolean => {

@@ -1,6 +1,8 @@
-import { Cpu, Sparkles } from "lucide-react";
+import { Cpu, Image as ImageIcon, Sparkles } from "lucide-react";
+import { AttachmentDescriptionModeForm } from "@/components/attachment-description-mode-form";
 import { SettingsPanel, SettingsSection } from "@/components/settings-section";
 import { Badge } from "@/components/ui/badge";
+import { getAttachmentDescriptionMode } from "@/lib/ai/attachment-describe";
 import { requireSession } from "@/lib/session";
 
 export const metadata = {
@@ -14,6 +16,7 @@ export default async function AiPreferencesPage() {
   const visionConfigured = Boolean(
     process.env.ANTHROPIC_API_KEY || process.env.ZAI_API_KEY
   );
+  const descriptionMode = await getAttachmentDescriptionMode();
 
   return (
     <>
@@ -35,6 +38,16 @@ export default async function AiPreferencesPage() {
               {visionConfigured ? "Connected" : "Not configured"}
             </Badge>
           </div>
+        </SettingsPanel>
+      </SettingsSection>
+
+      <SettingsSection
+        description="When the assistant generates and caches descriptions of deal files and photos."
+        icon={ImageIcon}
+        title="Deal file descriptions"
+      >
+        <SettingsPanel>
+          <AttachmentDescriptionModeForm mode={descriptionMode} />
         </SettingsPanel>
       </SettingsSection>
 

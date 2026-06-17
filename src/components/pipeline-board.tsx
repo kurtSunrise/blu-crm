@@ -48,6 +48,7 @@ export interface BoardDeal {
   stageId: string;
   title: string;
   valueCents: number;
+  valueRange: { maxCents: number; minCents: number } | null;
 }
 
 const DRAG_ACTIVATION_DISTANCE_PX = 6;

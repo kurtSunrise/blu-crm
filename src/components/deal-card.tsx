@@ -130,10 +130,16 @@ export function DealCard({
           </p>
         </Link>
         <div className="mt-1 flex items-center gap-2">
-          {deal.valueCents > 0 && (
+          {deal.valueRange ? (
             <p className="font-medium text-sm">
-              {formatAudFromCents(deal.valueCents)}
+              {`${formatAudFromCents(deal.valueRange.minCents)} – ${formatAudFromCents(deal.valueRange.maxCents)}`}
             </p>
+          ) : (
+            deal.valueCents > 0 && (
+              <p className="font-medium text-sm">
+                {formatAudFromCents(deal.valueCents)}
+              </p>
+            )
           )}
           {deal.fixedDate && fixedDayDiff !== null && (
             <p

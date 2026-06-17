@@ -25,5 +25,7 @@ export const createQuoteCore = async (
   });
 
   revalidatePath(`/deals/${input.dealId}`);
+  // The board now reflects quoted values, so a new draft must refresh it too.
+  revalidatePath("/pipeline");
   return {};
 };

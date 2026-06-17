@@ -1,7 +1,14 @@
-import { asc, desc, eq, isNull } from "drizzle-orm";
+import { asc, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { PipelineBoard } from "@/components/pipeline-board";
 import { db } from "@/db";
-import { company, deal, followUp, pipelineStage, user } from "@/db/schema";
+import {
+  company,
+  deal,
+  followUp,
+  pipelineStage,
+  quote,
+  user,
+} from "@/db/schema";
 import { getPipelineTooltipSettings } from "@/lib/pipeline-tooltip";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +17,68 @@ interface NextFollowUp {
   action: string;
   dueDate: string;
 }
+
+interface DealValue {
+  valueCents: number;
+  valueRange: { maxCents: number; minCents: number } | null;
+}
+
+interface DealQuote {
+  status: string;
+  valueCents: number;
+}
+
+// Every quote with a value, grouped by deal, so the board can reflect a quote
+// the moment it is drafted (FR-1.4) rather than only once it is accepted.
+const getQuotesByDeal = async (): Promise<Map<string, DealQuote[]>> => {
+  const rows = await db
+    .select({
+      dealId: quote.dealId,
+      status: quote.status,
+      valueCents: quote.valueCents,
+    })
+    .from(quote)
+    .where(isNotNull(quote.valueCents));
+
+  const byDeal = new Map<string, DealQuote[]>();
+  for (const row of rows) {
+    if (row.valueCents == null) {
+      continue;
+    }
+    const list = byDeal.get(row.dealId) ?? [];
+    list.push({ status: row.status, valueCents: row.valueCents });
+    byDeal.set(row.dealId, list);
+  }
+  return byDeal;
+};
+
+// The figure shown on a card: an accepted quote wins; otherwise the live
+// options (declined ones are off the table) collapse to a single value or a
+// min–max range. The estimate is the fallback when nothing is quoted. Stage
+// totals sum one number per deal, so a range contributes its high end.
+const computeDealValue = (
+  quotes: DealQuote[],
+  estimatedValueCents: number | null
+): DealValue => {
+  const accepted = quotes.find((item) => item.status === "accepted");
+  if (accepted) {
+    return { valueCents: accepted.valueCents, valueRange: null };
+  }
+
+  const openValues = quotes
+    .filter((item) => item.status !== "declined")
+    .map((item) => item.valueCents);
+  if (openValues.length > 0) {
+    const minCents = Math.min(...openValues);
+    const maxCents = Math.max(...openValues);
+    return {
+      valueCents: maxCents,
+      valueRange: minCents === maxCents ? null : { maxCents, minCents },
+    };
+  }
+
+  return { valueCents: estimatedValueCents ?? 0, valueRange: null };
+};
 
 // The soonest open follow-up per deal, for the card hover tooltip. Only run
 // when the tooltip's follow-up field is actually shown, so the board pays no
@@ -59,7 +128,6 @@ export default async function PipelinePage() {
       title: deal.title,
       stageId: deal.stageId,
       estimatedValueCents: deal.estimatedValueCents,
-      quotedValueCents: deal.quotedValueCents,
       fixedDate: deal.fixedDate,
       fixedDateType: deal.fixedDateType,
       companyName: company.name,
@@ -74,27 +142,35 @@ export default async function PipelinePage() {
     .where(isNull(deal.deletedAt))
     .orderBy(desc(deal.createdAt));
 
-  const nextFollowUps =
+  const [nextFollowUps, quotesByDeal] = await Promise.all([
     tooltip.enabled && tooltip.followUp
-      ? await getNextFollowUps()
-      : new Map<string, NextFollowUp>();
+      ? getNextFollowUps()
+      : Promise.resolve(new Map<string, NextFollowUp>()),
+    getQuotesByDeal(),
+  ]);
 
-  const deals = rows.map((row) => ({
-    id: row.id,
-    leadId: row.leadId,
-    title: row.title,
-    stageId: row.stageId,
-    // Quoted value wins over the estimate where a quote exists (FR-1.4 AC)
-    valueCents: row.quotedValueCents ?? row.estimatedValueCents ?? 0,
-    fixedDate: row.fixedDate?.toISOString() ?? null,
-    fixedDateType: row.fixedDateType,
-    companyName: row.companyName,
-    ownerName: row.ownerName,
-    scopeSummary: row.scopeSummary,
-    lastContactAt: row.lastContactAt?.toISOString() ?? null,
-    expectedCloseDate: row.expectedCloseDate?.toISOString() ?? null,
-    nextFollowUp: nextFollowUps.get(row.id) ?? null,
-  }));
+  const deals = rows.map((row) => {
+    const { valueCents, valueRange } = computeDealValue(
+      quotesByDeal.get(row.id) ?? [],
+      row.estimatedValueCents
+    );
+    return {
+      id: row.id,
+      leadId: row.leadId,
+      title: row.title,
+      stageId: row.stageId,
+      valueCents,
+      valueRange,
+      fixedDate: row.fixedDate?.toISOString() ?? null,
+      fixedDateType: row.fixedDateType,
+      companyName: row.companyName,
+      ownerName: row.ownerName,
+      scopeSummary: row.scopeSummary,
+      lastContactAt: row.lastContactAt?.toISOString() ?? null,
+      expectedCloseDate: row.expectedCloseDate?.toISOString() ?? null,
+      nextFollowUp: nextFollowUps.get(row.id) ?? null,
+    };
+  });
 
   return (
     <main className="flex h-full flex-col gap-4 py-4">

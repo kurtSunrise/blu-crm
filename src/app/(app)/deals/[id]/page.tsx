@@ -2,6 +2,7 @@ import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AttachmentDeleteButton } from "@/components/attachment-delete-button";
 import { AttachmentUpload } from "@/components/attachment-upload";
 import { CompleteFollowUpButton } from "@/components/complete-follow-up-button";
 import { DealTimeline } from "@/components/deal-timeline";
@@ -516,7 +517,7 @@ export default async function DealPage({
             {attachments.length > 0 && (
               <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                 {attachments.map((item) => (
-                  <li key={item.id}>
+                  <li className="relative" key={item.id}>
                     <a
                       className="block"
                       href={`/api/attachments/${item.id}`}
@@ -540,6 +541,10 @@ export default async function DealPage({
                         </span>
                       )}
                     </a>
+                    <AttachmentDeleteButton
+                      attachmentId={item.id}
+                      fileName={item.fileName}
+                    />
                   </li>
                 ))}
               </ul>

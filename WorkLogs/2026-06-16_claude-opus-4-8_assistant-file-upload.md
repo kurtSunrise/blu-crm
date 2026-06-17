@@ -97,6 +97,29 @@ risks the 3 MiB Worker limit); HEIC excluded (Anthropic vision rejects it).
   off the critical path (cache the encoded blob, or use the Anthropic Files API
   / most-recent-only rehydration noted in Next Steps).
 
+## Follow-up: Workers Paid upgrade + quote price field crash
+
+**Date**: 2026-06-16T (same session, later)
+
+- **Plan**: account was on Workers Free, which rejects `limits.cpu_ms`
+  (API code 100328) and caps CPU at ~10 ms — the true cause of the 1102. User
+  upgraded to Workers Paid; the 5-min `cpu_ms` config now deploys and the
+  default CPU ceiling is 30 s.
+- **Quote price field**: user pasted a `$`-formatted amount into the quote
+  value field and the page failed to load. The field was `type="number"`
+  (`src/components/quote-form.tsx`), which silently rejects `$12,500.00`.
+  - Switched it to `type="text"` + `inputMode="decimal"` (keeps the mobile
+    numeric keypad) so a formatted paste is accepted.
+  - Hardened `createQuoteSchema` (`src/lib/validation/quote.ts`) with a
+    `z.preprocess` that strips `$`, commas, and whitespace before coercion.
+    The AI `create_quote` tool uses its own `z.number()` schema and is
+    unaffected.
+- **Deployed** to `blu-crm` on Paid: version `841bc59b-0d18-475c-84b7-eb669f10c351`.
+  This release also carries the parallelised R2 attachment reads and the
+  `cpu_ms` ceiling.
+- **Verified**: `ultracite check` clean on changed files, `npm run build`
+  succeeds, `wrangler deploy` succeeded.
+
 ## Related Files
 
 - `src/lib/ai/anthropic.ts`, `src/lib/ai/attachments.ts`, `src/lib/ai/threads.ts`,

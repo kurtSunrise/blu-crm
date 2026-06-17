@@ -230,6 +230,24 @@ npm run db:push:prod   # reads .env.production
 npm run db:studio
 ```
 
+### Deployment Topology and Account Split (read before deploying)
+
+There are two Cloudflare accounts in play, and they are easy to confuse:
+
+- **Live site** — `https://blu-crm.kurt-0f6.workers.dev/` is served by the **Paid** account `0f665cd350543a9c38a78e2c588e7d5e` (its `workers.dev` subdomain is `kurt-0f6`, hence the URL). Every live deployment is `source: wrangler`: the live worker is deployed **only by a local `npm run deploy`**, never by GitHub.
+- **GitHub CI** — Workers Builds (the build that runs on push) is connected to a **different, Free** account `6a43583248af9d0fd90ea4a7799b0831`. It deploys a separate `blu-crm` worker that does **not** serve the live URL.
+
+Consequences (all confirmed the hard way):
+
+- **`git push` does not deploy the live site.** To ship to production, run `npm run deploy` locally (wrangler is authenticated to the Paid `0f665…` account). Pushing only updates the dead Free copy.
+- The Free CI account rejects `wrangler.jsonc` `limits.cpu_ms` with API error **`100328`** ("CPU limits are not supported for the Free plan"), failing the whole CI build. `limits.cpu_ms` (raising the per-request CPU ceiling for long AI chat turns and attachment rehydration) is valid **only** on the Paid account.
+- Always verify a deploy against the live URL with a cache-busted fresh load, and confirm you are on the `0f665…` account (subdomain `kurt-0f6`). The Cloudflare MCP / `cloudflare-builds` tools may be pointed at the Free `6a435…` account, which is **not** the live site.
+- Until GitHub CI is repointed at the Paid account, treat `npm run deploy` (local, → `0f665…`) as the only path to production.
+
+### Known Runtime Issues (open)
+
+- **Cookieless `getSession` hangs on the Cloudflare (workerd) runtime.** Full-document renders that call `getSession()` — e.g. `/` and `/sign-in` — hang and are cancelled by the runtime (`waitUntil() tasks did not complete within the allowed time after invocation end and have been cancelled`), while logged-in RSC navigations succeed and static routes (e.g. `/enquire`) are fine. The same path returns in ~30 ms under `npm run dev` (Node), so it is **workerd-specific**, not a logic bug, and **not a plan limit** (it persists on the Paid worker). Impact: logged-out users, expired sessions, new devices, and new team members cannot load the sign-in page. Not yet root-caused — reproduce on a local Cloudflare build (`npm run preview`) and instrument the auth path (`src/lib/session.ts` → `src/lib/auth.ts`) to find the hanging call.
+
 ---
 
 ## AI Agent Collaboration and Work Logging

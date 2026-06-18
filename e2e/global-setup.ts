@@ -3,7 +3,7 @@ import path from "node:path";
 import { request as playwrightRequest } from "@playwright/test";
 import pg from "pg";
 import { sweepTestData } from "./test-data-sweep";
-import { readDatabaseUrl } from "./test-db";
+import { assertTestDatabase, readDatabaseUrl, readEnvValue } from "./test-db";
 
 // Keeps E2E runs deterministic by clearing prior test data before each run.
 // A true localhost dev DB is fully reset (no real data lives there). The
@@ -27,7 +27,7 @@ const signInForSuite = async (): Promise<void> => {
   const response = await context.post("/api/auth/sign-in/email", {
     data: {
       email: E2E_EMAIL,
-      password: process.env.SEED_USER_PASSWORD ?? "blu-crm-dev",
+      password: readEnvValue("SEED_USER_PASSWORD") ?? "blu-crm-dev",
     },
   });
   if (!response.ok()) {
@@ -61,11 +61,15 @@ const TABLES_TO_CLEAR = [
 ];
 
 const globalSetup = async (): Promise<void> => {
+  // Refuse to run against anything but the configured test DB before we sign in
+  // or touch a single row — production must never be a test target.
+  const databaseUrl = readDatabaseUrl();
+  assertTestDatabase(databaseUrl);
+
   // The web servers are already up (Playwright starts webServer entries
   // before global setup), so the suite session can be created here.
   await signInForSuite();
 
-  const databaseUrl = readDatabaseUrl();
   const host = new URL(databaseUrl).hostname;
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();

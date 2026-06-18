@@ -1,4 +1,8 @@
 import type * as Anthropic from "@/lib/ai/anthropic";
+import {
+  buildInstructionsBlock,
+  getAssistantInstructions,
+} from "@/lib/ai/assistant-instructions";
 import { recordProposedToolCall } from "@/lib/ai/audit";
 import { getAiModel, streamMessage } from "@/lib/ai/client";
 import type { StreamPayload } from "@/lib/ai/stream-protocol";
@@ -137,19 +141,35 @@ const pauseForConfirmation = async (
 export const runAgentTurn = async (params: AgentTurnParams): Promise<void> => {
   const { ctx, messages, send } = params;
 
+  // Built once per turn: the static prompt keeps its own cache breakpoint
+  // (always a hit) and the team instructions, when set, become a second cached
+  // block. Caching is prefix-based, so the static prefix still hits on the rare
+  // turn right after the instructions change.
+  const instructionsBlock = buildInstructionsBlock(
+    await getAssistantInstructions()
+  );
+  const system: Anthropic.TextBlockParam[] = [
+    {
+      cache_control: { type: "ephemeral" },
+      text: SYSTEM_PROMPT,
+      type: "text",
+    },
+  ];
+  if (instructionsBlock) {
+    system.push({
+      cache_control: { type: "ephemeral" },
+      text: instructionsBlock,
+      type: "text",
+    });
+  }
+
   for (let iteration = 0; iteration < MAX_LOOP_ITERATIONS; iteration++) {
     const finalMessage = await streamMessage(
       {
         max_tokens: MAX_OUTPUT_TOKENS,
         messages,
         model: getAiModel(),
-        system: [
-          {
-            cache_control: { type: "ephemeral" },
-            text: SYSTEM_PROMPT,
-            type: "text",
-          },
-        ],
+        system,
         thinking: { type: "adaptive" },
         tools: TOOL_DEFINITIONS,
       },

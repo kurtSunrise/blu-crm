@@ -1,7 +1,9 @@
 import { Cpu, Image as ImageIcon, Sparkles } from "lucide-react";
+import { AssistantInstructionsForm } from "@/components/assistant-instructions-form";
 import { AttachmentDescriptionModeForm } from "@/components/attachment-description-mode-form";
 import { SettingsPanel, SettingsSection } from "@/components/settings-section";
 import { Badge } from "@/components/ui/badge";
+import { getAssistantInstructions } from "@/lib/ai/assistant-instructions";
 import { getAttachmentDescriptionMode } from "@/lib/ai/attachment-describe";
 import { requireSession } from "@/lib/session";
 
@@ -17,6 +19,7 @@ export default async function AiPreferencesPage() {
     process.env.ANTHROPIC_API_KEY || process.env.ZAI_API_KEY
   );
   const descriptionMode = await getAttachmentDescriptionMode();
+  const assistantInstructions = await getAssistantInstructions();
 
   return (
     <>
@@ -52,21 +55,12 @@ export default async function AiPreferencesPage() {
       </SettingsSection>
 
       <SettingsSection
-        description="Drafting replies, summarising deals, and the in-app assistant."
+        description="Custom guidance for the in-app assistant when it answers and drafts client communication."
         icon={Sparkles}
         title="AI assistant"
       >
         <SettingsPanel>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="font-medium text-sm">Assistant features</p>
-              <p className="text-muted-foreground text-xs">
-                Planned for a later release. Preferences will appear here once
-                the assistant ships.
-              </p>
-            </div>
-            <Badge variant="outline">Coming soon</Badge>
-          </div>
+          <AssistantInstructionsForm instructions={assistantInstructions} />
         </SettingsPanel>
       </SettingsSection>
     </>

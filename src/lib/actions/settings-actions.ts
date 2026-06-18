@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { appSetting, pipelineStage } from "@/db/schema";
+import { AI_ASSISTANT_INSTRUCTIONS_KEY } from "@/lib/ai/assistant-instructions";
 import { ATTACHMENT_DESCRIPTION_MODE_KEY } from "@/lib/ai/attachment-describe";
 import { CLOSING_SOON_DAYS_KEY, STALE_DAYS_KEY } from "@/lib/alerts";
 import {
@@ -13,6 +14,7 @@ import {
   PIPELINE_TOOLTIP_SCOPE_KEY,
 } from "@/lib/pipeline-tooltip";
 import {
+  aiInstructionsSchema,
   alertThresholdsSchema,
   attachmentDescriptionModeSchema,
   pipelineTooltipSettingsSchema,
@@ -73,6 +75,33 @@ export const updateAttachmentDescriptionMode = async (
     .insert(appSetting)
     .values({
       key: ATTACHMENT_DESCRIPTION_MODE_KEY,
+      updatedAt: new Date(),
+      value: parsed.data,
+    })
+    .onConflictDoUpdate({
+      target: appSetting.key,
+      set: { value: parsed.data, updatedAt: new Date() },
+    });
+
+  revalidatePath("/settings/ai");
+  return { saved: true };
+};
+
+// Freeform team guidance appended to the assistant's system prompt. Empty
+// clears the instructions; the static prompt then runs on its own again.
+export const updateAssistantInstructions = async (
+  _prevState: SettingsActionState,
+  formData: FormData
+): Promise<SettingsActionState> => {
+  const parsed = aiInstructionsSchema.safeParse(formData.get("instructions"));
+  if (!parsed.success) {
+    return { error: "Instructions must be 4000 characters or fewer" };
+  }
+
+  await db
+    .insert(appSetting)
+    .values({
+      key: AI_ASSISTANT_INSTRUCTIONS_KEY,
       updatedAt: new Date(),
       value: parsed.data,
     })

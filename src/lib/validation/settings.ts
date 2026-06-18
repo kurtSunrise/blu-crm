@@ -32,6 +32,16 @@ export const stageNameSchema = z
 // lazily on first view, or eagerly in the background on upload.
 export const attachmentDescriptionModeSchema = z.enum(["lazy", "eager"]);
 
+const MAX_AI_INSTRUCTIONS_LENGTH = 4000;
+
+// Freeform team guidance appended to the assistant's system prompt. Empty is
+// allowed (clears the instructions); the cap keeps a single paste from blowing
+// the prompt budget.
+export const aiInstructionsSchema = z
+  .string()
+  .trim()
+  .max(MAX_AI_INSTRUCTIONS_LENGTH);
+
 // Which fields the pipeline deal-card hover tooltip shows, plus its master
 // on/off switch. Unchecked checkboxes are absent from the form, so the action
 // resolves each flag to a boolean before validating here.

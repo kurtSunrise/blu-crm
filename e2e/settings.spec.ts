@@ -47,3 +47,26 @@ test("CSV import is reachable from the settings data card (FR-3.4)", async ({
   await page.waitForURL("**/settings/import");
   await expect(page.getByRole("heading", { name: "CSV import" })).toBeVisible();
 });
+
+test("AI assistant instructions save and persist across reloads", async ({
+  page,
+}) => {
+  const instructions = `Keep emails short. Lead with the ask. Test ${Date.now()}`;
+
+  await page.goto("/settings/ai");
+  const field = page.getByLabel("Instructions");
+  await expect(field).toBeVisible();
+
+  await field.fill(instructions);
+  await page.getByRole("button", { name: "Save instructions" }).click();
+  await expect(page.getByText("Instructions saved.")).toBeVisible();
+
+  // Reload to confirm the value was persisted, not just held in form state.
+  await page.reload();
+  await expect(page.getByLabel("Instructions")).toHaveValue(instructions);
+
+  // Clearing the field is allowed and reverts the assistant to its defaults.
+  await page.getByLabel("Instructions").fill("");
+  await page.getByRole("button", { name: "Save instructions" }).click();
+  await expect(page.getByText("Instructions saved.")).toBeVisible();
+});

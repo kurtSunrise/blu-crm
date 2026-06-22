@@ -123,6 +123,16 @@ export const lostReason = pgEnum("lost_reason", [
   "parked",
 ]);
 
+// Stage-independent labels for deals stalled on an external dependency. Applied
+// on top of the pipeline stage so a blocked deal can be flagged without moving
+// it out of its stage.
+export const dealSubStatus = pgEnum("deal_sub_status", [
+  "on_hold_third_party",
+  "blocked_external",
+  "on_hold_client",
+  "on_hold_internal",
+]);
+
 export const activityType = pgEnum("activity_type", [
   "call",
   "email",
@@ -232,6 +242,13 @@ export const deal = pgTable("deal", {
     .default(false),
   expectedCloseDate: timestamp("expected_close_date", { withTimezone: true }),
   lostReason: lostReason("lost_reason"),
+  // Optional on-hold / blocked label, applied independently of the stage.
+  // null means the deal is progressing normally.
+  subStatus: dealSubStatus("sub_status"),
+  subStatusNote: text("sub_status_note"),
+  // Stamped when the label is applied or changed; cleared with the label. Lets
+  // surfaces show "on hold since" and supports future stale-hold reporting.
+  subStatusSetAt: timestamp("sub_status_set_at", { withTimezone: true }),
   // When the deal entered a Won or Lost / Dormant stage; cleared if reopened.
   // Drives "won/lost this week" in reporting (FR-8.2).
   closedAt: timestamp("closed_at", { withTimezone: true }),

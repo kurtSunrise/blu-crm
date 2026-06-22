@@ -4,6 +4,7 @@ import { formatAudFromCents, MS_PER_DAY } from "@/lib/format";
 import {
   getActivityVolume,
   getStageBreakdown,
+  getSubStatusBreakdown,
   getWinRate,
   summarisePipeline,
 } from "@/lib/reports";
@@ -41,15 +42,26 @@ export default async function ReportsPage({
 
   // Independent report queries run in one parallel batch instead of three
   // sequential Neon round-trips.
-  const [breakdown, winRate, activityVolume] = await Promise.all([
-    getStageBreakdown(),
-    getWinRate(since),
-    getActivityVolume(since),
-  ]);
+  const [breakdown, winRate, activityVolume, subStatusBreakdown] =
+    await Promise.all([
+      getStageBreakdown(),
+      getWinRate(since),
+      getActivityVolume(since),
+      getSubStatusBreakdown(),
+    ]);
   const totals = summarisePipeline(breakdown);
 
   const openStages = breakdown.filter((row) => !(row.isWon || row.isLost));
   const maxStageCents = Math.max(...openStages.map((row) => row.totalCents), 1);
+
+  const onHoldCount = subStatusBreakdown.reduce(
+    (sum, row) => sum + row.dealCount,
+    0
+  );
+  const onHoldTotalCents = subStatusBreakdown.reduce(
+    (sum, row) => sum + row.totalCents,
+    0
+  );
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 lg:max-w-5xl">
@@ -124,6 +136,39 @@ export default async function ReportsPage({
             </li>
           ))}
         </ul>
+      </section>
+
+      <section aria-label="On hold and blocked" className="flex flex-col gap-3">
+        <h2 className="font-heading font-medium text-sm">On hold / blocked</h2>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <StatCard
+            label="Deals on hold / blocked"
+            value={String(onHoldCount)}
+          />
+          <StatCard
+            label="Value held up"
+            value={formatAudFromCents(onHoldTotalCents)}
+          />
+        </div>
+        {subStatusBreakdown.length > 0 ? (
+          <ul className="flex flex-col gap-1">
+            {subStatusBreakdown.map((row) => (
+              <li
+                className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 text-sm"
+                key={row.subStatus}
+              >
+                <span className="min-w-0 truncate">{row.label}</span>
+                <span className="shrink-0 text-muted-foreground">
+                  {row.dealCount} · {formatAudFromCents(row.totalCents)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-muted-foreground text-sm">
+            No deals are on hold or blocked.
+          </p>
+        )}
       </section>
 
       <nav aria-label="Win rate period" className="flex flex-wrap gap-2">

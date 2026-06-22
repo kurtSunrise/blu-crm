@@ -135,6 +135,8 @@ export default async function PipelinePage() {
       scopeSummary: deal.scopeSummary,
       lastContactAt: deal.lastContactAt,
       expectedCloseDate: deal.expectedCloseDate,
+      subStatus: deal.subStatus,
+      subStatusNote: deal.subStatusNote,
     })
     .from(deal)
     .leftJoin(company, eq(deal.companyId, company.id))
@@ -168,6 +170,8 @@ export default async function PipelinePage() {
       scopeSummary: row.scopeSummary,
       lastContactAt: row.lastContactAt?.toISOString() ?? null,
       expectedCloseDate: row.expectedCloseDate?.toISOString() ?? null,
+      subStatus: row.subStatus,
+      subStatusNote: row.subStatusNote,
       nextFollowUp: nextFollowUps.get(row.id) ?? null,
     };
   });

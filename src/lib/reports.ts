@@ -1,4 +1,15 @@
-import { and, asc, count, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  isNotNull,
+  isNull,
+  lt,
+  sql,
+} from "drizzle-orm";
 import { db } from "@/db";
 import {
   activity,
@@ -16,7 +27,12 @@ import {
   getStaleDeals,
 } from "@/lib/alerts";
 import { formatAudFromCents, formatDateAwst, MS_PER_DAY } from "@/lib/format";
-import { LOST_REASON_LABELS, type LostReason } from "@/lib/labels";
+import {
+  LOST_REASON_LABELS,
+  type LostReason,
+  SUB_STATUS_LABELS,
+  type SubStatus,
+} from "@/lib/labels";
 
 // A deal's value, mirroring the pipeline board exactly so every surface
 // reconciles (FR-1.4 / FR-8.2 AC): an accepted quote wins; otherwise the high
@@ -98,6 +114,46 @@ export const summarisePipeline = (
       0
     ),
   };
+};
+
+// ---------------------------------------------------------------------------
+// On-hold / blocked deals — how many deals are stalled and their value
+// ---------------------------------------------------------------------------
+
+export interface SubStatusBreakdownRow {
+  dealCount: number;
+  label: string;
+  subStatus: SubStatus;
+  totalCents: number;
+}
+
+export const getSubStatusBreakdown = async (): Promise<
+  SubStatusBreakdownRow[]
+> => {
+  const rows = await db
+    .select({
+      subStatus: deal.subStatus,
+      dealCount: count(deal.id),
+      totalCents: sql<number>`coalesce(sum(${dealValueCents}), 0)`,
+    })
+    .from(deal)
+    .where(and(isNull(deal.deletedAt), isNotNull(deal.subStatus)))
+    .groupBy(deal.subStatus)
+    .orderBy(desc(count(deal.id)));
+
+  const breakdown: SubStatusBreakdownRow[] = [];
+  for (const row of rows) {
+    if (!row.subStatus) {
+      continue;
+    }
+    breakdown.push({
+      subStatus: row.subStatus,
+      label: SUB_STATUS_LABELS[row.subStatus],
+      dealCount: row.dealCount,
+      totalCents: Number(row.totalCents),
+    });
+  }
+  return breakdown;
 };
 
 // ---------------------------------------------------------------------------

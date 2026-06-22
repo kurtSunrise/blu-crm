@@ -7,13 +7,14 @@ import { db } from "@/db";
 import { activity, deal, notification, pipelineStage, user } from "@/db/schema";
 import { dollarsToCents } from "@/lib/format";
 import { createLead } from "@/lib/intake";
-import { LOST_REASON_LABELS } from "@/lib/labels";
+import { LOST_REASON_LABELS, SUB_STATUS_LABELS } from "@/lib/labels";
 import { updateDealFieldsCore } from "@/lib/mutations/deal";
 import { getSessionUserId } from "@/lib/session";
 import {
   logActivitySchema,
   moveDealStageSchema,
   quickAddDealSchema,
+  setDealSubStatusSchema,
   updateSharedFolderSchema,
 } from "@/lib/validation/deal";
 
@@ -206,5 +207,61 @@ export const updateDealSharedFolderUrl = async (
   if (result.error) {
     return { error: result.error };
   }
+  return {};
+};
+
+export const setDealSubStatus = async (
+  input: unknown
+): Promise<ActionState> => {
+  const parsed = setDealSubStatusSchema.safeParse(input);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid sub-status" };
+  }
+  const { dealId, subStatus, note } = parsed.data;
+
+  const [current] = await db
+    .select({ subStatus: deal.subStatus, subStatusSetAt: deal.subStatusSetAt })
+    .from(deal)
+    .where(eq(deal.id, dealId))
+    .limit(1);
+
+  if (!current) {
+    return { error: "Unknown deal" };
+  }
+
+  // Stamp the clock only when the label itself changes to a new value; a
+  // note-only edit keeps the original "on hold since". Clearing wipes it.
+  let subStatusSetAt = current.subStatusSetAt;
+  if (subStatus === null) {
+    subStatusSetAt = null;
+  } else if (subStatus !== current.subStatus) {
+    subStatusSetAt = new Date();
+  }
+
+  await db
+    .update(deal)
+    .set({
+      subStatus,
+      subStatusNote: note ?? null,
+      subStatusSetAt,
+      updatedAt: new Date(),
+    })
+    .where(eq(deal.id, dealId));
+
+  const content =
+    subStatus === null
+      ? "Cleared sub-status"
+      : `Marked "${SUB_STATUS_LABELS[subStatus]}"${note ? `: ${note}` : ""}`;
+
+  await db.insert(activity).values({
+    dealId,
+    type: "note",
+    content,
+    createdBy: await getSessionUserId(),
+  });
+
+  revalidatePath("/pipeline");
+  revalidatePath("/reports");
+  revalidatePath(`/deals/${dealId}`);
   return {};
 };

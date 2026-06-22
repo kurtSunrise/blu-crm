@@ -15,9 +15,14 @@ import { useEffect, useState, useTransition } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { moveDealStage } from "@/lib/actions/deal-actions";
 import { formatAudFromCents } from "@/lib/format";
-import type { FixedDateType } from "@/lib/labels";
+import {
+  type FixedDateType,
+  SUB_STATUS_LABELS,
+  type SubStatus,
+} from "@/lib/labels";
 import type { PipelineTooltipSettings } from "@/lib/pipeline-tooltip";
 import { cn } from "@/lib/utils";
+import { SUB_STATUSES } from "@/lib/validation/deal";
 import { DealCard } from "./deal-card";
 import { StageChangeDialog, type StageMoveExtras } from "./stage-change-dialog";
 
@@ -46,6 +51,8 @@ export interface BoardDeal {
   ownerName: string | null;
   scopeSummary: string | null;
   stageId: string;
+  subStatus: SubStatus | null;
+  subStatusNote: string | null;
   title: string;
   valueCents: number;
   valueRange: { maxCents: number; minCents: number } | null;
@@ -130,10 +137,34 @@ export function PipelineBoard({
     dealId: string;
     stage: BoardStage;
   } | null>(null);
+  const [subStatusFilter, setSubStatusFilter] = useState<Set<SubStatus>>(
+    new Set()
+  );
 
   useEffect(() => {
     setBoardDeals(deals);
   }, [deals]);
+
+  const toggleFilter = (value: SubStatus) => {
+    setSubStatusFilter((current) => {
+      const next = new Set(current);
+      if (next.has(value)) {
+        next.delete(value);
+      } else {
+        next.add(value);
+      }
+      return next;
+    });
+  };
+
+  // An empty filter shows everything; otherwise keep only deals carrying one of
+  // the selected labels. Stage counts and totals recompute from this list.
+  const visibleDeals =
+    subStatusFilter.size === 0
+      ? boardDeals
+      : boardDeals.filter(
+          (item) => item.subStatus && subStatusFilter.has(item.subStatus)
+        );
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -193,6 +224,40 @@ export function PipelineBoard({
       onDragEnd={handleDragEnd}
       sensors={sensors}
     >
+      <fieldset className="flex flex-wrap items-center gap-2 px-4">
+        <legend className="sr-only">Filter by status</legend>
+        <span aria-hidden className="text-muted-foreground text-xs">
+          Status
+        </span>
+        {SUB_STATUSES.map((value) => {
+          const active = subStatusFilter.has(value);
+          return (
+            <button
+              aria-pressed={active}
+              className={cn(
+                "min-h-8 rounded-full border px-3 text-xs transition-colors",
+                active
+                  ? "border-blu bg-blu/10 text-blu"
+                  : "text-muted-foreground hover:border-blu/50"
+              )}
+              key={value}
+              onClick={() => toggleFilter(value)}
+              type="button"
+            >
+              {SUB_STATUS_LABELS[value]}
+            </button>
+          );
+        })}
+        {subStatusFilter.size > 0 && (
+          <button
+            className="min-h-8 text-muted-foreground text-xs underline-offset-2 hover:underline"
+            onClick={() => setSubStatusFilter(new Set())}
+            type="button"
+          >
+            Clear
+          </button>
+        )}
+      </fieldset>
       <TooltipProvider delay={TOOLTIP_DELAY_MS}>
         <section
           aria-label="Pipeline stages"
@@ -202,7 +267,7 @@ export function PipelineBoard({
         >
           {stages.map((stage) => (
             <StageColumn
-              deals={boardDeals.filter((item) => item.stageId === stage.id)}
+              deals={visibleDeals.filter((item) => item.stageId === stage.id)}
               key={stage.id}
               onMove={requestMove}
               stage={stage}

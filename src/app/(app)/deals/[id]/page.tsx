@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { AttachmentDeleteButton } from "@/components/attachment-delete-button";
 import { AttachmentUpload } from "@/components/attachment-upload";
 import { CompleteFollowUpButton } from "@/components/complete-follow-up-button";
+import { DealSubStatusControl } from "@/components/deal-sub-status-control";
 import { DealTimeline } from "@/components/deal-timeline";
 import { FollowUpForm } from "@/components/follow-up-form";
 import { NoteComposer } from "@/components/note-composer";
@@ -242,6 +243,8 @@ export default async function DealPage({
       decisionMakerConfirmed: deal.decisionMakerConfirmed,
       expectedCloseDate: deal.expectedCloseDate,
       lostReason: deal.lostReason,
+      subStatus: deal.subStatus,
+      subStatusNote: deal.subStatusNote,
       handoverToDelivery: deal.handoverToDelivery,
       stageIsWon: pipelineStage.isWon,
       notes: deal.notes,
@@ -358,6 +361,11 @@ export default async function DealPage({
               {formatAudFromCents(valueCents)}
             </span>
           )}
+          <DealSubStatusControl
+            dealId={record.id}
+            note={record.subStatusNote}
+            subStatus={record.subStatus}
+          />
         </div>
       </header>
 

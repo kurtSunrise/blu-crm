@@ -67,6 +67,22 @@ export const moveDealStageSchema = z.object({
 
 export type MoveDealStageInput = z.infer<typeof moveDealStageSchema>;
 
+export const SUB_STATUSES = [
+  "on_hold_third_party",
+  "blocked_external",
+  "on_hold_client",
+  "on_hold_internal",
+] as const;
+
+// A null subStatus clears the label; the note is optional context either way.
+export const setDealSubStatusSchema = z.object({
+  dealId: z.string().min(1),
+  subStatus: z.enum(SUB_STATUSES).nullable(),
+  note: optionalTrimmed,
+});
+
+export type SetDealSubStatusInput = z.infer<typeof setDealSubStatusSchema>;
+
 export const QUICK_LOG_TYPES = [
   "call",
   "email",

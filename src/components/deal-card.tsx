@@ -24,6 +24,7 @@ import {
 import { FIXED_DATE_TYPE_LABELS } from "@/lib/labels";
 import type { PipelineTooltipSettings } from "@/lib/pipeline-tooltip";
 import { cn } from "@/lib/utils";
+import { DealSubStatusControl } from "./deal-sub-status-control";
 import type { BoardDeal, BoardStage } from "./pipeline-board";
 
 const CLOSING_SOON_DAYS = 14;
@@ -129,6 +130,12 @@ export function DealCard({
             {deal.ownerName ? ` · ${deal.ownerName.split(" ")[0]}` : ""}
           </p>
         </Link>
+        <DealSubStatusControl
+          className="mt-1.5"
+          dealId={deal.id}
+          note={deal.subStatusNote}
+          subStatus={deal.subStatus}
+        />
         <div className="mt-1 flex items-center gap-2">
           {deal.valueRange ? (
             <p className="font-medium text-sm">

@@ -31,12 +31,14 @@ const SECTIONS: HelpSection[] = [
           </li>
           <li>
             Change your password any time under{" "}
-            <strong>Settings, Account</strong>. Do this after your first sign-in
-            if you were given a starter password.
+            <strong>Settings, Account, Change password</strong>. Do this after
+            your first sign-in if you were given a starter password.
           </li>
           <li>
-            <strong>Sign out</strong> lives at the bottom of the sidebar on
-            desktop, or in the header on a phone.
+            Your <strong>avatar menu</strong> holds Account, Settings, the light
+            / dark toggle, and <strong>Log out</strong>. It sits at the bottom
+            of the sidebar on desktop and in the top-right of the header on a
+            phone.
           </li>
         </ol>
       </>
@@ -161,6 +163,43 @@ const SECTIONS: HelpSection[] = [
             the dashboard.
           </li>
         </ol>
+        <p className={PARA_CLASSES}>
+          A deal can also carry an <strong>On hold</strong> or{" "}
+          <strong>Blocked</strong> label without leaving its stage; use the
+          status control on the card or deal page, and the "Filter by status"
+          row at the top of the board to focus on them. On desktop, hover a card
+          to see a quick preview (turn it on and choose its fields under
+          Settings, General).
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "sub-status",
+    title: "On hold and blocked deals",
+    body: (
+      <>
+        <p className={PARA_CLASSES}>
+          Sometimes a deal is alive but stuck. Flag it without moving it out of
+          its stage so the reason is visible and it still counts in your
+          pipeline totals.
+        </p>
+        <ol className={STEP_CLASSES}>
+          <li>
+            Open the status control on the card or deal page and pick a label:
+            On Hold (awaiting client, third party, or internal review) or
+            Blocked (external dependency).
+          </li>
+          <li>
+            Add an optional note on why (for example, "Waiting on creative from
+            the agency, expected 25 June").
+          </li>
+          <li>
+            Use "Filter by status" at the top of the board to show only held or
+            blocked deals, and check the "On hold / blocked" section in Reports
+            for the count and value held up.
+          </li>
+        </ol>
       </>
     ),
   },
@@ -175,7 +214,7 @@ const SECTIONS: HelpSection[] = [
         </p>
         <ol className={STEP_CLASSES}>
           <li>
-            <strong>Amber</strong>: fixed dates — the install, event, or launch
+            <strong>Amber</strong>: fixed dates, the install, event, or launch
             date the job must hit.
           </li>
           <li>
@@ -189,8 +228,8 @@ const SECTIONS: HelpSection[] = [
           Use the arrows to move between months and Today to jump back. On a
           phone, tap a day in the grid to jump to its list below; every item
           links to its deal. Completed follow-ups and Lost / Dormant deals are
-          hidden, and a deal's expected close disappears once it is Won — but
-          its install date stays, because the work still happens. All dates are
+          hidden, and a deal's expected close disappears once it is Won, but its
+          install date stays, because the work still happens. All dates are
           Perth time.
         </p>
       </>
@@ -290,7 +329,7 @@ const SECTIONS: HelpSection[] = [
         </p>
         <ol className={STEP_CLASSES}>
           <li>
-            On the deal page, tap the upload button and pick a file — on a phone
+            On the deal page, tap the upload button and pick a file; on a phone
             you can shoot a photo straight from the camera.
           </li>
           <li>
@@ -302,6 +341,25 @@ const SECTIONS: HelpSection[] = [
             is no public link to share.
           </li>
         </ol>
+      </>
+    ),
+  },
+  {
+    id: "notes",
+    title: "Notes, updates, and shared folders",
+    body: (
+      <>
+        <p className={PARA_CLASSES}>
+          Each deal has an "Add a note" composer for call summaries, updates, or
+          context for the team. Notes land on the deal's timeline and the
+          assistant can read them, so write them as if briefing a colleague.
+        </p>
+        <p className={PARA_CLASSES}>
+          Use "Add shared folder link" to keep a OneDrive or shared-folder URL
+          on the deal. It is an interim home for bigger files until the
+          Microsoft 365 integration lands; the link opens in a new tab for
+          signed-in users.
+        </p>
       </>
     ),
   },
@@ -358,6 +416,10 @@ const SECTIONS: HelpSection[] = [
             away.
           </li>
           <li>
+            <strong>On hold / blocked</strong> shows how many open deals are
+            flagged and the total value held up, so stuck work stays visible.
+          </li>
+          <li>
             <strong>Copy report</strong> puts the whole thing on the clipboard
             as plain text, ready to paste into an email or WhatsApp.
           </li>
@@ -392,7 +454,14 @@ const SECTIONS: HelpSection[] = [
           <li>
             <strong>Drafts</strong>: follow-up emails, SMS, call scripts, and
             qualification questions arrive as cards you can edit in place and
-            copy. Nothing is sent by the app.
+            copy. Nothing is sent by the app. To steer the tone and rules of
+            those drafts for the whole team, set custom instructions under
+            Settings, AI Preferences.
+          </li>
+          <li>
+            <strong>Files and photos</strong>: attach an image or PDF to the
+            chat with the paperclip, and ask about photos or files already on a
+            deal; the assistant can read them and the deal's notes for context.
           </li>
           <li>
             <strong>Confirmation gating</strong>: any change (new lead, stage
@@ -419,9 +488,53 @@ const SECTIONS: HelpSection[] = [
     body: (
       <p className={PARA_CLASSES}>
         The app follows your device's light or dark setting by default. To
-        override it, use the toggle at the bottom of the sidebar on desktop or
-        in the header on a phone. Your choice is remembered on that device.
+        override it, open the avatar menu (bottom of the sidebar on desktop, or
+        the top-right of the header on a phone) and use the light / dark toggle;
+        the same control also lives under Settings, General, Appearance. Your
+        choice is remembered on that device.
       </p>
+    ),
+  },
+  {
+    id: "account",
+    title: "Your account",
+    body: (
+      <>
+        <p className={PARA_CLASSES}>
+          Settings, Account is where you manage yourself:
+        </p>
+        <ol className={STEP_CLASSES}>
+          <li>
+            <strong>Profile</strong>: edit your name and avatar, and change your
+            password.
+          </li>
+          <li>
+            <strong>Active sessions</strong>: see where you are signed in and
+            sign out a single device, or log out of all devices at once.
+          </li>
+          <li>
+            <strong>Delete account</strong>: a password-confirmed, immediate
+            removal in the danger zone. Only do this if you mean it.
+          </li>
+        </ol>
+      </>
+    ),
+  },
+  {
+    id: "team",
+    title: "Your team",
+    admin: true,
+    body: (
+      <>
+        <p className={PARA_CLASSES}>
+          Admins manage the team under{" "}
+          <Link className="underline underline-offset-2" href="/settings/team">
+            Settings, Team
+          </Link>
+          : add a member, set each person's role (Sales or Admin), and disable
+          or re-enable an account. Everyone else sees the list read-only.
+        </p>
+      </>
     ),
   },
   {
@@ -431,10 +544,43 @@ const SECTIONS: HelpSection[] = [
     body: (
       <>
         <p className={PARA_CLASSES}>
-          Settings currently covers the alert thresholds (needs-attention days
-          and closing-soon window) and CSV import. Changes apply to the whole
-          team. Role-based access arrives with sign-in.
+          Settings is split into five tabs. Changes to shared options apply to
+          the whole team.
         </p>
+        <ol className={STEP_CLASSES}>
+          <li>
+            <strong>General</strong>: the pipeline stages (rename, reorder, add,
+            or remove them; Won and Lost / Dormant stay fixed at the end),
+            forecast weightings (how much of each stage's value counts toward
+            the weighted forecast), alerts ("Needs attention after" and "Closing
+            soon within", both in days), the pipeline card hover preview, and
+            the appearance toggle.
+          </li>
+          <li>
+            <strong>Account</strong>: your profile and password, your active
+            sessions, log out of all devices, and delete account. See "Your
+            account" above.
+          </li>
+          <li>
+            <strong>Company</strong>: read-only business details, the lead
+            intake links (public form and email-to-lead), and the{" "}
+            <Link
+              className="underline underline-offset-2"
+              href="/settings/import"
+            >
+              CSV import
+            </Link>{" "}
+            link.
+          </li>
+          <li>
+            <strong>Team</strong>: add members and set roles (admin only). See
+            "Your team" above.
+          </li>
+          <li>
+            <strong>AI Preferences</strong>: photo vision status, when to
+            describe deal files, and the assistant's custom instructions.
+          </li>
+        </ol>
       </>
     ),
   },
@@ -455,6 +601,11 @@ const FAQS = [
     question: "Can I undo a discard from the Inbox?",
     answer:
       "Discards are soft deletes, so the data is retained. There is no undo button yet; ask an admin to restore it.",
+  },
+  {
+    question: "What's the difference between a stage and a sub-status?",
+    answer:
+      "A stage is where the deal sits in the pipeline (Lead Captured through Won). A sub-status is an On hold or Blocked flag layered on top: it explains why a deal is stuck without moving it out of its stage, so it still counts in your totals.",
   },
   {
     question: "Why did the duplicate warning appear for a different name?",
@@ -497,9 +648,59 @@ const GLOSSARY = [
     "Source",
     "Where the lead came from: Web, Instagram, Referral, Repeat client, or Other.",
   ],
+  [
+    "Sub-status",
+    "An On hold or Blocked label that flags a deal without moving it out of its stage.",
+  ],
+  [
+    "Weighted forecast",
+    "Open pipeline value with each stage scaled by its win likelihood; weightings are set in Settings, General.",
+  ],
+  [
+    "Role",
+    "Sales or Admin. Admins also manage team members and shared settings.",
+  ],
 ];
 
 const WHATS_NEW = [
+  {
+    date: "18/06/2026",
+    items: [
+      "On hold and Blocked deal labels, shown on board cards, with a board filter and counts in Reports.",
+      "Custom AI assistant instructions in Settings, AI Preferences to set the team's tone and rules for drafts.",
+    ],
+  },
+  {
+    date: "17/06/2026",
+    items: [
+      "The assistant can now read photos and files on a deal, and you can attach images or PDFs to a chat.",
+      "An 'Add a note' composer and a shared-folder link on every deal.",
+      "Hover a deal card on desktop for a quick preview (configurable in Settings, General).",
+      "Completed follow-ups now appear as events on the deal timeline.",
+    ],
+  },
+  {
+    date: "16/06/2026",
+    items: [
+      "Avatar menu on desktop and phone, holding Account, Settings, the theme toggle, and Log out.",
+      "Admin team management: add members, set roles, and disable accounts.",
+      "Clearer stage names on the assistant's stage-move confirmation.",
+    ],
+  },
+  {
+    date: "15/06/2026",
+    items: [
+      "Settings reorganised into General, Account, Company, Team, and AI Preferences.",
+      "A full Account page: profile, password, active sessions, and delete account.",
+      "Editable pipeline stages and forecast weightings in Settings, General.",
+    ],
+  },
+  {
+    date: "12/06/2026",
+    items: [
+      "Team sign-in with @blu.builders accounts and Sales / Admin roles.",
+    ],
+  },
   {
     date: "11/06/2026",
     items: [

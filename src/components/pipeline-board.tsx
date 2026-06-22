@@ -17,6 +17,7 @@ import { moveDealStage } from "@/lib/actions/deal-actions";
 import { formatAudFromCents } from "@/lib/format";
 import {
   type FixedDateType,
+  SUB_STATUS_COLOR,
   SUB_STATUS_LABELS,
   type SubStatus,
 } from "@/lib/labels";
@@ -235,15 +236,22 @@ export function PipelineBoard({
             <button
               aria-pressed={active}
               className={cn(
-                "min-h-8 rounded-full border px-3 text-xs transition-colors",
+                "flex min-h-8 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors",
                 active
-                  ? "border-blu bg-blu/10 text-blu"
-                  : "text-muted-foreground hover:border-blu/50"
+                  ? cn("ring-1 ring-current", SUB_STATUS_COLOR[value].badge)
+                  : "text-muted-foreground hover:border-foreground/30"
               )}
               key={value}
               onClick={() => toggleFilter(value)}
               type="button"
             >
+              <span
+                aria-hidden
+                className={cn(
+                  "size-2 shrink-0 rounded-full",
+                  SUB_STATUS_COLOR[value].dot
+                )}
+              />
               {SUB_STATUS_LABELS[value]}
             </button>
           );

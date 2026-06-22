@@ -10,6 +10,7 @@ export type MonthKey = string; // "YYYY-MM"
 export type DateKey = string; // "YYYY-MM-DD"
 
 export const MONTH_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+export const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const DATE_KEY_LENGTH = 10;
 const MONTH_KEY_LENGTH = 7;
@@ -40,8 +41,20 @@ export const awstMonthRange = (
   };
 };
 
+// UTC instants bounding the AWST day, for range queries (mirrors awstMonthRange).
+export const awstDayKeyRange = (
+  dateKey: DateKey
+): { start: Date; end: Date } => {
+  const start = new Date(Date.parse(`${dateKey}T00:00:00Z`) - AWST_OFFSET_MS);
+  return { start, end: new Date(start.getTime() + MS_PER_DAY) };
+};
+
 const utcDateKey = (ms: number): DateKey =>
   new Date(ms).toISOString().slice(0, DATE_KEY_LENGTH);
+
+// Step a dateKey by whole days, for previous/next-day navigation.
+export const addDays = (dateKey: DateKey, delta: number): DateKey =>
+  utcDateKey(Date.parse(`${dateKey}T00:00:00Z`) + delta * MS_PER_DAY);
 
 // Monday-start weeks covering the month, padded with adjacent-month days.
 export const monthGridWeeks = (monthKey: MonthKey): DateKey[][] => {

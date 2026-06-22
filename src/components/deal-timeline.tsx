@@ -61,8 +61,13 @@ const FALLBACK_STYLE: EntryStyle = {
   marker: "",
 };
 
+// Shared so other surfaces (e.g. the daily status report) render an activity
+// with the same icon, label, and marker colour as the deal-page timeline.
+export const getEntryStyle = (type: string): EntryStyle =>
+  ENTRY_STYLES[type] ?? FALLBACK_STYLE;
+
 function TimelineItem({ entry }: { entry: TimelineEntry }) {
-  const style = ENTRY_STYLES[entry.type] ?? FALLBACK_STYLE;
+  const style = getEntryStyle(entry.type);
   const Icon = style.icon;
 
   return (

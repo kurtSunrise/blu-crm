@@ -10,6 +10,7 @@ import {
   lt,
   sql,
 } from "drizzle-orm";
+import type { TimelineEntry } from "@/components/deal-timeline";
 import { db } from "@/db";
 import {
   activity,
@@ -26,6 +27,7 @@ import {
   getClosingSoonDeals,
   getStaleDeals,
 } from "@/lib/alerts";
+import { awstDayKeyRange, type DateKey } from "@/lib/calendar";
 import { formatAudFromCents, formatDateAwst, MS_PER_DAY } from "@/lib/format";
 import {
   LOST_REASON_LABELS,
@@ -465,4 +467,79 @@ export const renderWeeklyReportText = (report: WeeklyReport): string => {
   ];
 
   return lines.join("\n");
+};
+
+// ---------------------------------------------------------------------------
+// Daily status — what was accomplished on each deal on a given AWST day
+// ---------------------------------------------------------------------------
+
+export interface DailyDealActivity {
+  companyName: string | null;
+  dealId: string;
+  entries: TimelineEntry[];
+  leadId: string;
+  stageName: string;
+  title: string;
+}
+
+// Every activity logged on the chosen Perth day, grouped per deal. The
+// activity table is the event-sourced timeline (calls, notes, stage changes,
+// quote events, completed follow-ups), so a day window over createdAt is the
+// full picture of the day's work. Deal groups are ordered by their most recent
+// activity (most recently worked first); entries stay chronological within.
+export const getDailyActivity = async (
+  dateKey: DateKey
+): Promise<DailyDealActivity[]> => {
+  const { start, end } = awstDayKeyRange(dateKey);
+
+  const rows = await db
+    .select({
+      activityId: activity.id,
+      type: activity.type,
+      content: activity.content,
+      createdAt: activity.createdAt,
+      authorName: user.name,
+      dealId: deal.id,
+      leadId: deal.leadId,
+      title: deal.title,
+      companyName: company.name,
+      stageName: pipelineStage.name,
+    })
+    .from(activity)
+    .innerJoin(deal, and(eq(activity.dealId, deal.id), isNull(deal.deletedAt)))
+    .innerJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
+    .leftJoin(company, eq(deal.companyId, company.id))
+    .leftJoin(user, eq(activity.createdBy, user.id))
+    .where(and(gte(activity.createdAt, start), lt(activity.createdAt, end)))
+    .orderBy(asc(activity.createdAt));
+
+  const byDeal = new Map<string, DailyDealActivity>();
+  for (const row of rows) {
+    const group = byDeal.get(row.dealId);
+    const entry: TimelineEntry = {
+      id: row.activityId,
+      type: row.type,
+      content: row.content,
+      createdAt: row.createdAt,
+      authorName: row.authorName,
+    };
+    if (group) {
+      group.entries.push(entry);
+    } else {
+      byDeal.set(row.dealId, {
+        dealId: row.dealId,
+        leadId: row.leadId,
+        title: row.title,
+        companyName: row.companyName,
+        stageName: row.stageName,
+        entries: [entry],
+      });
+    }
+  }
+
+  // Most recently worked deal first; rows arrive chronologically, so the last
+  // entry in each group is its latest activity.
+  const latest = (group: DailyDealActivity): number =>
+    group.entries.at(-1)?.createdAt.getTime() ?? 0;
+  return [...byDeal.values()].sort((a, b) => latest(b) - latest(a));
 };

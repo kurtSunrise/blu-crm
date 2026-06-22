@@ -1,6 +1,7 @@
-import { FileText } from "lucide-react";
+import { CalendarDays, FileText } from "lucide-react";
 import Link from "next/link";
 import { formatAudFromCents, MS_PER_DAY } from "@/lib/format";
+import { SUB_STATUS_COLOR } from "@/lib/labels";
 import {
   getActivityVolume,
   getStageBreakdown,
@@ -73,13 +74,22 @@ export default async function ReportsPage({
             report uses.
           </p>
         </div>
-        <Link
-          className="flex min-h-11 items-center gap-2 rounded-md bg-blu px-4 font-medium text-sm text-white transition-opacity hover:opacity-90"
-          href="/reports/weekly"
-        >
-          <FileText aria-hidden className="size-4" />
-          Weekly report
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            className="flex min-h-11 items-center gap-2 rounded-md border px-4 font-medium text-sm transition-colors hover:bg-accent"
+            href="/reports/daily"
+          >
+            <CalendarDays aria-hidden className="size-4" />
+            Daily status
+          </Link>
+          <Link
+            className="flex min-h-11 items-center gap-2 rounded-md bg-blu px-4 font-medium text-sm text-white transition-opacity hover:opacity-90"
+            href="/reports/weekly"
+          >
+            <FileText aria-hidden className="size-4" />
+            Weekly report
+          </Link>
+        </div>
       </header>
 
       <section aria-label="Pipeline overview" className="flex flex-col gap-3">
@@ -157,7 +167,16 @@ export default async function ReportsPage({
                 className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 text-sm"
                 key={row.subStatus}
               >
-                <span className="min-w-0 truncate">{row.label}</span>
+                <span className="flex min-w-0 items-center gap-2 truncate">
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "size-2 shrink-0 rounded-full",
+                      SUB_STATUS_COLOR[row.subStatus].dot
+                    )}
+                  />
+                  <span className="truncate">{row.label}</span>
+                </span>
                 <span className="shrink-0 text-muted-foreground">
                   {row.dealCount} · {formatAudFromCents(row.totalCents)}
                 </span>

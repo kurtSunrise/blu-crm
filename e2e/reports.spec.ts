@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const WIN_RATE_HEADING = /Win rate/;
+const DAILY_DATE_URL = /\/reports\/daily\?date=\d{4}-\d{2}-\d{2}/;
 
 const quickAddDeal = async (
   page: import("@playwright/test").Page,
@@ -94,6 +95,46 @@ test("weekly report lists open deals under their pipeline stage (FR-8.2)", async
     pipelineSection.getByText(companyName, { exact: false }).first()
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy report" })).toBeVisible();
+});
+
+test("daily status lists a deal's activity for the day and navigates between days (FR-8.1)", async ({
+  page,
+}, testInfo) => {
+  const companyName = `Daily Status ${testInfo.project.name} ${Date.now()}`;
+
+  await quickAddDeal(page, companyName, "12000");
+
+  // A quick-added lead has no activity rows yet (its creation is the deal
+  // record, not an activity). Move its stage to log a stage_change today.
+  await page
+    .getByRole("button", { name: `Move ${companyName} to another stage` })
+    .click();
+  await page.getByRole("menuitem", { name: "Qualified" }).click();
+  await expect(
+    page
+      .locator('section[aria-label="Qualified"]')
+      .getByRole("heading", { name: companyName })
+  ).toBeVisible();
+
+  await page.goto("/reports/daily");
+  await expect(
+    page.getByRole("heading", { name: "Daily status" })
+  ).toBeVisible();
+
+  // The deal appears under today with its stage-change activity; poll until
+  // the server write is visible.
+  await expect(async () => {
+    await page.goto("/reports/daily");
+    await expect(
+      page.getByText(companyName, { exact: false }).first()
+    ).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 15_000 });
+  await expect(page.getByText("Moved to Qualified").first()).toBeVisible();
+
+  // Stepping to the previous day changes the date param and drops today's deal.
+  await page.getByRole("link", { name: "Previous day" }).click();
+  await expect(page).toHaveURL(DAILY_DATE_URL);
+  await expect(page.getByText(companyName, { exact: false })).toHaveCount(0);
 });
 
 test("stage weightings are editable and surface on the forecast (FR-8.1)", async ({

@@ -13,8 +13,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { setDealSubStatus } from "@/lib/actions/deal-actions";
 import {
+  SUB_STATUS_COLOR,
   SUB_STATUS_LABELS,
-  SUB_STATUS_TONE,
   type SubStatus,
 } from "@/lib/labels";
 import { cn } from "@/lib/utils";
@@ -36,6 +36,7 @@ export function DealSubStatusBadge({
 }) {
   return (
     <Badge
+      className={SUB_STATUS_COLOR[subStatus].badge}
       render={
         <button
           aria-label={`Sub-status: ${SUB_STATUS_LABELS[subStatus]}. Edit.`}
@@ -44,7 +45,7 @@ export function DealSubStatusBadge({
           type="button"
         />
       }
-      variant={SUB_STATUS_TONE[subStatus]}
+      variant="outline"
     >
       {SUB_STATUS_LABELS[subStatus]}
     </Badge>
@@ -137,6 +138,13 @@ export function DealSubStatusControl({
                   name="sub-status"
                   onChange={() => setSelected(value)}
                   type="radio"
+                />
+                <span
+                  aria-hidden
+                  className={cn(
+                    "size-2 shrink-0 rounded-full",
+                    SUB_STATUS_COLOR[value].dot
+                  )}
                 />
                 {SUB_STATUS_LABELS[value]}
               </label>

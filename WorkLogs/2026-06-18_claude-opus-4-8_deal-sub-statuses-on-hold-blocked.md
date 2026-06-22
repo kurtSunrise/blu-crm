@@ -66,7 +66,8 @@ left out of this build.
 - `npm exec -- ultracite check` on all changed files plus the new spec: clean.
 - `npm run db:push`: enum + columns applied to the Neon dev DB.
 - `npm run build`: succeeded.
-- `npx playwright test e2e/sub-status.spec.ts --project=desktop`: <to be filled>.
+- `npx playwright test e2e/sub-status.spec.ts --project=desktop`: 1 passed
+  (after clearing a stale `next dev` that was holding port 3000).
 
 ## Next Steps
 

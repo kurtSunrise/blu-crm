@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SUB_STATUS_COLORS } from "@/lib/labels";
 
 const MAX_THRESHOLD_DAYS = 365;
 
@@ -55,3 +56,28 @@ export const pipelineTooltipSettingsSchema = z.object({
 export type PipelineTooltipSettingsInput = z.infer<
   typeof pipelineTooltipSettingsSchema
 >;
+
+const MAX_SUB_STATUS_LABEL_LENGTH = 60;
+
+// Create or rename a deal sub-status. `id` is absent when creating; `color` is
+// one of the fixed palette keys (src/lib/labels.ts).
+export const subStatusUpsertSchema = z.object({
+  id: z.string().min(1).optional(),
+  label: z.string().trim().min(1).max(MAX_SUB_STATUS_LABEL_LENGTH),
+  color: z.enum(SUB_STATUS_COLORS),
+});
+
+export type SubStatusUpsertInput = z.infer<typeof subStatusUpsertSchema>;
+
+// The full ordered list of (active) status ids, top to bottom.
+export const reorderSubStatusesSchema = z.object({
+  orderedIds: z.array(z.string().min(1)).min(1),
+});
+
+// Where the per-deal status control is offered. Both default on.
+export const subStatusPlacementSchema = z.object({
+  showOnBoard: z.boolean(),
+  showOnDealPage: z.boolean(),
+});
+
+export type SubStatusPlacementInput = z.infer<typeof subStatusPlacementSchema>;

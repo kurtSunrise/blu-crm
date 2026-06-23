@@ -16,6 +16,7 @@ import {
   activity,
   company,
   deal,
+  dealSubStatus,
   followUp,
   pipelineStage,
   quote,
@@ -29,12 +30,7 @@ import {
 } from "@/lib/alerts";
 import { awstDayKeyRange, type DateKey } from "@/lib/calendar";
 import { formatAudFromCents, formatDateAwst, MS_PER_DAY } from "@/lib/format";
-import {
-  LOST_REASON_LABELS,
-  type LostReason,
-  SUB_STATUS_LABELS,
-  type SubStatus,
-} from "@/lib/labels";
+import { LOST_REASON_LABELS, type LostReason } from "@/lib/labels";
 
 // A deal's value, mirroring the pipeline board exactly so every surface
 // reconciles (FR-1.4 / FR-8.2 AC): an accepted quote wins; otherwise the high
@@ -123,9 +119,10 @@ export const summarisePipeline = (
 // ---------------------------------------------------------------------------
 
 export interface SubStatusBreakdownRow {
+  color: string;
   dealCount: number;
   label: string;
-  subStatus: SubStatus;
+  subStatusId: string;
   totalCents: number;
 }
 
@@ -134,23 +131,27 @@ export const getSubStatusBreakdown = async (): Promise<
 > => {
   const rows = await db
     .select({
-      subStatus: deal.subStatus,
+      subStatusId: deal.subStatusId,
+      label: dealSubStatus.label,
+      color: dealSubStatus.color,
       dealCount: count(deal.id),
       totalCents: sql<number>`coalesce(sum(${dealValueCents}), 0)`,
     })
     .from(deal)
-    .where(and(isNull(deal.deletedAt), isNotNull(deal.subStatus)))
-    .groupBy(deal.subStatus)
+    .innerJoin(dealSubStatus, eq(deal.subStatusId, dealSubStatus.id))
+    .where(and(isNull(deal.deletedAt), isNotNull(deal.subStatusId)))
+    .groupBy(deal.subStatusId, dealSubStatus.label, dealSubStatus.color)
     .orderBy(desc(count(deal.id)));
 
   const breakdown: SubStatusBreakdownRow[] = [];
   for (const row of rows) {
-    if (!row.subStatus) {
+    if (!row.subStatusId) {
       continue;
     }
     breakdown.push({
-      subStatus: row.subStatus,
-      label: SUB_STATUS_LABELS[row.subStatus],
+      subStatusId: row.subStatusId,
+      label: row.label,
+      color: row.color,
       dealCount: row.dealCount,
       totalCents: Number(row.totalCents),
     });

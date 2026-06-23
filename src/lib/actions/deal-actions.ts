@@ -4,10 +4,17 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { activity, deal, notification, pipelineStage, user } from "@/db/schema";
+import {
+  activity,
+  deal,
+  dealSubStatus,
+  notification,
+  pipelineStage,
+  user,
+} from "@/db/schema";
 import { dollarsToCents } from "@/lib/format";
 import { createLead } from "@/lib/intake";
-import { LOST_REASON_LABELS, SUB_STATUS_LABELS } from "@/lib/labels";
+import { LOST_REASON_LABELS } from "@/lib/labels";
 import { updateDealFieldsCore } from "@/lib/mutations/deal";
 import { getSessionUserId } from "@/lib/session";
 import {
@@ -217,10 +224,13 @@ export const setDealSubStatus = async (
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid sub-status" };
   }
-  const { dealId, subStatus, note } = parsed.data;
+  const { dealId, subStatusId, note } = parsed.data;
 
   const [current] = await db
-    .select({ subStatus: deal.subStatus, subStatusSetAt: deal.subStatusSetAt })
+    .select({
+      subStatusId: deal.subStatusId,
+      subStatusSetAt: deal.subStatusSetAt,
+    })
     .from(deal)
     .where(eq(deal.id, dealId))
     .limit(1);
@@ -229,19 +239,42 @@ export const setDealSubStatus = async (
     return { error: "Unknown deal" };
   }
 
+  // Resolve the chosen status for the activity label. An unknown id is always
+  // rejected; an archived one is rejected only when it would be a NEW
+  // assignment, so editing the note on a deal whose status was later archived
+  // still works.
+  let label: string | null = null;
+  if (subStatusId !== null) {
+    const [row] = await db
+      .select({
+        label: dealSubStatus.label,
+        archivedAt: dealSubStatus.archivedAt,
+      })
+      .from(dealSubStatus)
+      .where(eq(dealSubStatus.id, subStatusId))
+      .limit(1);
+    if (!row) {
+      return { error: "Unknown status" };
+    }
+    if (row.archivedAt && subStatusId !== current.subStatusId) {
+      return { error: "That status has been archived" };
+    }
+    label = row.label;
+  }
+
   // Stamp the clock only when the label itself changes to a new value; a
   // note-only edit keeps the original "on hold since". Clearing wipes it.
   let subStatusSetAt = current.subStatusSetAt;
-  if (subStatus === null) {
+  if (subStatusId === null) {
     subStatusSetAt = null;
-  } else if (subStatus !== current.subStatus) {
+  } else if (subStatusId !== current.subStatusId) {
     subStatusSetAt = new Date();
   }
 
   await db
     .update(deal)
     .set({
-      subStatus,
+      subStatusId,
       subStatusNote: note ?? null,
       subStatusSetAt,
       updatedAt: new Date(),
@@ -249,9 +282,9 @@ export const setDealSubStatus = async (
     .where(eq(deal.id, dealId));
 
   const content =
-    subStatus === null
+    label === null
       ? "Cleared sub-status"
-      : `Marked "${SUB_STATUS_LABELS[subStatus]}"${note ? `: ${note}` : ""}`;
+      : `Marked "${label}"${note ? `: ${note}` : ""}`;
 
   await db.insert(activity).values({
     dealId,

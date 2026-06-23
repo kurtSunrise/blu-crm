@@ -21,7 +21,7 @@ import {
   formatDateAwst,
   relativeDayLabel,
 } from "@/lib/format";
-import { FIXED_DATE_TYPE_LABELS } from "@/lib/labels";
+import { type DealSubStatusOption, FIXED_DATE_TYPE_LABELS } from "@/lib/labels";
 import type { PipelineTooltipSettings } from "@/lib/pipeline-tooltip";
 import { cn } from "@/lib/utils";
 import { DealSubStatusControl } from "./deal-sub-status-control";
@@ -87,11 +87,15 @@ export function DealCard({
   stages,
   onMove,
   tooltip,
+  subStatusOptions,
+  subStatusEditable,
 }: {
   deal: BoardDeal;
   stages: BoardStage[];
   onMove: (dealId: string, stageId: string) => void;
   tooltip: PipelineTooltipSettings;
+  subStatusOptions: DealSubStatusOption[];
+  subStatusEditable: boolean;
 }) {
   // attributes are unused: no KeyboardSensor is wired, so the keyboard /
   // screen-reader path for moving a deal is the dropdown menu below.
@@ -132,9 +136,11 @@ export function DealCard({
         </Link>
         <DealSubStatusControl
           className="mt-1.5"
+          current={deal.subStatus}
           dealId={deal.id}
+          editable={subStatusEditable}
           note={deal.subStatusNote}
-          subStatus={deal.subStatus}
+          options={subStatusOptions}
         />
         <div className="mt-1 flex items-center gap-2">
           {deal.valueRange ? (

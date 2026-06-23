@@ -1,7 +1,7 @@
 import { CalendarDays, FileText } from "lucide-react";
 import Link from "next/link";
 import { formatAudFromCents, MS_PER_DAY } from "@/lib/format";
-import { SUB_STATUS_COLOR } from "@/lib/labels";
+import { subStatusClasses } from "@/lib/labels";
 import {
   getActivityVolume,
   getStageBreakdown,
@@ -165,14 +165,14 @@ export default async function ReportsPage({
             {subStatusBreakdown.map((row) => (
               <li
                 className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 text-sm"
-                key={row.subStatus}
+                key={row.subStatusId}
               >
                 <span className="flex min-w-0 items-center gap-2 truncate">
                   <span
                     aria-hidden
                     className={cn(
                       "size-2 shrink-0 rounded-full",
-                      SUB_STATUS_COLOR[row.subStatus].dot
+                      subStatusClasses(row.color).dot
                     )}
                   />
                   <span className="truncate">{row.label}</span>

@@ -79,6 +79,37 @@ left out of this build.
 - Optional: expose `subStatus` to the AI `get_deal` tool so the assistant can
   read/flag held deals.
 
+## Follow-up: colour-coded flags (2026-06-22)
+
+Replaced the two-tone `SUB_STATUS_TONE` (grey/red) with a distinct colour per
+label for faster visual scanning, confirmed with the user:
+
+- On Hold – Awaiting Third Party → amber
+- Blocked – External Dependency → red (semantic `destructive`)
+- On Hold – Awaiting Client → teal
+- On Hold – Internal Review → violet (brand `blu` reserved for links/active state)
+
+New `SUB_STATUS_COLOR: Record<SubStatus, { badge; dot }>` in `src/lib/labels.ts`
+(full literal class strings so Tailwind generates them; soft `bg-*/10 text-*`
+style with -700/-400 tones for AA in both themes). Applied to the card/page
+badge and dialog radio dots (`deal-sub-status-control.tsx`), the board filter
+chips — leading colour dot always, active chip in the label's colour
+(`pipeline-board.tsx`), and the reports breakdown rows
+(`src/app/(app)/reports/page.tsx`).
+
+Verified: `ultracite check` clean, `npm run build` clean, and
+`e2e/sub-status.spec.ts` still passes (locators are by accessible name/text,
+unchanged). Not yet deployed — see the prod-DB note below.
+
+### ⚠ Production DB correction
+
+The earlier assumption that the live Worker shares the `.env.local` dev DB was
+**wrong** (memory corrected): `kurt-0f6` uses its own prod Neon DB
+(`ep-snowy-rain`) via a secret. The sub-status enum + columns were only pushed
+to the dev DB, so `/pipeline` and `/reports` likely error in production until the
+prod DB is migrated separately (there is no `.env.production` in the repo). This
+must be resolved before the feature — colours included — works live.
+
 ## Related Files
 
 - `src/db/schema.ts`

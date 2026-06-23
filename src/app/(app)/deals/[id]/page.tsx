@@ -37,11 +37,17 @@ import {
   relativeDayLabel,
 } from "@/lib/format";
 import {
+  type DealSubStatusOption,
   FIXED_DATE_TYPE_LABELS,
   type FixedDateType,
   LOST_REASON_LABELS,
   PROJECT_TYPE_LABELS,
 } from "@/lib/labels";
+import {
+  getActiveSubStatuses,
+  getSubStatusById,
+  getSubStatusPlacement,
+} from "@/lib/sub-statuses";
 import { cn } from "@/lib/utils";
 import { isImageType } from "@/lib/validation/attachment";
 
@@ -243,7 +249,7 @@ export default async function DealPage({
       decisionMakerConfirmed: deal.decisionMakerConfirmed,
       expectedCloseDate: deal.expectedCloseDate,
       lostReason: deal.lostReason,
-      subStatus: deal.subStatus,
+      subStatusId: deal.subStatusId,
       subStatusNote: deal.subStatusNote,
       handoverToDelivery: deal.handoverToDelivery,
       stageIsWon: pipelineStage.isWon,
@@ -270,6 +276,15 @@ export default async function DealPage({
   if (!record) {
     notFound();
   }
+
+  const [subStatusOptions, subStatusPlacement, currentSubStatus] =
+    await Promise.all([
+      getActiveSubStatuses(),
+      getSubStatusPlacement(),
+      record.subStatusId
+        ? getSubStatusById(record.subStatusId)
+        : Promise.resolve<DealSubStatusOption | null>(null),
+    ]);
 
   const stages = await db
     .select({
@@ -362,9 +377,11 @@ export default async function DealPage({
             </span>
           )}
           <DealSubStatusControl
+            current={currentSubStatus}
             dealId={record.id}
+            editable={subStatusPlacement.showOnDealPage}
             note={record.subStatusNote}
-            subStatus={record.subStatus}
+            options={subStatusOptions}
           />
         </div>
       </header>

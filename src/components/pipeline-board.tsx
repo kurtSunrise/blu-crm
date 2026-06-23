@@ -16,14 +16,12 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { moveDealStage } from "@/lib/actions/deal-actions";
 import { formatAudFromCents } from "@/lib/format";
 import {
+  type DealSubStatusOption,
   type FixedDateType,
-  SUB_STATUS_COLOR,
-  SUB_STATUS_LABELS,
-  type SubStatus,
+  subStatusClasses,
 } from "@/lib/labels";
 import type { PipelineTooltipSettings } from "@/lib/pipeline-tooltip";
 import { cn } from "@/lib/utils";
-import { SUB_STATUSES } from "@/lib/validation/deal";
 import { DealCard } from "./deal-card";
 import { StageChangeDialog, type StageMoveExtras } from "./stage-change-dialog";
 
@@ -52,7 +50,8 @@ export interface BoardDeal {
   ownerName: string | null;
   scopeSummary: string | null;
   stageId: string;
-  subStatus: SubStatus | null;
+  // The deal's current status resolved to a row (may be archived), or null.
+  subStatus: DealSubStatusOption | null;
   subStatusNote: string | null;
   title: string;
   valueCents: number;
@@ -72,12 +71,16 @@ function StageColumn({
   stages,
   onMove,
   tooltip,
+  subStatusOptions,
+  subStatusEditable,
 }: {
   stage: BoardStage;
   deals: BoardDeal[];
   stages: BoardStage[];
   onMove: (dealId: string, stageId: string) => void;
   tooltip: PipelineTooltipSettings;
+  subStatusOptions: DealSubStatusOption[];
+  subStatusEditable: boolean;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: stage.id });
   const totalCents = deals.reduce((sum, item) => sum + item.valueCents, 0);
@@ -114,6 +117,8 @@ function StageColumn({
             key={item.id}
             onMove={onMove}
             stages={stages}
+            subStatusEditable={subStatusEditable}
+            subStatusOptions={subStatusOptions}
             tooltip={tooltip}
           />
         ))}
@@ -126,10 +131,16 @@ export function PipelineBoard({
   stages,
   deals,
   tooltip,
+  subStatuses,
+  subStatusEditable,
 }: {
   stages: BoardStage[];
   deals: BoardDeal[];
   tooltip: PipelineTooltipSettings;
+  // Active statuses, in display order, for the filter chips and card picker.
+  subStatuses: DealSubStatusOption[];
+  // Whether board cards offer the editable status control (admin placement).
+  subStatusEditable: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -138,7 +149,7 @@ export function PipelineBoard({
     dealId: string;
     stage: BoardStage;
   } | null>(null);
-  const [subStatusFilter, setSubStatusFilter] = useState<Set<SubStatus>>(
+  const [subStatusFilter, setSubStatusFilter] = useState<Set<string>>(
     new Set()
   );
 
@@ -146,7 +157,7 @@ export function PipelineBoard({
     setBoardDeals(deals);
   }, [deals]);
 
-  const toggleFilter = (value: SubStatus) => {
+  const toggleFilter = (value: string) => {
     setSubStatusFilter((current) => {
       const next = new Set(current);
       if (next.has(value)) {
@@ -164,7 +175,7 @@ export function PipelineBoard({
     subStatusFilter.size === 0
       ? boardDeals
       : boardDeals.filter(
-          (item) => item.subStatus && subStatusFilter.has(item.subStatus)
+          (item) => item.subStatus && subStatusFilter.has(item.subStatus.id)
         );
 
   const sensors = useSensors(
@@ -225,47 +236,47 @@ export function PipelineBoard({
       onDragEnd={handleDragEnd}
       sensors={sensors}
     >
-      <fieldset className="flex flex-wrap items-center gap-2 px-4">
-        <legend className="sr-only">Filter by status</legend>
-        <span aria-hidden className="text-muted-foreground text-xs">
-          Status
-        </span>
-        {SUB_STATUSES.map((value) => {
-          const active = subStatusFilter.has(value);
-          return (
+      {subStatuses.length > 0 && (
+        <fieldset className="flex flex-wrap items-center gap-2 px-4">
+          <legend className="sr-only">Filter by status</legend>
+          <span aria-hidden className="text-muted-foreground text-xs">
+            Status
+          </span>
+          {subStatuses.map((option) => {
+            const active = subStatusFilter.has(option.id);
+            const classes = subStatusClasses(option.color);
+            return (
+              <button
+                aria-pressed={active}
+                className={cn(
+                  "flex min-h-8 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors",
+                  active
+                    ? cn("ring-1 ring-current", classes.badge)
+                    : "text-muted-foreground hover:border-foreground/30"
+                )}
+                key={option.id}
+                onClick={() => toggleFilter(option.id)}
+                type="button"
+              >
+                <span
+                  aria-hidden
+                  className={cn("size-2 shrink-0 rounded-full", classes.dot)}
+                />
+                {option.label}
+              </button>
+            );
+          })}
+          {subStatusFilter.size > 0 && (
             <button
-              aria-pressed={active}
-              className={cn(
-                "flex min-h-8 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors",
-                active
-                  ? cn("ring-1 ring-current", SUB_STATUS_COLOR[value].badge)
-                  : "text-muted-foreground hover:border-foreground/30"
-              )}
-              key={value}
-              onClick={() => toggleFilter(value)}
+              className="min-h-8 text-muted-foreground text-xs underline-offset-2 hover:underline"
+              onClick={() => setSubStatusFilter(new Set())}
               type="button"
             >
-              <span
-                aria-hidden
-                className={cn(
-                  "size-2 shrink-0 rounded-full",
-                  SUB_STATUS_COLOR[value].dot
-                )}
-              />
-              {SUB_STATUS_LABELS[value]}
+              Clear
             </button>
-          );
-        })}
-        {subStatusFilter.size > 0 && (
-          <button
-            className="min-h-8 text-muted-foreground text-xs underline-offset-2 hover:underline"
-            onClick={() => setSubStatusFilter(new Set())}
-            type="button"
-          >
-            Clear
-          </button>
-        )}
-      </fieldset>
+          )}
+        </fieldset>
+      )}
       <TooltipProvider delay={TOOLTIP_DELAY_MS}>
         <section
           aria-label="Pipeline stages"
@@ -280,6 +291,8 @@ export function PipelineBoard({
               onMove={requestMove}
               stage={stage}
               stages={stages}
+              subStatusEditable={subStatusEditable}
+              subStatusOptions={subStatuses}
               tooltip={tooltip}
             />
           ))}

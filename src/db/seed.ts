@@ -1,7 +1,7 @@
 import { hashPassword } from "better-auth/crypto";
 import { eq } from "drizzle-orm";
 import { db } from "./index";
-import { account, pipelineStage, user } from "./schema";
+import { account, dealSubStatus, pipelineStage, user } from "./schema";
 
 // Blu's eight default stages (FR-1.2); weightings are first-pass defaults,
 // admin-editable per FR-8.1 and open question Q2.
@@ -14,6 +14,37 @@ const DEFAULT_STAGES = [
   { name: "Negotiation", position: 6, weighting: 70 },
   { name: "Won", position: 7, weighting: 100, isWon: true },
   { name: "Lost / Dormant", position: 8, weighting: 0, isLost: true },
+];
+
+// Default on-hold / blocked labels. Ids are stable (and match
+// scripts/migrate-sub-status.ts) so a deal's status survives a re-seed; colours
+// are palette keys from src/lib/labels.ts (red = blocked/at-risk, amber =
+// waiting). Admin-editable in Settings.
+const DEFAULT_SUB_STATUSES = [
+  {
+    id: "on_hold_third_party",
+    label: "On Hold – Awaiting Third Party",
+    color: "amber",
+    position: 0,
+  },
+  {
+    id: "blocked_external",
+    label: "Blocked – External Dependency",
+    color: "red",
+    position: 1,
+  },
+  {
+    id: "on_hold_client",
+    label: "On Hold – Awaiting Client",
+    color: "teal",
+    position: 2,
+  },
+  {
+    id: "on_hold_internal",
+    label: "On Hold – Internal Review",
+    color: "violet",
+    position: 3,
+  },
 ];
 
 // The three core users (PRD §4.2). Auth credentials/SSO are wired later;
@@ -42,6 +73,18 @@ const seed = async () => {
     process.stdout.write("Seeded 8 default pipeline stages.\n");
   } else {
     process.stdout.write("Pipeline stages already seeded, skipping.\n");
+  }
+
+  const existingSubStatuses = await db
+    .select({ id: dealSubStatus.id })
+    .from(dealSubStatus)
+    .limit(1);
+
+  if (existingSubStatuses.length === 0) {
+    await db.insert(dealSubStatus).values(DEFAULT_SUB_STATUSES);
+    process.stdout.write("Seeded 4 default deal sub-statuses.\n");
+  } else {
+    process.stdout.write("Deal sub-statuses already seeded, skipping.\n");
   }
 
   const existingUsers = await db.select().from(user).limit(1);

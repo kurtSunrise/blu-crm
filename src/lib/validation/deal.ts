@@ -67,17 +67,12 @@ export const moveDealStageSchema = z.object({
 
 export type MoveDealStageInput = z.infer<typeof moveDealStageSchema>;
 
-export const SUB_STATUSES = [
-  "on_hold_third_party",
-  "blocked_external",
-  "on_hold_client",
-  "on_hold_internal",
-] as const;
-
-// A null subStatus clears the label; the note is optional context either way.
+// A null subStatusId clears the label; the note is optional context either way.
+// Statuses are admin-configurable rows now, so the id is validated against the
+// deal_sub_status table in the action rather than a fixed enum here.
 export const setDealSubStatusSchema = z.object({
   dealId: z.string().min(1),
-  subStatus: z.enum(SUB_STATUSES).nullable(),
+  subStatusId: z.string().min(1).nullable(),
   note: optionalTrimmed,
 });
 

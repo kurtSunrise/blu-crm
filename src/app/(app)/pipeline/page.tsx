@@ -9,7 +9,9 @@ import {
   quote,
   user,
 } from "@/db/schema";
+import type { DealSubStatusOption } from "@/lib/labels";
 import { getPipelineTooltipSettings } from "@/lib/pipeline-tooltip";
+import { getAllSubStatuses, getSubStatusPlacement } from "@/lib/sub-statuses";
 
 export const dynamic = "force-dynamic";
 
@@ -109,6 +111,21 @@ const getNextFollowUps = async (): Promise<Map<string, NextFollowUp>> => {
 
 export default async function PipelinePage() {
   const tooltip = await getPipelineTooltipSettings();
+  const [allSubStatuses, subStatusPlacement] = await Promise.all([
+    getAllSubStatuses(),
+    getSubStatusPlacement(),
+  ]);
+  // Active statuses drive the filter chips and picker; the full set (incl.
+  // archived) resolves a deal's current label even after a status is archived.
+  const subStatusOptions: DealSubStatusOption[] = allSubStatuses
+    .filter((status) => status.archivedAt === null)
+    .map(({ id, label, color }) => ({ id, label, color }));
+  const subStatusById = new Map(
+    allSubStatuses.map((status) => [
+      status.id,
+      { id: status.id, label: status.label, color: status.color },
+    ])
+  );
 
   const stages = await db
     .select({
@@ -135,7 +152,7 @@ export default async function PipelinePage() {
       scopeSummary: deal.scopeSummary,
       lastContactAt: deal.lastContactAt,
       expectedCloseDate: deal.expectedCloseDate,
-      subStatus: deal.subStatus,
+      subStatusId: deal.subStatusId,
       subStatusNote: deal.subStatusNote,
     })
     .from(deal)
@@ -170,7 +187,9 @@ export default async function PipelinePage() {
       scopeSummary: row.scopeSummary,
       lastContactAt: row.lastContactAt?.toISOString() ?? null,
       expectedCloseDate: row.expectedCloseDate?.toISOString() ?? null,
-      subStatus: row.subStatus,
+      subStatus: row.subStatusId
+        ? (subStatusById.get(row.subStatusId) ?? null)
+        : null,
       subStatusNote: row.subStatusNote,
       nextFollowUp: nextFollowUps.get(row.id) ?? null,
     };
@@ -181,7 +200,13 @@ export default async function PipelinePage() {
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4">
         <h1 className="font-semibold text-2xl tracking-tight">Pipeline</h1>
       </div>
-      <PipelineBoard deals={deals} stages={stages} tooltip={tooltip} />
+      <PipelineBoard
+        deals={deals}
+        stages={stages}
+        subStatusEditable={subStatusPlacement.showOnBoard}
+        subStatuses={subStatusOptions}
+        tooltip={tooltip}
+      />
     </main>
   );
 }

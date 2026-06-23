@@ -5,6 +5,7 @@ import {
   Cpu,
   type LucideIcon,
   Settings,
+  Tags,
   User,
   Users,
 } from "lucide-react";
@@ -20,6 +21,7 @@ interface SettingsTab {
 
 export const SETTINGS_TABS: readonly SettingsTab[] = [
   { href: "/settings", label: "General", icon: Settings },
+  { href: "/settings/statuses", label: "Deal statuses", icon: Tags },
   { href: "/settings/account", label: "Account", icon: User },
   { href: "/settings/company", label: "Company", icon: Building2 },
   { href: "/settings/team", label: "Team", icon: Users },

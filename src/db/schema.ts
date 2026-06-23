@@ -123,16 +123,6 @@ export const lostReason = pgEnum("lost_reason", [
   "parked",
 ]);
 
-// Stage-independent labels for deals stalled on an external dependency. Applied
-// on top of the pipeline stage so a blocked deal can be flagged without moving
-// it out of its stage.
-export const dealSubStatus = pgEnum("deal_sub_status", [
-  "on_hold_third_party",
-  "blocked_external",
-  "on_hold_client",
-  "on_hold_internal",
-]);
-
 export const activityType = pgEnum("activity_type", [
   "call",
   "email",
@@ -167,6 +157,28 @@ export const pipelineStage = pgTable("pipeline_stage", {
   weighting: integer("weighting").notNull().default(0),
   isWon: boolean("is_won").notNull().default(false),
   isLost: boolean("is_lost").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// Stage-independent labels for deals stalled on an external dependency, applied
+// on top of the pipeline stage so a blocked deal can be flagged without moving
+// it out of its stage. Admin-configurable (label, colour, order), the same
+// data-driven pattern as pipeline_stage. `color` holds a palette key resolved
+// to Tailwind classes in src/lib/labels.ts; removing a status soft-archives it
+// (archivedAt) so deals that still reference it keep their badge.
+export const dealSubStatus = pgTable("deal_sub_status", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  label: text("label").notNull(),
+  color: text("color").notNull(),
+  position: integer("position").notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -243,8 +255,9 @@ export const deal = pgTable("deal", {
   expectedCloseDate: timestamp("expected_close_date", { withTimezone: true }),
   lostReason: lostReason("lost_reason"),
   // Optional on-hold / blocked label, applied independently of the stage.
-  // null means the deal is progressing normally.
-  subStatus: dealSubStatus("sub_status"),
+  // null means the deal is progressing normally. FK to the admin-configurable
+  // deal_sub_status table.
+  subStatusId: text("sub_status_id").references(() => dealSubStatus.id),
   subStatusNote: text("sub_status_note"),
   // Stamped when the label is applied or changed; cleared with the label. Lets
   // surfaces show "on hold since" and supports future stale-hold reporting.
@@ -531,6 +544,7 @@ export const schema = {
   company,
   contact,
   deal,
+  dealSubStatus,
   followUp,
   knowledgeChunk,
   knowledgeDoc,

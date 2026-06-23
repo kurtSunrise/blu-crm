@@ -12,34 +12,38 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { setDealSubStatus } from "@/lib/actions/deal-actions";
-import {
-  SUB_STATUS_COLOR,
-  SUB_STATUS_LABELS,
-  type SubStatus,
-} from "@/lib/labels";
+import { type DealSubStatusOption, subStatusClasses } from "@/lib/labels";
 import { cn } from "@/lib/utils";
-import { SUB_STATUSES } from "@/lib/validation/deal";
 import { Badge } from "./ui/badge";
 
 const NOTE_MAX = 2000;
 
-// The label badge, also the button that opens the editor. Shown on the board
-// card and the deal page; the note rides along as the hover title.
+// The label badge. Clickable (opens the editor) when an onClick is supplied;
+// otherwise a plain read-only badge for surfaces where editing is turned off.
+// The note rides along as the hover title.
 export function DealSubStatusBadge({
-  subStatus,
+  status,
   note,
   onClick,
 }: {
-  subStatus: SubStatus;
+  status: DealSubStatusOption;
   note: string | null;
-  onClick: () => void;
+  onClick?: () => void;
 }) {
+  const className = subStatusClasses(status.color).badge;
+  if (!onClick) {
+    return (
+      <Badge className={className} title={note ?? undefined} variant="outline">
+        {status.label}
+      </Badge>
+    );
+  }
   return (
     <Badge
-      className={SUB_STATUS_COLOR[subStatus].badge}
+      className={className}
       render={
         <button
-          aria-label={`Sub-status: ${SUB_STATUS_LABELS[subStatus]}. Edit.`}
+          aria-label={`Sub-status: ${status.label}. Edit.`}
           onClick={onClick}
           title={note ?? undefined}
           type="button"
@@ -47,41 +51,50 @@ export function DealSubStatusBadge({
       }
       variant="outline"
     >
-      {SUB_STATUS_LABELS[subStatus]}
+      {status.label}
     </Badge>
   );
 }
 
 export function DealSubStatusControl({
   dealId,
-  subStatus,
+  current,
   note,
+  options,
+  editable,
   className,
 }: {
   dealId: string;
-  subStatus: SubStatus | null;
+  // The deal's current status, resolved to a row (may be archived); null when
+  // the deal is progressing normally.
+  current: DealSubStatusOption | null;
   note: string | null;
+  // Active statuses offered in the picker, in display order.
+  options: DealSubStatusOption[];
+  // Whether this surface offers editing (admin placement setting). When false,
+  // an existing status still shows as a read-only badge.
+  editable: boolean;
   className?: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [selected, setSelected] = useState<SubStatus | null>(subStatus);
+  const [selected, setSelected] = useState<string | null>(current?.id ?? null);
   const [draftNote, setDraftNote] = useState(note ?? "");
 
   // Sync the form to the current value each time the editor opens.
   useEffect(() => {
     if (open) {
-      setSelected(subStatus);
+      setSelected(current?.id ?? null);
       setDraftNote(note ?? "");
     }
-  }, [open, subStatus, note]);
+  }, [open, current, note]);
 
   const handleSave = () => {
     startTransition(async () => {
       await setDealSubStatus({
         dealId,
-        subStatus: selected,
+        subStatusId: selected,
         note: selected ? draftNote : "",
       });
       setOpen(false);
@@ -89,13 +102,33 @@ export function DealSubStatusControl({
     });
   };
 
+  // Read-only surface: show the badge if set, nothing otherwise.
+  if (!editable) {
+    if (!current) {
+      return null;
+    }
+    return (
+      <div className={cn("flex items-center gap-1.5", className)}>
+        <DealSubStatusBadge note={note} status={current} />
+      </div>
+    );
+  }
+
+  // If the current status has been archived it won't be in `options`; keep it
+  // in the picker so it stays visible and selectable (the action allows leaving
+  // it unchanged).
+  const pickerOptions =
+    current && !options.some((option) => option.id === current.id)
+      ? [current, ...options]
+      : options;
+
   return (
     <div className={cn("flex items-center gap-1.5", className)}>
-      {subStatus ? (
+      {current ? (
         <DealSubStatusBadge
           note={note}
           onClick={() => setOpen(true)}
-          subStatus={subStatus}
+          status={current}
         />
       ) : (
         <button
@@ -127,26 +160,26 @@ export function DealSubStatusControl({
               />
               None (progressing normally)
             </label>
-            {SUB_STATUSES.map((value) => (
+            {pickerOptions.map((option) => (
               <label
                 className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border px-3 text-sm has-checked:border-blu has-checked:bg-blu/5"
-                key={value}
+                key={option.id}
               >
                 <input
-                  checked={selected === value}
+                  checked={selected === option.id}
                   className="size-4 accent-blu"
                   name="sub-status"
-                  onChange={() => setSelected(value)}
+                  onChange={() => setSelected(option.id)}
                   type="radio"
                 />
                 <span
                   aria-hidden
                   className={cn(
                     "size-2 shrink-0 rounded-full",
-                    SUB_STATUS_COLOR[value].dot
+                    subStatusClasses(option.color).dot
                   )}
                 />
-                {SUB_STATUS_LABELS[value]}
+                {option.label}
               </label>
             ))}
           </fieldset>
@@ -160,7 +193,7 @@ export function DealSubStatusControl({
                 id="sub-status-note"
                 maxLength={NOTE_MAX}
                 onChange={(event) => setDraftNote(event.target.value)}
-                placeholder="e.g. Waiting on creative from XYZ Agency – expected 25 June"
+                placeholder="e.g. Waiting on creative from XYZ Agency, expected 25 June"
                 rows={3}
                 value={draftNote}
               />

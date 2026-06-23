@@ -48,6 +48,8 @@
     "deploy": "rm -rf .next .open-next && opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "db:push": "dotenv -e .env.local -- drizzle-kit push",
     "db:push:prod": "dotenv -e .env.production -- drizzle-kit push",
+    "db:migrate-sub-status": "dotenv -e .env.local -- tsx scripts/migrate-sub-status.ts",
+    "db:migrate-sub-status:prod": "dotenv -e .env.production -- tsx scripts/migrate-sub-status.ts",
     "db:studio": "dotenv -e .env.local -- drizzle-kit studio",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",

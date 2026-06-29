@@ -1,23 +1,40 @@
 import { expect, test } from "@playwright/test";
 
-const STAGE_NAMES = [
-  "Lead Captured",
-  "Qualified",
-  "Brief / Site Visit",
-  "Concept / Quote Issued",
-  "Proposal Review",
-  "Negotiation",
-  "Won",
-  "Lost / Dormant",
-];
+// Mid-pipeline stages are admin-configurable, so the board's exact set is
+// data-driven and varies by environment. These three are the stable anchors:
+// Lead Captured is the default entry stage, and Won / Lost / Dormant are the
+// terminal stages that cannot be removed.
+const ANCHOR_STAGE_NAMES = ["Lead Captured", "Won", "Lost / Dormant"];
 
-test("pipeline board shows all eight default stages", async ({ page }) => {
+const RECENT_WINDOW_PATTERN = /last \d+ days/;
+const VIEW_ALL_PATTERN = /View all/;
+const WON_TOGGLE_PATTERN = /Won/;
+
+test("pipeline board renders its stage columns", async ({ page }) => {
   await page.goto("/pipeline");
-  for (const name of STAGE_NAMES) {
-    await expect(
-      page.getByRole("heading", { name, exact: true })
-    ).toBeVisible();
+  // Assert the columns by their section rather than a heading: Won and Lost /
+  // Dormant render as collapsed summaries whose name sits in a toggle button,
+  // not an <h2>.
+  for (const name of ANCHOR_STAGE_NAMES) {
+    await expect(page.locator(`section[aria-label="${name}"]`)).toBeVisible();
   }
+});
+
+test("Won and Lost columns start collapsed and expand on tap", async ({
+  page,
+}) => {
+  await page.goto("/pipeline");
+  const won = page.locator('section[aria-label="Won"]');
+
+  // The collapsed column summarises the recent window and links to the full
+  // history instead of listing every closed deal.
+  await expect(won.getByText(RECENT_WINDOW_PATTERN)).toBeVisible();
+  await expect(won.getByRole("link", { name: VIEW_ALL_PATTERN })).toBeVisible();
+
+  const toggle = won.getByRole("button", { name: WON_TOGGLE_PATTERN });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
 });
 
 test("quick-add captures a lead onto the board", async ({ page }, testInfo) => {

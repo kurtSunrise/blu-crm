@@ -10,6 +10,8 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
+import { ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -65,6 +67,11 @@ const TOUCH_DRAG_TOLERANCE_PX = 8;
 // while the user scans or drags across the board.
 const TOOLTIP_DELAY_MS = 400;
 
+// Won / Lost columns link here for their full history; the board itself only
+// holds recently closed deals.
+const closedViewHref = (stage: BoardStage): string =>
+  `/pipeline/closed?stage=${stage.isWon ? "won" : "lost"}`;
+
 function StageColumn({
   stage,
   deals,
@@ -73,6 +80,9 @@ function StageColumn({
   tooltip,
   subStatusOptions,
   subStatusEditable,
+  closedWindowDays,
+  collapsed,
+  onToggleCollapse,
 }: {
   stage: BoardStage;
   deals: BoardDeal[];
@@ -81,9 +91,64 @@ function StageColumn({
   tooltip: PipelineTooltipSettings;
   subStatusOptions: DealSubStatusOption[];
   subStatusEditable: boolean;
+  closedWindowDays: number;
+  // Closed columns start collapsed to a summary; active columns never collapse.
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: stage.id });
   const totalCents = deals.reduce((sum, item) => sum + item.valueCents, 0);
+  const isClosed = stage.isWon || stage.isLost;
+
+  // Collapsed closed column: a narrow summary that still accepts drops (so a
+  // card can be dragged straight onto Won / Lost) and expands on tap.
+  if (isClosed && collapsed) {
+    return (
+      <section
+        aria-label={stage.name}
+        className={cn(
+          "flex w-44 shrink-0 snap-start flex-col gap-2 rounded-lg border bg-card/50 p-3 transition-colors",
+          isOver && "border-blu bg-blu/5"
+        )}
+        ref={setNodeRef}
+      >
+        <button
+          aria-expanded={false}
+          className="flex min-h-8 w-full items-center justify-between gap-2 text-left"
+          onClick={onToggleCollapse}
+          type="button"
+        >
+          <span className="flex items-center gap-1">
+            <ChevronRight
+              aria-hidden
+              className="size-4 text-muted-foreground"
+            />
+            <span className="font-heading font-medium text-sm">
+              {stage.name}
+            </span>
+          </span>
+          <span className="rounded-full bg-muted px-1.5 py-0.5 text-muted-foreground text-xs tabular-nums">
+            {deals.length}
+          </span>
+        </button>
+        <div className="px-1">
+          <p className="font-medium text-sm tabular-nums">
+            {formatAudFromCents(totalCents)}
+          </p>
+          <p className="text-muted-foreground text-xs">
+            last {closedWindowDays} days
+          </p>
+        </div>
+        <Link
+          className="mt-auto inline-flex min-h-8 items-center gap-1 text-blu text-xs hover:underline"
+          href={closedViewHref(stage)}
+        >
+          View all
+          <ArrowRight aria-hidden className="size-3.5" />
+        </Link>
+      </section>
+    );
+  }
 
   return (
     <section
@@ -95,16 +160,42 @@ function StageColumn({
       ref={setNodeRef}
     >
       <header className="flex items-baseline justify-between gap-2 px-1">
-        <div className="flex items-baseline gap-1.5">
-          <h2 className="font-heading font-medium text-sm">{stage.name}</h2>
-          <span className="rounded-full bg-muted px-1.5 py-0.5 text-muted-foreground text-xs tabular-nums">
-            {deals.length}
-          </span>
-        </div>
+        {isClosed ? (
+          <button
+            aria-expanded
+            className="flex min-h-8 items-center gap-1 text-left"
+            onClick={onToggleCollapse}
+            type="button"
+          >
+            <ChevronDown aria-hidden className="size-4 text-muted-foreground" />
+            <span className="font-heading font-medium text-sm">
+              {stage.name}
+            </span>
+            <span className="rounded-full bg-muted px-1.5 py-0.5 text-muted-foreground text-xs tabular-nums">
+              {deals.length}
+            </span>
+          </button>
+        ) : (
+          <div className="flex items-baseline gap-1.5">
+            <h2 className="font-heading font-medium text-sm">{stage.name}</h2>
+            <span className="rounded-full bg-muted px-1.5 py-0.5 text-muted-foreground text-xs tabular-nums">
+              {deals.length}
+            </span>
+          </div>
+        )}
         <p className="text-muted-foreground text-xs tabular-nums">
           {formatAudFromCents(totalCents)}
         </p>
       </header>
+      {isClosed && (
+        <Link
+          className="inline-flex min-h-8 items-center gap-1 px-1 text-blu text-xs hover:underline"
+          href={closedViewHref(stage)}
+        >
+          View all closed (last {closedWindowDays} days shown)
+          <ArrowRight aria-hidden className="size-3.5" />
+        </Link>
+      )}
       <div className="flex min-h-24 flex-col gap-2">
         {deals.length === 0 && (
           <div className="flex min-h-24 items-center justify-center rounded-md border border-dashed text-muted-foreground text-xs">
@@ -133,6 +224,7 @@ export function PipelineBoard({
   tooltip,
   subStatuses,
   subStatusEditable,
+  closedWindowDays,
 }: {
   stages: BoardStage[];
   deals: BoardDeal[];
@@ -141,6 +233,8 @@ export function PipelineBoard({
   subStatuses: DealSubStatusOption[];
   // Whether board cards offer the editable status control (admin placement).
   subStatusEditable: boolean;
+  // The window (in days) the closed columns load, shown in their summary.
+  closedWindowDays: number;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -152,6 +246,21 @@ export function PipelineBoard({
   const [subStatusFilter, setSubStatusFilter] = useState<Set<string>>(
     new Set()
   );
+  // Which closed columns the user has expanded; closed columns are collapsed
+  // to a summary by default so they do not crowd out the active pipeline.
+  const [expandedClosed, setExpandedClosed] = useState<Set<string>>(new Set());
+
+  const toggleColumn = (stageId: string) => {
+    setExpandedClosed((current) => {
+      const next = new Set(current);
+      if (next.has(stageId)) {
+        next.delete(stageId);
+      } else {
+        next.add(stageId);
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     setBoardDeals(deals);
@@ -284,18 +393,24 @@ export function PipelineBoard({
           // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be keyboard-focusable even when it holds no focusable cards (axe: scrollable-region-focusable)
           tabIndex={0}
         >
-          {stages.map((stage) => (
-            <StageColumn
-              deals={visibleDeals.filter((item) => item.stageId === stage.id)}
-              key={stage.id}
-              onMove={requestMove}
-              stage={stage}
-              stages={stages}
-              subStatusEditable={subStatusEditable}
-              subStatusOptions={subStatuses}
-              tooltip={tooltip}
-            />
-          ))}
+          {stages.map((stage) => {
+            const isClosed = stage.isWon || stage.isLost;
+            return (
+              <StageColumn
+                closedWindowDays={closedWindowDays}
+                collapsed={isClosed && !expandedClosed.has(stage.id)}
+                deals={visibleDeals.filter((item) => item.stageId === stage.id)}
+                key={stage.id}
+                onMove={requestMove}
+                onToggleCollapse={() => toggleColumn(stage.id)}
+                stage={stage}
+                stages={stages}
+                subStatusEditable={subStatusEditable}
+                subStatusOptions={subStatuses}
+                tooltip={tooltip}
+              />
+            );
+          })}
         </section>
       </TooltipProvider>
       <StageChangeDialog

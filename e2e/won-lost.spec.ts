@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
 
+const WON_TOGGLE_PATTERN = /Won/;
+const LOST_TOGGLE_PATTERN = /Lost/;
+
 const quickAddDeal = async (
   page: import("@playwright/test").Page,
   companyName: string
@@ -38,7 +41,9 @@ test("marking Won prompts for handover and notifies delivery (US-10)", async ({
   await dialog.getByRole("button", { name: "Mark as won" }).click();
   await moveCommitted;
 
+  // Won is a collapsed summary column by default; expand it to see the card.
   const wonColumn = page.locator('section[aria-label="Won"]');
+  await wonColumn.getByRole("button", { name: WON_TOGGLE_PATTERN }).click();
   await expect(
     wonColumn.getByRole("heading", { name: companyName })
   ).toBeVisible();
@@ -81,7 +86,9 @@ test("Lost / Dormant requires a reason before the move applies (US-10)", async (
   await dialog.getByRole("button", { name: "Mark as lost" }).click();
   await moveCommitted;
 
+  // Lost / Dormant is a collapsed summary column by default; expand it first.
   const lostColumn = page.locator('section[aria-label="Lost / Dormant"]');
+  await lostColumn.getByRole("button", { name: LOST_TOGGLE_PATTERN }).click();
   await expect(
     lostColumn.getByRole("heading", { name: companyName })
   ).toBeVisible();

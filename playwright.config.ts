@@ -40,6 +40,9 @@ export default defineConfig({
       env: {
         ANTHROPIC_API_KEY: "mock-key-for-e2e",
         ANTHROPIC_BASE_URL: "http://127.0.0.1:4848",
+        // Shrink the upstream idle window so the stall-hardening spec trips the
+        // abort in seconds instead of the 30s production default.
+        AI_IDLE_TIMEOUT_MS: "3000",
       },
     },
   ],

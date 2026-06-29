@@ -1,4 +1,4 @@
-import { createServer } from "node:http";
+import { createServer, type ServerResponse } from "node:http";
 
 // Deterministic stand-in for the Anthropic API so Playwright can exercise
 // the real /api/chat route, agent loop, tool execution, and chat UI without
@@ -151,6 +151,12 @@ const INBOX_PATTERN = /inbox/i;
 const CAPTURE_PATTERN = /capture/i;
 const DRAFT_PATTERN = /draft/i;
 const CHASE_PATTERN = /chase|prioriti/i;
+// Hardening scenarios: a turn that opens then goes silent (the app's idle
+// timeout must abort and surface a retryable error) and a turn that pings then
+// pauses before answering (the client's "Thinking…" indicator must show).
+const STALL_PATTERN = /trigger an assistant stall/i;
+const THINKING_PATTERN = /take a moment to think/i;
+const THINKING_DELAY_MS = 2000;
 // Specs embed a unique company token so accumulated data on the shared dev
 // DB never causes false positives.
 const COMPANY_TOKEN_PATTERN = /UNIQ-\d+/;
@@ -202,6 +208,70 @@ const respond = (body: AnthropicRequestBody): string => {
   );
 };
 
+const startFrame = (): string =>
+  sse([
+    {
+      data: {
+        message: {
+          content: [],
+          id: `msg_mock_${Date.now()}`,
+          model: "claude-opus-4-8",
+          role: "assistant",
+          stop_reason: null,
+          stop_sequence: null,
+          type: "message",
+          usage: { input_tokens: 10, output_tokens: 1 },
+        },
+        type: "message_start",
+      },
+      event: "message_start",
+    },
+  ]);
+
+const endFrame = (stopReason: string): string =>
+  sse([
+    {
+      data: {
+        delta: { stop_reason: stopReason, stop_sequence: null },
+        type: "message_delta",
+        usage: { output_tokens: 20 },
+      },
+      event: "message_delta",
+    },
+    { data: { type: "message_stop" }, event: "message_stop" },
+  ]);
+
+const pingFrame = (): string =>
+  sse([{ data: { type: "ping" }, event: "ping" }]);
+
+// Opens the stream then stays silent: no further bytes ever arrive, so the
+// app's idle-timeout abort must fire and the route must emit a retryable error
+// rather than the request hanging forever.
+const streamStall = (res: ServerResponse): void => {
+  res.write(startFrame());
+};
+
+// Sends a liveness ping (which the app forwards as a "thinking" status) and
+// then pauses before the answer, so the client's "Thinking…" indicator is
+// observable before real text replaces it.
+const streamThinking = (res: ServerResponse): void => {
+  res.write(startFrame());
+  res.write(pingFrame());
+  const timer = setTimeout(() => {
+    if (res.writableEnded) {
+      return;
+    }
+    res.write(sse(textEvents("Here is the considered answer.")));
+    res.write(endFrame("end_turn"));
+    res.end();
+  }, THINKING_DELAY_MS);
+  // Cancel the pending write if the client disconnects first. res "close"
+  // fires on client disconnect (cancel) or after a normal end() (no-op);
+  // req "close" fires as soon as the request body is read, which would
+  // wrongly cancel the answer.
+  res.on("close", () => clearTimeout(timer));
+};
+
 const server = createServer((req, res) => {
   if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "content-type": "text/plain" });
@@ -225,6 +295,15 @@ const server = createServer((req, res) => {
         "cache-control": "no-store",
         "content-type": "text/event-stream",
       });
+      const userText = lastUserText(body);
+      if (STALL_PATTERN.test(userText)) {
+        streamStall(res);
+        return;
+      }
+      if (THINKING_PATTERN.test(userText)) {
+        streamThinking(res);
+        return;
+      }
       res.end(respond(body));
     });
     return;

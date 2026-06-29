@@ -164,6 +164,11 @@ export const runAgentTurn = async (params: AgentTurnParams): Promise<void> => {
   }
 
   for (let iteration = 0; iteration < MAX_LOOP_ITERATIONS; iteration++) {
+    // Per-iteration latches so each status is emitted once: "thinking" the
+    // first time the model makes silent progress, "responding" the first time
+    // visible text arrives. Both keep the client's stall watchdog fed.
+    let sentThinking = false;
+    let sentResponding = false;
     const finalMessage = await streamMessage(
       {
         max_tokens: MAX_OUTPUT_TOKENS,
@@ -173,7 +178,21 @@ export const runAgentTurn = async (params: AgentTurnParams): Promise<void> => {
         thinking: { type: "adaptive" },
         tools: TOOL_DEFINITIONS,
       },
-      (delta) => send({ delta, type: "text" })
+      {
+        onActivity: () => {
+          if (!sentThinking) {
+            sentThinking = true;
+            send({ state: "thinking", type: "status" });
+          }
+        },
+        onText: (delta) => {
+          if (!sentResponding) {
+            sentResponding = true;
+            send({ state: "responding", type: "status" });
+          }
+          send({ delta, type: "text" });
+        },
+      }
     );
     await appendThreadMessage(ctx.threadId, "assistant", finalMessage.content);
     messages.push({ content: finalMessage.content, role: "assistant" });

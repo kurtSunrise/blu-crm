@@ -18,6 +18,10 @@ export interface ArtifactPayload {
 export type StreamPayload =
   | ArtifactPayload
   | { type: "thread"; threadId: string }
+  // Liveness/progress signal: "thinking" while the model reasons silently,
+  // "responding" once visible text starts. Resets the client's stall watchdog
+  // and drives the transient "Thinking…" indicator; carries no transcript.
+  | { type: "status"; state: "thinking" | "responding" }
   | { type: "text"; delta: string }
   | { type: "tool_start"; toolUseId: string; toolName: string }
   | { type: "tool_done"; toolUseId: string; toolName: string }

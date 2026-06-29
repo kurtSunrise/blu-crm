@@ -31,6 +31,10 @@ const TITLE_MAX_LENGTH = 60;
 
 const MAX_CHAT_ATTACHMENTS = 5;
 
+// Comfortably fits a pasted email thread while rejecting pathological pastes
+// that would bloat the model input and stretch one turn toward a timeout.
+const MAX_MESSAGE_LENGTH = 16_000;
+
 const chatRequestSchema = z
   .object({
     // Ids from /api/chat/attachments; rehydrated to base64 media blocks when
@@ -45,7 +49,7 @@ const chatRequestSchema = z
         toolUseId: z.string(),
       })
       .optional(),
-    message: z.string().min(1).optional(),
+    message: z.string().min(1).max(MAX_MESSAGE_LENGTH).optional(),
     pageContext: z.object({
       contactId: z.string().optional(),
       dealId: z.string().optional(),

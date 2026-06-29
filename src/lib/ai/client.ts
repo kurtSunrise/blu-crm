@@ -13,6 +13,38 @@ const ANTHROPIC_VERSION = "2023-06-01";
 const ERROR_BODY_MAX = 500;
 const TRAILING_SLASH = /\/$/;
 
+// The AI path needs the same abort discipline the DB layer already has
+// (src/db/index.ts): without it a stalled upstream stream awaits forever and
+// the chat turn hangs. IDLE bounds the gap between stream chunks; OVERALL is a
+// hard ceiling on one model call. The idle timer is safe alongside long
+// "adaptive" thinking because Anthropic keeps emitting ping/thinking events
+// while it reasons, so the gap only grows on a genuine stall. Both are env-
+// tunable (defaults below) so they can change without a deploy and so the E2E
+// suite can shrink the idle window to exercise the stall path quickly.
+const DEFAULT_IDLE_TIMEOUT_MS = 30_000;
+const DEFAULT_OVERALL_TIMEOUT_MS = 120_000;
+const TIMEOUT_MESSAGE =
+  "The assistant took too long to respond and was stopped. Please try again.";
+
+const readTimeoutMs = (name: string, fallback: number): number => {
+  const raw = process.env[name];
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const idleTimeoutMs = (): number =>
+  readTimeoutMs("AI_IDLE_TIMEOUT_MS", DEFAULT_IDLE_TIMEOUT_MS);
+const overallTimeoutMs = (): number =>
+  readTimeoutMs("AI_OVERALL_TIMEOUT_MS", DEFAULT_OVERALL_TIMEOUT_MS);
+
+// Stream callbacks: onText forwards visible text deltas; onActivity fires on
+// otherwise-silent upstream progress (ping / thinking deltas) so the route can
+// keep the client's connection demonstrably alive during the thinking phase.
+export interface StreamHandlers {
+  onActivity?: () => void;
+  onText: (delta: string) => void;
+}
+
 // Model is env-configurable so it can change without a deploy (M4 decision).
 export const getAiModel = (): string => process.env.AI_MODEL ?? DEFAULT_MODEL;
 
@@ -49,13 +81,15 @@ const requestHeaders = (apiKey: string): HeadersInit => ({
 });
 
 const postMessages = async (
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  signal?: AbortSignal
 ): Promise<Response> => {
   const { apiKey, baseURL } = resolveConfig();
   const response = await fetch(`${baseURL}/v1/messages`, {
     body: JSON.stringify(body),
     headers: requestHeaders(apiKey),
     method: "POST",
+    signal,
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
@@ -66,12 +100,24 @@ const postMessages = async (
   return response;
 };
 
-// Non-streaming call, used by the eval runner.
+// Non-streaming call, used by the eval runner. Guarded by the overall deadline
+// so the eval runner can't hang on an unresponsive upstream either.
 export const createMessage = async (
   body: MessageRequest
 ): Promise<Anthropic.Message> => {
-  const response = await postMessages({ ...body });
-  return (await response.json()) as Anthropic.Message;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), overallTimeoutMs());
+  try {
+    const response = await postMessages({ ...body }, controller.signal);
+    return (await response.json()) as Anthropic.Message;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(TIMEOUT_MESSAGE);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 type MutableBlock = Record<string, unknown>;
@@ -90,15 +136,18 @@ const applyDelta = (
   block: MutableBlock,
   delta: Anthropic.RawContentBlockDelta,
   appendJson: (chunk: string) => void,
-  onText: (delta: string) => void
+  handlers: StreamHandlers
 ): void => {
   if (delta.type === "text_delta") {
     appendString(block, "text", delta.text);
-    onText(delta.text);
+    handlers.onText(delta.text);
   } else if (delta.type === "input_json_delta") {
     appendJson(delta.partial_json);
   } else if (delta.type === "thinking_delta") {
     appendString(block, "thinking", delta.thinking);
+    // Thinking emits no visible text; signal liveness so the client's
+    // watchdog and "Thinking…" indicator track real upstream progress.
+    handlers.onActivity?.();
   } else if (delta.type === "signature_delta") {
     appendString(block, "signature", delta.signature);
   }
@@ -109,7 +158,8 @@ const applyDelta = (
 // stream.on("text") + finalMessage()).
 const assembleMessage = async (
   stream: ReadableStream<Uint8Array>,
-  onText: (delta: string) => void
+  handlers: StreamHandlers,
+  controller: AbortController
 ): Promise<Anthropic.Message> => {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -147,8 +197,12 @@ const assembleMessage = async (
           (chunk) => {
             jsonBuffers[event.index] += chunk;
           },
-          onText
+          handlers
         );
+        break;
+      case "ping":
+        // Anthropic's keepalive during long phases; surface it as liveness.
+        handlers.onActivity?.();
         break;
       case "content_block_stop": {
         const block = blocks[event.index];
@@ -182,24 +236,43 @@ const assembleMessage = async (
     handleEvent(JSON.parse(payload) as Anthropic.RawMessageStreamEvent);
   };
 
-  let buffer = "";
-  let reading = true;
-  while (reading) {
-    const { done, value } = await reader.read();
-    if (done) {
-      reading = false;
-      break;
+  // Idle watchdog: a chunk must arrive within UPSTREAM_IDLE_TIMEOUT_MS or we
+  // abort the shared controller, which rejects the pending reader.read().
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const armIdle = (): void => {
+    if (idleTimer) {
+      clearTimeout(idleTimer);
     }
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
+    idleTimer = setTimeout(() => controller.abort(), idleTimeoutMs());
+  };
+
+  try {
+    armIdle();
+    let buffer = "";
+    let reading = true;
+    while (reading) {
+      const { done, value } = await reader.read();
+      if (done) {
+        reading = false;
+        break;
+      }
+      armIdle();
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        dispatchLine(line.trim());
+      }
+    }
+    buffer += decoder.decode();
+    for (const line of buffer.split("\n")) {
       dispatchLine(line.trim());
     }
-  }
-  buffer += decoder.decode();
-  for (const line of buffer.split("\n")) {
-    dispatchLine(line.trim());
+  } finally {
+    if (idleTimer) {
+      clearTimeout(idleTimer);
+    }
+    reader.releaseLock();
   }
 
   message.content = blocks.filter(Boolean);
@@ -207,14 +280,31 @@ const assembleMessage = async (
 };
 
 // Streaming call used by the agent loop. Resolves with the final assembled
-// message once the stream completes.
+// message once the stream completes. The controller is shared between the
+// fetch and the read loop so either an overall-deadline expiry or an idle gap
+// tears the whole call down; the abort surfaces as a friendly timeout error
+// that the route forwards to the client instead of hanging.
 export const streamMessage = async (
   body: MessageRequest,
-  onText: (delta: string) => void
+  handlers: StreamHandlers
 ): Promise<Anthropic.Message> => {
-  const response = await postMessages({ ...body, stream: true });
-  if (!response.body) {
-    throw new Error("Anthropic API returned an empty stream");
+  const controller = new AbortController();
+  const overallTimer = setTimeout(() => controller.abort(), overallTimeoutMs());
+  try {
+    const response = await postMessages(
+      { ...body, stream: true },
+      controller.signal
+    );
+    if (!response.body) {
+      throw new Error("Anthropic API returned an empty stream");
+    }
+    return await assembleMessage(response.body, handlers, controller);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(TIMEOUT_MESSAGE);
+    }
+    throw error;
+  } finally {
+    clearTimeout(overallTimer);
   }
-  return assembleMessage(response.body, onText);
 };

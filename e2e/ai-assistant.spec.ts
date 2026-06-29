@@ -12,6 +12,8 @@ import { queryRows } from "./test-db";
 const RESPONSE_TIMEOUT_MS = 20_000;
 const ASSISTANT_BUTTON_NAME = /assistant/i;
 const LEAD_ID_PATTERN = /BLU-/;
+const THINKING_INDICATOR_PATTERN = /Thinking/;
+const TIMEOUT_MESSAGE_PATTERN = /took too long to respond/i;
 const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 
 const openAssistant = async (page: Page): Promise<void> => {
@@ -63,6 +65,42 @@ test("assistant panel streams a mocked text reply", async ({ page }) => {
   await askAssistant(page, "Hello there");
 
   await expect(page.getByText("Hello from the mock assistant.")).toBeVisible({
+    timeout: RESPONSE_TIMEOUT_MS,
+  });
+});
+
+test("a thinking turn shows a live indicator before the reply", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await skipUnlessAssistantConfigured(page, test);
+
+  await openAssistant(page);
+  // The mock pings (forwarded as a "thinking" status) then pauses before the
+  // answer, so the placeholder must appear before real text replaces it.
+  await askAssistant(page, "Take a moment to think, then reply");
+
+  await expect(page.getByText(THINKING_INDICATOR_PATTERN)).toBeVisible({
+    timeout: RESPONSE_TIMEOUT_MS,
+  });
+  await expect(page.getByText("Here is the considered answer.")).toBeVisible({
+    timeout: RESPONSE_TIMEOUT_MS,
+  });
+});
+
+test("a stalled response surfaces a retryable error instead of hanging", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await skipUnlessAssistantConfigured(page, test);
+
+  await openAssistant(page);
+  // The mock opens the stream then goes silent; the app's idle timeout (shrunk
+  // to 3s via AI_IDLE_TIMEOUT_MS in playwright.config.ts) must abort and show a
+  // retryable message rather than spinning forever.
+  await askAssistant(page, "Trigger an assistant stall please");
+
+  await expect(page.getByText(TIMEOUT_MESSAGE_PATTERN)).toBeVisible({
     timeout: RESPONSE_TIMEOUT_MS,
   });
 });

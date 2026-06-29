@@ -59,6 +59,42 @@ const HTTP_SERVICE_UNAVAILABLE = 503;
 const OFFLINE_MESSAGE =
   "The AI assistant is offline right now. Everything else in Blu CRM keeps working; try the assistant again later.";
 
+// Client-side stall guard. Deliberately longer than the server idle timeout
+// (UPSTREAM_IDLE_TIMEOUT_MS) so the server's own retryable error wins first in
+// the common case; this only trips when the connection itself goes silent
+// (proxy drop, lost network) and no payload — not even a status heartbeat —
+// arrives for this long.
+const CLIENT_STALL_TIMEOUT_MS = 45_000;
+const STALL_MESSAGE = "That took longer than expected. Please try again.";
+const THINKING_PLACEHOLDER = "Thinking…";
+
+interface StallWatchdog {
+  // (Re)start the countdown; called before the fetch and on every payload.
+  arm: () => void;
+  clear: () => void;
+  // Combined signal: trips on either the user's cancel or a stall.
+  signal: AbortSignal;
+}
+
+const createStallWatchdog = (userSignal: AbortSignal): StallWatchdog => {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return {
+    arm: () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+      timer = setTimeout(() => controller.abort(), CLIENT_STALL_TIMEOUT_MS);
+    },
+    clear: () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    },
+    signal: AbortSignal.any([userSignal, controller.signal]),
+  };
+};
+
 const extractMessageText = (content: unknown): string => {
   if (typeof content === "string") {
     return content;
@@ -154,145 +190,241 @@ interface ChatRequestBody {
   threadId?: string;
 }
 
+// Mutable accumulator for one streamed turn. snapshotOf() renders it into the
+// content parts assistant-ui expects; a "Thinking…" placeholder stands in only
+// while no real text or data has arrived yet.
+interface StreamState {
+  dataParts: AssistantContentPart[];
+  text: string;
+  thinking: boolean;
+}
+
+const snapshotOf = (state: StreamState): AssistantContentPart[] => {
+  const parts: AssistantContentPart[] = [];
+  if (state.text.length > 0) {
+    parts.push({ text: state.text, type: "text" });
+  } else if (state.thinking && state.dataParts.length === 0) {
+    parts.push({ text: THINKING_PLACEHOLDER, type: "text" });
+  }
+  parts.push(...state.dataParts);
+  return parts;
+};
+
+// Folds one stream payload into state and reports the snapshot to yield, or
+// null when the payload only updates side state (thread id, refresh). Kept out
+// of run() so the generator stays under the cognitive-complexity limit.
+const applyPayload = (
+  payload: StreamPayload,
+  state: StreamState,
+  callbacks: AdapterCallbacks
+): AssistantContentPart[] | null => {
+  switch (payload.type) {
+    case "thread":
+      callbacks.setThreadId(payload.threadId);
+      return null;
+    case "status":
+      if (payload.state !== "thinking") {
+        state.thinking = false;
+        return null;
+      }
+      if (state.text.length > 0) {
+        return null;
+      }
+      state.thinking = true;
+      return snapshotOf(state);
+    case "text":
+      state.thinking = false;
+      state.text += payload.delta;
+      return snapshotOf(state);
+    case "artifact":
+      state.dataParts.push({
+        data: payload.data,
+        name: payload.artifactType,
+        type: "data",
+      });
+      return snapshotOf(state);
+    case "confirmation_request":
+      state.dataParts.push({
+        data: {
+          input: payload.input,
+          summary: payload.summary,
+          toolName: payload.toolName,
+          toolUseId: payload.toolUseId,
+        },
+        name: "confirmation_request",
+        type: "data",
+      });
+      callbacks.setPendingConfirmation({
+        input: payload.input,
+        summary: payload.summary,
+        toolName: payload.toolName,
+        toolUseId: payload.toolUseId,
+      });
+      return snapshotOf(state);
+    case "data_changed":
+      callbacks.refresh();
+      return null;
+    case "error":
+      state.text =
+        state.text.length > 0
+          ? `${state.text}\n\n${payload.message}`
+          : payload.message;
+      return snapshotOf(state);
+    default:
+      return null;
+  }
+};
+
+// The outcome of opening a turn: either a terminal message to show (offline /
+// HTTP error / empty body) or the reader to stream. Folding the precondition
+// checks here keeps run() under the cognitive-complexity limit.
+type TurnStart =
+  | { kind: "message"; content: AssistantContentPart[] }
+  | { kind: "reader"; reader: ReadableStreamDefaultReader<Uint8Array> };
+
+const startTurn = async (
+  response: Response,
+  callbacks: AdapterCallbacks
+): Promise<TurnStart> => {
+  if (response.status === HTTP_SERVICE_UNAVAILABLE) {
+    callbacks.setOffline(true);
+    return {
+      content: [{ text: OFFLINE_MESSAGE, type: "text" }],
+      kind: "message",
+    };
+  }
+  if (!response.ok) {
+    return {
+      content: [{ text: await errorTextForStatus(response), type: "text" }],
+      kind: "message",
+    };
+  }
+  const reader = response.body?.getReader();
+  if (!reader) {
+    return {
+      content: [
+        { text: "The assistant sent an empty response.", type: "text" },
+      ],
+      kind: "message",
+    };
+  }
+  callbacks.setOffline(false);
+  return { kind: "reader", reader };
+};
+
+const GREETING_MESSAGE =
+  "Hi! Ask me about the pipeline, a client, or paste an enquiry to capture.";
+
+// Builds the POST body for one turn, or null when the user turn carries no
+// text (an empty submit) so run() can answer with the greeting. The decision
+// is read and cleared synchronously off the shared ref before any await — the
+// confirmation bubble triggered this run, and consuming it late would let the
+// server treat the pending write as superseded (the M4 phase-4 race fix).
+const buildRequestBody = (
+  messages: readonly {
+    role: string;
+    content: unknown;
+    attachments?: unknown;
+  }[],
+  request: RequestContext,
+  decisionRef: MutableRefObject<ConfirmationDecision | null>,
+  callbacks: AdapterCallbacks
+): ChatRequestBody | null => {
+  const body: ChatRequestBody = {
+    pageContext: {
+      contactId: request.contactId,
+      dealId: request.dealId,
+      pathname: request.pathname,
+    },
+    threadId: request.threadId ?? undefined,
+  };
+
+  const decision = decisionRef.current;
+  if (decision) {
+    body.confirmation = decision;
+    decisionRef.current = null;
+    callbacks.setPendingConfirmation(null);
+    return body;
+  }
+
+  const { attachmentIds, text } = lastUserTurn(messages);
+  if (!text) {
+    return null;
+  }
+  body.message = text;
+  if (attachmentIds.length > 0) {
+    body.attachmentIds = attachmentIds;
+  }
+  return body;
+};
+
 const createAdapter = (
   requestRef: MutableRefObject<RequestContext>,
   decisionRef: MutableRefObject<ConfirmationDecision | null>,
   callbacksRef: MutableRefObject<AdapterCallbacks>
 ): ChatModelAdapter => ({
   async *run({ messages, abortSignal }) {
-    const request = requestRef.current;
-    const decision = decisionRef.current;
+    const body = buildRequestBody(
+      messages,
+      requestRef.current,
+      decisionRef,
+      callbacksRef.current
+    );
+    if (!body) {
+      yield { content: [{ text: GREETING_MESSAGE, type: "text" }] };
+      return;
+    }
 
-    const body: ChatRequestBody = {
-      pageContext: {
-        contactId: request.contactId,
-        dealId: request.dealId,
-        pathname: request.pathname,
-      },
-      threadId: request.threadId ?? undefined,
-    };
+    const watchdog = createStallWatchdog(abortSignal);
+    const state: StreamState = { dataParts: [], text: "", thinking: false };
 
-    if (decision) {
-      // The visible "Approve" / "Cancel" bubble triggered this run; the
-      // payload is the structured confirmation, not the bubble text.
-      body.confirmation = decision;
-      decisionRef.current = null;
-      callbacksRef.current.setPendingConfirmation(null);
-    } else {
-      const { attachmentIds, text } = lastUserTurn(messages);
-      if (!text) {
-        yield {
-          content: [
-            {
-              text: "Hi! Ask me about the pipeline, a client, or paste an enquiry to capture.",
-              type: "text",
-            },
-          ],
-        };
+    try {
+      watchdog.arm();
+      const response = await fetch("/api/chat", {
+        body: JSON.stringify(body),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+        signal: watchdog.signal,
+      });
+
+      const start = await startTurn(response, callbacksRef.current);
+      if (start.kind === "message") {
+        yield { content: start.content as never };
         return;
       }
-      body.message = text;
-      if (attachmentIds.length > 0) {
-        body.attachmentIds = attachmentIds;
+
+      for await (const payload of streamPayloads(start.reader)) {
+        // Any payload — including a status heartbeat — proves the stream is
+        // alive, so reset the stall countdown on every one.
+        watchdog.arm();
+        const content = applyPayload(payload, state, callbacksRef.current);
+        if (content) {
+          yield { content: content as never };
+        }
       }
-    }
 
-    const response = await fetch("/api/chat", {
-      body: JSON.stringify(body),
-      headers: { "content-type": "application/json" },
-      method: "POST",
-      signal: abortSignal,
-    });
-
-    if (response.status === HTTP_SERVICE_UNAVAILABLE) {
-      callbacksRef.current.setOffline(true);
-      yield { content: [{ text: OFFLINE_MESSAGE, type: "text" }] };
-      return;
-    }
-    if (!response.ok) {
+      const finalContent = snapshotOf(state);
       yield {
-        content: [{ text: await errorTextForStatus(response), type: "text" }],
+        content: (finalContent.length > 0
+          ? finalContent
+          : [{ text: "Done.", type: "text" }]) as never,
       };
-      return;
-    }
-    const reader = response.body?.getReader();
-    if (!reader) {
-      yield {
-        content: [
-          { text: "The assistant sent an empty response.", type: "text" },
-        ],
-      };
-      return;
-    }
-
-    callbacksRef.current.setOffline(false);
-
-    let text = "";
-    const dataParts: AssistantContentPart[] = [];
-    const snapshot = (): AssistantContentPart[] => {
-      const parts: AssistantContentPart[] = [];
-      if (text.length > 0) {
-        parts.push({ text, type: "text" });
+    } catch {
+      // User-initiated cancel: stay silent and let the runtime settle.
+      if (abortSignal.aborted) {
+        return;
       }
-      parts.push(...dataParts);
-      return parts;
-    };
-
-    for await (const payload of streamPayloads(reader)) {
-      switch (payload.type) {
-        case "thread":
-          callbacksRef.current.setThreadId(payload.threadId);
-          break;
-        case "text":
-          text += payload.delta;
-          yield { content: snapshot() as never };
-          break;
-        case "artifact":
-          dataParts.push({
-            data: payload.data,
-            name: payload.artifactType,
-            type: "data",
-          });
-          yield { content: snapshot() as never };
-          break;
-        case "confirmation_request":
-          dataParts.push({
-            data: {
-              input: payload.input,
-              summary: payload.summary,
-              toolName: payload.toolName,
-              toolUseId: payload.toolUseId,
-            },
-            name: "confirmation_request",
-            type: "data",
-          });
-          callbacksRef.current.setPendingConfirmation({
-            input: payload.input,
-            summary: payload.summary,
-            toolName: payload.toolName,
-            toolUseId: payload.toolUseId,
-          });
-          yield { content: snapshot() as never };
-          break;
-        case "data_changed":
-          callbacksRef.current.refresh();
-          break;
-        case "error":
-          text =
-            text.length > 0 ? `${text}\n\n${payload.message}` : payload.message;
-          yield { content: snapshot() as never };
-          break;
-        default:
-          break;
-      }
+      // Stall abort or network failure: surface a retryable message instead
+      // of leaving the composer spinning forever.
+      state.thinking = false;
+      state.text =
+        state.text.length > 0
+          ? `${state.text}\n\n${STALL_MESSAGE}`
+          : STALL_MESSAGE;
+      yield { content: snapshotOf(state) as never };
+    } finally {
+      watchdog.clear();
     }
-
-    const finalContent = snapshot();
-    yield {
-      content: (finalContent.length > 0
-        ? finalContent
-        : [{ text: "Done.", type: "text" }]) as never,
-    };
   },
 });
 

@@ -10,6 +10,16 @@ const optionalTrimmed = z
   .transform((value) => (value === "" ? undefined : value))
   .optional();
 
+// Free-text activity/note body. The DB column (`activity.content`) is unbounded
+// `text`; this cap is just a sanity bound, well above a long email-style update
+// (the short `optionalTrimmed` 2000 cap silently rejected real notes — FR fix).
+const longOptionalText = z
+  .string()
+  .trim()
+  .max(20_000)
+  .transform((value) => (value === "" ? undefined : value))
+  .optional();
+
 export const PROJECT_TYPES = [
   "fit_out",
   "retail_display",
@@ -89,7 +99,7 @@ export const QUICK_LOG_TYPES = [
 export const logActivitySchema = z.object({
   dealId: z.string().min(1),
   type: z.enum(QUICK_LOG_TYPES),
-  content: optionalTrimmed,
+  content: longOptionalText,
 });
 
 export type LogActivityInput = z.infer<typeof logActivitySchema>;

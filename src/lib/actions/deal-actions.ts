@@ -175,7 +175,7 @@ export const logQuickActivity = async (
 ): Promise<ActionState> => {
   const parsed = logActivitySchema.safeParse(input);
   if (!parsed.success) {
-    return { error: "Invalid activity" };
+    return { error: parsed.error.issues[0]?.message ?? "Invalid activity" };
   }
   const { dealId, type, content } = parsed.data;
 

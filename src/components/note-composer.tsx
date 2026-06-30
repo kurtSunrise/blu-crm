@@ -12,6 +12,7 @@ import { logQuickActivity } from "@/lib/actions/deal-actions";
 export function NoteComposer({ dealId }: { dealId: string }) {
   const router = useRouter();
   const [content, setContent] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const trimmed = content.trim();
@@ -20,8 +21,18 @@ export function NoteComposer({ dealId }: { dealId: string }) {
     if (trimmed === "") {
       return;
     }
+    setError(null);
     startTransition(async () => {
-      await logQuickActivity({ dealId, type: "note", content: trimmed });
+      const result = await logQuickActivity({
+        dealId,
+        type: "note",
+        content: trimmed,
+      });
+      // Keep the typed note in place on failure so it isn't lost.
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
       setContent("");
       router.refresh();
     });
@@ -39,6 +50,11 @@ export function NoteComposer({ dealId }: { dealId: string }) {
         rows={3}
         value={content}
       />
+      {error ? (
+        <p className="text-destructive text-sm" role="alert">
+          {error}
+        </p>
+      ) : null}
       <Button
         className="h-12 self-end"
         disabled={isPending || trimmed === ""}

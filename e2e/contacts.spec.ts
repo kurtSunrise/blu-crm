@@ -125,6 +125,52 @@ test("a contact can be edited and then archived", async ({
   await expect(page.getByText(contactName, { exact: true })).toBeHidden();
 });
 
+test("selecting an existing contact locks phone/email and auto-fills the company", async ({
+  page,
+}, testInfo) => {
+  const stamp = `${testInfo.project.name}-${Date.now()}`;
+  const companyName = `Linked Co ${stamp}`;
+  const secondCompanyName = `Linked Co Two ${stamp}`;
+  const contactName = `Linked Contact ${stamp}`;
+  const email = `linked-${stamp}@example.com`;
+
+  // Seed an existing contact with a linked company via quick-add.
+  await page.goto("/deals/new");
+  await page.getByLabel("Client / brand *").fill(companyName);
+  await page.getByLabel("Contact name").fill(contactName);
+  await page.getByLabel("Email").fill(email);
+  await page.getByRole("button", { name: "Add lead" }).click();
+  await page.waitForURL("**/pipeline");
+
+  // Start a second deal and search for the same contact instead of retyping.
+  await page.goto("/deals/new");
+  await page.getByLabel("Contact name").fill(contactName);
+  await page.getByRole("option", { name: new RegExp(contactName) }).click();
+
+  await expect(page.getByLabel("Client / brand *")).toHaveValue(companyName);
+  await expect(page.getByLabel("Email")).toHaveValue(email);
+  await expect(page.getByLabel("Phone")).toHaveJSProperty("readOnly", true);
+  await expect(page.getByLabel("Email")).toHaveJSProperty("readOnly", true);
+
+  await page.getByRole("button", { name: "Change contact" }).click();
+  await expect(page.getByLabel("Email")).toHaveJSProperty("readOnly", false);
+  await expect(page.getByLabel("Email")).toHaveValue("");
+
+  // Re-select, edit the auto-filled company (still editable per design), and
+  // submit; the deal should link to the existing contact, not a duplicate.
+  await page.getByLabel("Contact name").fill(contactName);
+  await page.getByRole("option", { name: new RegExp(contactName) }).click();
+  await page.getByLabel("Client / brand *").fill(secondCompanyName);
+  await page.getByRole("button", { name: "Add lead" }).click();
+  await page.waitForURL("**/pipeline");
+
+  await page.goto("/contacts");
+  await page.getByText(contactName).click();
+  const dealsSection = page.locator('section[aria-label="Deals"]');
+  await expect(dealsSection.getByText(companyName)).toBeVisible();
+  await expect(dealsSection.getByText(secondCompanyName)).toBeVisible();
+});
+
 test("a company page rolls up its people and deals (FR-2.1)", async ({
   page,
 }, testInfo) => {
@@ -136,7 +182,7 @@ test("a company page rolls up its people and deals (FR-2.1)", async ({
   await page.getByLabel("Client / brand *").fill(companyName);
   await page.getByLabel("Contact name").fill(contactName);
   await page.getByLabel("Email").fill(`companyview-${stamp}@example.com`);
-  await page.getByLabel("Value guess (AUD)").fill("12000");
+  await page.getByLabel("Value guess min (AUD)").fill("12000");
   await page.getByRole("button", { name: "Add lead" }).click();
   await page.waitForURL("**/pipeline");
 

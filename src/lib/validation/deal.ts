@@ -33,6 +33,7 @@ export const PROJECT_TYPES = [
 export const quickAddDealSchema = z
   .object({
     companyName: z.string().trim().min(1, "Client / brand is required"),
+    contactId: optionalTrimmed,
     contactName: optionalTrimmed,
     contactEmail: z
       .string()
@@ -48,13 +49,31 @@ export const quickAddDealSchema = z
       .positive()
       .max(100_000_000)
       .optional(),
+    estimatedValueMaxDollars: z.coerce
+      .number()
+      .positive()
+      .max(100_000_000)
+      .optional(),
     fixedDate: z.coerce.date().optional(),
     ownerId: optionalTrimmed,
   })
-  .refine((value) => value.contactEmail ?? value.contactPhone, {
-    message: "At least one contact method (email or phone) is required",
-    path: ["contactEmail"],
-  });
+  .refine(
+    (value) => value.contactId ?? (value.contactEmail || value.contactPhone),
+    {
+      message: "At least one contact method (email or phone) is required",
+      path: ["contactEmail"],
+    }
+  )
+  .refine(
+    (value) =>
+      value.estimatedValueMaxDollars === undefined ||
+      value.estimatedValueDollars === undefined ||
+      value.estimatedValueMaxDollars >= value.estimatedValueDollars,
+    {
+      message: "Max value guess must be greater than or equal to the min",
+      path: ["estimatedValueMaxDollars"],
+    }
+  );
 
 export type QuickAddDealInput = z.infer<typeof quickAddDealSchema>;
 

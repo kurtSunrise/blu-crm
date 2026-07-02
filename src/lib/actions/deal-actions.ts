@@ -1,11 +1,12 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import {
   activity,
+  contact,
   deal,
   dealSubStatus,
   notification,
@@ -29,18 +30,42 @@ export interface ActionState {
   error?: string;
 }
 
+const contactExists = async (contactId: string): Promise<boolean> => {
+  const [existingContact] = await db
+    .select({ id: contact.id })
+    .from(contact)
+    .where(and(eq(contact.id, contactId), isNull(contact.deletedAt)))
+    .limit(1);
+  return Boolean(existingContact);
+};
+
+// Only one box filled (either min or max) is treated as a single value,
+// matching the field's pre-range behaviour.
+const resolveValueRangeDollars = (
+  minDollars: number | undefined,
+  maxDollars: number | undefined
+): { maxDollars: number | undefined; minDollars: number | undefined } => {
+  if (minDollars && maxDollars) {
+    return { maxDollars, minDollars };
+  }
+  return { maxDollars: undefined, minDollars: minDollars ?? maxDollars };
+};
+
 export const createQuickAddDeal = async (
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> => {
   const parsed = quickAddDealSchema.safeParse({
     companyName: formData.get("companyName"),
+    contactId: formData.get("contactId") || undefined,
     contactName: formData.get("contactName") ?? undefined,
     contactEmail: formData.get("contactEmail") ?? undefined,
     contactPhone: formData.get("contactPhone") ?? undefined,
     projectType: formData.get("projectType") || undefined,
     scopeSummary: formData.get("scopeSummary") ?? undefined,
     estimatedValueDollars: formData.get("estimatedValueDollars") || undefined,
+    estimatedValueMaxDollars:
+      formData.get("estimatedValueMaxDollars") || undefined,
     fixedDate: formData.get("fixedDate") || undefined,
     ownerId: formData.get("ownerId") || undefined,
   });
@@ -50,18 +75,27 @@ export const createQuickAddDeal = async (
   }
 
   const input = parsed.data;
+
+  if (input.contactId && !(await contactExists(input.contactId))) {
+    return { error: "Selected contact no longer exists" };
+  }
+
   const sessionUserId = await getSessionUserId();
+  const { minDollars, maxDollars } = resolveValueRangeDollars(
+    input.estimatedValueDollars,
+    input.estimatedValueMaxDollars
+  );
 
   const createdDealId = await createLead({
     companyName: input.companyName,
+    contactId: input.contactId,
     contactName: input.contactName,
     contactEmail: input.contactEmail,
     contactPhone: input.contactPhone,
     projectType: input.projectType,
     scopeSummary: input.scopeSummary,
-    estimatedValueCents: input.estimatedValueDollars
-      ? dollarsToCents(input.estimatedValueDollars)
-      : undefined,
+    estimatedValueCents: minDollars ? dollarsToCents(minDollars) : undefined,
+    estimatedValueMaxCents: maxDollars ? dollarsToCents(maxDollars) : undefined,
     fixedDate: input.fixedDate,
     ownerId: input.ownerId,
     source: "other",

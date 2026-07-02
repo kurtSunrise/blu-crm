@@ -1,12 +1,12 @@
-import { isNull } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { QuickAddForm } from "@/components/quick-add-form";
 import { db } from "@/db";
-import { company, user } from "@/db/schema";
+import { company, contact, user } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
 
 export default async function QuickAddPage() {
-  const [owners, companies] = await Promise.all([
+  const [owners, companies, contacts] = await Promise.all([
     db.select({ id: user.id, name: user.name }).from(user).orderBy(user.name),
     // Repeat clients are a core lead source; offer them as you type.
     db
@@ -14,6 +14,20 @@ export default async function QuickAddPage() {
       .from(company)
       .where(isNull(company.deletedAt))
       .orderBy(company.name),
+    // Joined to company here so ContactField can auto-fill Client/brand on
+    // selection without CompanyField needing to become id-aware.
+    db
+      .select({
+        companyName: company.name,
+        email: contact.email,
+        id: contact.id,
+        name: contact.name,
+        phone: contact.phone,
+      })
+      .from(contact)
+      .leftJoin(company, eq(contact.companyId, company.id))
+      .where(isNull(contact.deletedAt))
+      .orderBy(contact.name),
   ]);
 
   return (
@@ -27,6 +41,7 @@ export default async function QuickAddPage() {
       </header>
       <QuickAddForm
         companies={companies.map((entry) => entry.name)}
+        contacts={contacts}
         owners={owners}
       />
     </main>

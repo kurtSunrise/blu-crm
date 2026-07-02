@@ -15,16 +15,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  awstDayDiff,
-  formatAudFromCents,
-  formatDateAwst,
-  relativeDayLabel,
-} from "@/lib/format";
+import { awstDayDiff, formatDateAwst, relativeDayLabel } from "@/lib/format";
 import { type DealSubStatusOption, FIXED_DATE_TYPE_LABELS } from "@/lib/labels";
 import type { PipelineTooltipSettings } from "@/lib/pipeline-tooltip";
 import { cn } from "@/lib/utils";
 import { DealSubStatusControl } from "./deal-sub-status-control";
+import { DealValueDisplay } from "./deal-value-display";
 import type { BoardDeal, BoardStage } from "./pipeline-board";
 
 const CLOSING_SOON_DAYS = 14;
@@ -143,17 +139,10 @@ export function DealCard({
           options={subStatusOptions}
         />
         <div className="mt-1 flex items-center gap-2">
-          {deal.valueRange ? (
-            <p className="font-medium text-sm">
-              {`${formatAudFromCents(deal.valueRange.minCents)} – ${formatAudFromCents(deal.valueRange.maxCents)}`}
-            </p>
-          ) : (
-            deal.valueCents > 0 && (
-              <p className="font-medium text-sm">
-                {formatAudFromCents(deal.valueCents)}
-              </p>
-            )
-          )}
+          <DealValueDisplay
+            valueCents={deal.valueCents}
+            valueRange={deal.valueRange}
+          />
           {deal.fixedDate && fixedDayDiff !== null && (
             <p
               className={cn(

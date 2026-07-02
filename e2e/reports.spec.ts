@@ -11,7 +11,7 @@ const quickAddDeal = async (
   await page.goto("/deals/new");
   await page.getByLabel("Client / brand *").fill(companyName);
   await page.getByLabel("Phone").fill("0400 777 888");
-  await page.getByLabel("Value guess (AUD)").fill(valueDollars);
+  await page.getByLabel("Value guess min (AUD)").fill(valueDollars);
   await page.getByRole("button", { name: "Add lead" }).click();
   await page.waitForURL("**/pipeline");
 };

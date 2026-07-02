@@ -52,6 +52,25 @@ test("quick-add captures a lead onto the board", async ({ page }, testInfo) => {
   ).toBeVisible();
 });
 
+test("quick-add with a value range shows the range on the pipeline card", async ({
+  page,
+}, testInfo) => {
+  const companyName = `E2E-range ${testInfo.project.name} ${Date.now()}`;
+
+  await page.goto("/deals/new");
+  await page.getByLabel("Client / brand *").fill(companyName);
+  await page.getByLabel("Phone").fill("0400 222 333");
+  await page.getByLabel("Value guess min (AUD)").fill("5000");
+  await page.getByLabel("Value guess max (AUD)").fill("8000");
+  await page.getByRole("button", { name: "Add lead" }).click();
+
+  await page.waitForURL("**/pipeline");
+  const card = page.locator("article", {
+    has: page.getByRole("heading", { name: companyName }),
+  });
+  await expect(card).toContainText("$5,000 – $8,000");
+});
+
 test("stage change via menu moves the deal and updates totals", async ({
   page,
 }, testInfo) => {
@@ -60,7 +79,7 @@ test("stage change via menu moves the deal and updates totals", async ({
   await page.goto("/deals/new");
   await page.getByLabel("Client / brand *").fill(companyName);
   await page.getByLabel("Phone").fill("0400 111 222");
-  await page.getByLabel("Value guess (AUD)").fill("5000");
+  await page.getByLabel("Value guess min (AUD)").fill("5000");
   await page.getByRole("button", { name: "Add lead" }).click();
   await page.waitForURL("**/pipeline");
 

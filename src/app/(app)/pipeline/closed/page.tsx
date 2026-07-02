@@ -60,6 +60,7 @@ export default async function ClosedDealsPage({
         title: deal.title,
         stageId: deal.stageId,
         estimatedValueCents: deal.estimatedValueCents,
+        estimatedValueMaxCents: deal.estimatedValueMaxCents,
         companyName: company.name,
         ownerName: user.name,
         closedAt: deal.closedAt,
@@ -76,9 +77,10 @@ export default async function ClosedDealsPage({
   ]);
 
   const deals: ClosedDeal[] = rows.map((row) => {
-    const { valueCents } = computeDealValue(
+    const { valueCents, valueRange } = computeDealValue(
       quotesByDeal.get(row.id) ?? [],
-      row.estimatedValueCents
+      row.estimatedValueCents,
+      row.estimatedValueMaxCents
     );
     const meta = stageMeta.get(row.stageId);
     return {
@@ -88,6 +90,7 @@ export default async function ClosedDealsPage({
       companyName: row.companyName,
       ownerName: row.ownerName,
       valueCents,
+      valueRange,
       outcome: meta?.outcome ?? "lost",
       lostReason: row.lostReason,
       closedAt: (row.closedAt ?? row.updatedAt)?.toISOString() ?? null,

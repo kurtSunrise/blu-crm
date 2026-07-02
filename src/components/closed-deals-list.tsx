@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { DealValueDisplay } from "@/components/deal-value-display";
 import { formatAudFromCents, formatDateAwst, MS_PER_DAY } from "@/lib/format";
 import { LOST_REASON_LABELS, type LostReason } from "@/lib/labels";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,7 @@ export interface ClosedDeal {
   ownerName: string | null;
   title: string;
   valueCents: number;
+  valueRange: { maxCents: number; minCents: number } | null;
 }
 
 type OutcomeFilter = "all" | "won" | "lost";
@@ -220,10 +222,12 @@ export function ClosedDealsList({
                   >
                     {item.outcome === "won" ? "Won" : "Lost"}
                   </span>
-                  {item.outcome === "won" && item.valueCents > 0 && (
-                    <span className="font-medium text-sm tabular-nums">
-                      {formatAudFromCents(item.valueCents)}
-                    </span>
+                  {item.outcome === "won" && (
+                    <DealValueDisplay
+                      className="tabular-nums"
+                      valueCents={item.valueCents}
+                      valueRange={item.valueRange}
+                    />
                   )}
                   {item.outcome === "lost" &&
                     lostReasonLabel(item.lostReason) && (

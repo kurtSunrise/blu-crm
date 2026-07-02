@@ -9,7 +9,7 @@ const markFirstDealWon = async (
   await page.goto("/deals/new");
   await page.getByLabel("Client / brand *").fill(companyName);
   await page.getByLabel("Phone").fill("0400 555 666");
-  await page.getByLabel("Value guess (AUD)").fill("12000");
+  await page.getByLabel("Value guess min (AUD)").fill("12000");
   await page.getByRole("button", { name: "Add lead" }).click();
   await page.waitForURL("**/pipeline");
 

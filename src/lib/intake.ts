@@ -125,11 +125,15 @@ const insertDealWithLeadId = async (
 export interface CreateLeadInput {
   companyName?: string;
   contactEmail?: string;
+  // When set, this existing contact is used directly and the
+  // name/email/phone find-or-create matching below is skipped entirely.
+  contactId?: string;
   contactName?: string;
   contactPhone?: string;
   // The signed-in user who performed the capture; falls back to the owner.
   createdBy?: string;
   estimatedValueCents?: number;
+  estimatedValueMaxCents?: number;
   fixedDate?: Date;
   ownerId?: string;
   projectType?: ProjectType;
@@ -160,13 +164,15 @@ export const createLead = async (
   const companyId = input.companyName
     ? await findOrCreateCompany(input.companyName, input.ownerId)
     : undefined;
-  const contactId = await findOrCreateContact({
-    name: input.contactName,
-    email: input.contactEmail,
-    phone: input.contactPhone,
-    companyId,
-    ownerId: input.ownerId,
-  });
+  const contactId =
+    input.contactId ??
+    (await findOrCreateContact({
+      name: input.contactName,
+      email: input.contactEmail,
+      phone: input.contactPhone,
+      companyId,
+      ownerId: input.ownerId,
+    }));
 
   const namePart =
     input.companyName ?? input.contactName ?? input.contactEmail ?? "Enquiry";
@@ -180,6 +186,7 @@ export const createLead = async (
   const dealId = await insertDealWithLeadId({
     title,
     estimatedValueCents: input.estimatedValueCents,
+    estimatedValueMaxCents: input.estimatedValueMaxCents,
     stageId: input.stageId ?? firstStage.id,
     ownerId: input.ownerId,
     companyId,

@@ -60,7 +60,7 @@ test("an accepted quote's value rolls into the deal (FR-6.1)", async ({
   await page.goto("/deals/new");
   await page.getByLabel("Client / brand *").fill(companyName);
   await page.getByLabel("Phone").fill("0400 777 888");
-  await page.getByLabel("Value guess (AUD)").fill("8000");
+  await page.getByLabel("Value guess min (AUD)").fill("8000");
   await page.getByRole("button", { name: "Add lead" }).click();
   await page.waitForURL("**/pipeline");
 

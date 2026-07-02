@@ -164,6 +164,19 @@ const SECTIONS: HelpSection[] = [
           </li>
         </ol>
         <p className={PARA_CLASSES}>
+          To keep the board focused, the <strong>Won</strong> and{" "}
+          <strong>Lost / Dormant</strong> columns collapse to a summary and show
+          only recently closed deals. Open the{" "}
+          <Link
+            className="underline underline-offset-2"
+            href="/pipeline/closed"
+          >
+            Closed deals
+          </Link>{" "}
+          view (from the pipeline heading, or a column's "View all") for the
+          full history, filterable by outcome, owner, and close date.
+        </p>
+        <p className={PARA_CLASSES}>
           A deal can also carry an <strong>On hold</strong> or{" "}
           <strong>Blocked</strong> label without leaving its stage; use the
           status control on the card or deal page, and the "Filter by status"
@@ -200,6 +213,16 @@ const SECTIONS: HelpSection[] = [
             for the count and value held up.
           </li>
         </ol>
+        <p className={PARA_CLASSES}>
+          Admins can tailor these labels under{" "}
+          <Link
+            className="underline underline-offset-2"
+            href="/settings/statuses"
+          >
+            Settings, Deal statuses
+          </Link>
+          : add, rename, recolour, reorder, or archive them for the whole team.
+        </p>
       </>
     ),
   },
@@ -423,6 +446,11 @@ const SECTIONS: HelpSection[] = [
             <strong>Copy report</strong> puts the whole thing on the clipboard
             as plain text, ready to paste into an email or WhatsApp.
           </li>
+          <li>
+            <strong>Daily status</strong> (linked from the Reports header) shows
+            everything that happened on each deal on a given day, with
+            day-by-day navigation.
+          </li>
         </ol>
       </>
     ),
@@ -544,7 +572,7 @@ const SECTIONS: HelpSection[] = [
     body: (
       <>
         <p className={PARA_CLASSES}>
-          Settings is split into five tabs. Changes to shared options apply to
+          Settings is split into six tabs. Changes to shared options apply to
           the whole team.
         </p>
         <ol className={STEP_CLASSES}>
@@ -555,6 +583,12 @@ const SECTIONS: HelpSection[] = [
             the weighted forecast), alerts ("Needs attention after" and "Closing
             soon within", both in days), the pipeline card hover preview, and
             the appearance toggle.
+          </li>
+          <li>
+            <strong>Deal statuses</strong>: add, rename, recolour, reorder, or
+            archive the On hold and Blocked labels, and choose where the status
+            control appears (board cards, deal page). See "On hold and blocked
+            deals" above.
           </li>
           <li>
             <strong>Account</strong>: your profile and password, your active
@@ -578,7 +612,8 @@ const SECTIONS: HelpSection[] = [
           </li>
           <li>
             <strong>AI Preferences</strong>: photo vision status, when to
-            describe deal files, and the assistant's custom instructions.
+            describe deal files, the assistant's custom instructions, and which
+            Claude model the assistant runs on.
           </li>
         </ol>
       </>
@@ -673,6 +708,28 @@ const WHATS_NEW = [
     items: [
       "Deal updates now show straight away, with no page refresh: add a note, photo, follow-up, or quote, or change the stage or status, and the timeline and lists update in place.",
       "Every deal action now confirms with a brief on-screen message, and tells you if a save failed instead of leaving you guessing.",
+      "Admins can choose which Claude model the assistant runs on under Settings, AI Preferences.",
+    ],
+  },
+  {
+    date: "30/06/2026",
+    items: [
+      "Closed deals get their own filterable view (open it from the pipeline heading or a column's View all), searchable by outcome, owner, and close date.",
+      "The Won and Lost / Dormant columns on the board now collapse to a summary and keep only recently closed deals, so the active pipeline stays front and centre.",
+      "Longer notes now save (up to 20,000 characters), and a note that fails to save keeps your text and shows why.",
+    ],
+  },
+  {
+    date: "23/06/2026",
+    items: [
+      "On hold and Blocked labels are now fully manageable by admins under Settings, Deal statuses: add, rename, recolour, reorder, or archive them.",
+      "Refreshed, accessible status badge colours across the board and deal pages.",
+    ],
+  },
+  {
+    date: "22/06/2026",
+    items: [
+      "New Daily status report (Reports, Daily status): see everything that happened on each deal on any given day, with day-by-day navigation.",
     ],
   },
   {

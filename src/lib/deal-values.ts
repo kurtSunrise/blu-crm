@@ -38,11 +38,15 @@ export const getQuotesByDeal = async (): Promise<Map<string, DealQuote[]>> => {
 
 // The figure shown for a deal: an accepted quote wins; otherwise the live
 // options (declined ones are off the table) collapse to a single value or a
-// min-max range. The estimate is the fallback when nothing is quoted. Stage
-// totals sum one number per deal, so a range contributes its high end.
+// min-max range. The estimate (optionally itself a min/max range) is the
+// fallback when nothing is quoted. Stage totals sum one number per deal, so a
+// quoted range contributes its high end; an estimate range instead reports
+// its low end, matching `estimatedValueCents` (the min) which every other
+// read site sums directly.
 export const computeDealValue = (
   quotes: DealQuote[],
-  estimatedValueCents: number | null
+  estimatedValueCents: number | null,
+  estimatedValueMaxCents: number | null = null
 ): DealValue => {
   const accepted = quotes.find((item) => item.status === "accepted");
   if (accepted) {
@@ -61,5 +65,12 @@ export const computeDealValue = (
     };
   }
 
-  return { valueCents: estimatedValueCents ?? 0, valueRange: null };
+  const minCents = estimatedValueCents ?? 0;
+  if (estimatedValueMaxCents != null && estimatedValueMaxCents > minCents) {
+    return {
+      valueCents: minCents,
+      valueRange: { maxCents: estimatedValueMaxCents, minCents },
+    };
+  }
+  return { valueCents: minCents, valueRange: null };
 };

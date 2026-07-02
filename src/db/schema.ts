@@ -236,6 +236,7 @@ export const deal = pgTable("deal", {
   leadId: text("lead_id").notNull().unique(),
   title: text("title").notNull(),
   estimatedValueCents: integer("estimated_value_cents"),
+  estimatedValueMaxCents: integer("estimated_value_max_cents"),
   quotedValueCents: integer("quoted_value_cents"),
   stageId: text("stage_id")
     .notNull()

@@ -17,18 +17,27 @@ export function CompanyField({
   companies,
   defaultValue,
   id,
+  onValueChange,
   placeholder,
   required = false,
+  value: valueProp,
 }: {
   autoFocus?: boolean;
   companies: string[];
   defaultValue: string;
   id: string;
+  // Additive controlled-mode props: omit both to keep today's uncontrolled
+  // behaviour; pass both so a parent can programmatically set the value
+  // (e.g. auto-filling the company when a contact is selected elsewhere).
+  onValueChange?: (value: string) => void;
   placeholder?: string;
   required?: boolean;
+  value?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [value, setValue] = useState(defaultValue);
+  const [internalValue, setInternalValue] = useState(defaultValue);
+  const value = valueProp ?? internalValue;
+  const setValue = onValueChange ?? setInternalValue;
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -36,7 +45,7 @@ export function CompanyField({
     if (typed !== undefined && typed !== defaultValue) {
       setValue(typed);
     }
-  }, [defaultValue]);
+  }, [defaultValue, setValue]);
 
   const needle = value.trim().toLowerCase();
   const hasMatches =

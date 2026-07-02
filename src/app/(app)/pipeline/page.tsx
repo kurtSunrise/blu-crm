@@ -114,6 +114,7 @@ export default async function PipelinePage() {
       title: deal.title,
       stageId: deal.stageId,
       estimatedValueCents: deal.estimatedValueCents,
+      estimatedValueMaxCents: deal.estimatedValueMaxCents,
       fixedDate: deal.fixedDate,
       fixedDateType: deal.fixedDateType,
       companyName: company.name,
@@ -140,7 +141,8 @@ export default async function PipelinePage() {
   const deals = rows.map((row) => {
     const { valueCents, valueRange } = computeDealValue(
       quotesByDeal.get(row.id) ?? [],
-      row.estimatedValueCents
+      row.estimatedValueCents,
+      row.estimatedValueMaxCents
     );
     return {
       id: row.id,

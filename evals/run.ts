@@ -54,7 +54,7 @@ const runFixture = async (
         role: "user",
       },
     ],
-    model: getAiModel(),
+    model: await getAiModel(),
     system: [{ text: SYSTEM_PROMPT, type: "text" }],
     tools: TOOL_DEFINITIONS,
   });
@@ -70,7 +70,7 @@ const main = async (): Promise<void> => {
   }
 
   process.stdout.write(
-    `Running ${FIXTURES.length} fixtures against ${getAiModel()}\n\n`
+    `Running ${FIXTURES.length} fixtures against ${await getAiModel()}\n\n`
   );
 
   let passed = 0;

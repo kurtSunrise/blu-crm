@@ -1,10 +1,12 @@
-import { Cpu, Image as ImageIcon, Sparkles } from "lucide-react";
+import { Bot, Cpu, Image as ImageIcon, Sparkles } from "lucide-react";
+import { AiModelForm } from "@/components/ai-model-form";
 import { AssistantInstructionsForm } from "@/components/assistant-instructions-form";
 import { AttachmentDescriptionModeForm } from "@/components/attachment-description-mode-form";
 import { SettingsPanel, SettingsSection } from "@/components/settings-section";
 import { Badge } from "@/components/ui/badge";
 import { getAssistantInstructions } from "@/lib/ai/assistant-instructions";
 import { getAttachmentDescriptionMode } from "@/lib/ai/attachment-describe";
+import { getStoredAiModel } from "@/lib/ai/client";
 import { requireSession } from "@/lib/session";
 
 export const metadata = {
@@ -20,6 +22,8 @@ export default async function AiPreferencesPage() {
   );
   const descriptionMode = await getAttachmentDescriptionMode();
   const assistantInstructions = await getAssistantInstructions();
+  const aiModel = await getStoredAiModel();
+  const aiModelEnvOverride = Boolean(process.env.AI_MODEL);
 
   return (
     <>
@@ -41,6 +45,16 @@ export default async function AiPreferencesPage() {
               {visionConfigured ? "Connected" : "Not configured"}
             </Badge>
           </div>
+        </SettingsPanel>
+      </SettingsSection>
+
+      <SettingsSection
+        description="Which Claude model powers the in-app assistant for everyone in your workspace."
+        icon={Bot}
+        title="Assistant model"
+      >
+        <SettingsPanel>
+          <AiModelForm envOverride={aiModelEnvOverride} model={aiModel} />
         </SettingsPanel>
       </SettingsSection>
 

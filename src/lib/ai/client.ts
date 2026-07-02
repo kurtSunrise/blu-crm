@@ -1,4 +1,12 @@
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { appSetting } from "@/db/schema";
 import type * as Anthropic from "@/lib/ai/anthropic";
+import {
+  AI_MODEL_KEY,
+  DEFAULT_AI_MODEL,
+  isKnownAiModel,
+} from "@/lib/ai/models";
 
 // Direct REST client for the Anthropic Messages API. We call the HTTP
 // endpoint with fetch instead of the official SDK so the SDK stays out of
@@ -7,7 +15,6 @@ import type * as Anthropic from "@/lib/ai/anthropic";
 // erased at build time and costs no bundle bytes. workerd has a native
 // fetch + streaming, so nothing here needs a Node polyfill.
 
-const DEFAULT_MODEL = "claude-sonnet-5";
 const DEFAULT_BASE_URL = "https://api.anthropic.com";
 const ANTHROPIC_VERSION = "2023-06-01";
 const ERROR_BODY_MAX = 500;
@@ -45,8 +52,27 @@ export interface StreamHandlers {
   onText: (delta: string) => void;
 }
 
-// Model is env-configurable so it can change without a deploy (M4 decision).
-export const getAiModel = (): string => process.env.AI_MODEL ?? DEFAULT_MODEL;
+// The org-wide model choice persisted in app_setting (Settings → AI
+// Preferences), or the default when unset or no longer offered.
+export const getStoredAiModel = async (): Promise<string> => {
+  const [row] = await db
+    .select({ value: appSetting.value })
+    .from(appSetting)
+    .where(eq(appSetting.key, AI_MODEL_KEY))
+    .limit(1);
+  const value = row?.value?.trim();
+  return value && isKnownAiModel(value) ? value : DEFAULT_AI_MODEL;
+};
+
+// AI_MODEL env var wins when set (the E2E mock and deploy-free tuning rely on
+// it); otherwise the org-wide Settings choice, falling back to the default.
+export const getAiModel = async (): Promise<string> => {
+  const envModel = process.env.AI_MODEL;
+  if (envModel) {
+    return envModel;
+  }
+  return await getStoredAiModel();
+};
 
 // Graceful degradation (PRD §9.3): the core CRM must work without the
 // assistant, so callers check this before touching the API.

@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { appSetting, pipelineStage } from "@/db/schema";
 import { AI_ASSISTANT_INSTRUCTIONS_KEY } from "@/lib/ai/assistant-instructions";
 import { ATTACHMENT_DESCRIPTION_MODE_KEY } from "@/lib/ai/attachment-describe";
+import { AI_MODEL_KEY } from "@/lib/ai/models";
 import { CLOSING_SOON_DAYS_KEY, STALE_DAYS_KEY } from "@/lib/alerts";
 import {
   PIPELINE_TOOLTIP_CONTACT_KEY,
@@ -15,6 +16,7 @@ import {
 } from "@/lib/pipeline-tooltip";
 import {
   aiInstructionsSchema,
+  aiModelSchema,
   alertThresholdsSchema,
   attachmentDescriptionModeSchema,
   pipelineTooltipSettingsSchema,
@@ -75,6 +77,33 @@ export const updateAttachmentDescriptionMode = async (
     .insert(appSetting)
     .values({
       key: ATTACHMENT_DESCRIPTION_MODE_KEY,
+      updatedAt: new Date(),
+      value: parsed.data,
+    })
+    .onConflictDoUpdate({
+      target: appSetting.key,
+      set: { value: parsed.data, updatedAt: new Date() },
+    });
+
+  revalidatePath("/settings/ai");
+  return { saved: true };
+};
+
+// Which Claude model powers the in-app assistant, org-wide. Stored like every
+// other app_setting; getAiModel reads it at request time.
+export const updateAiModel = async (
+  _prevState: SettingsActionState,
+  formData: FormData
+): Promise<SettingsActionState> => {
+  const parsed = aiModelSchema.safeParse(formData.get("model"));
+  if (!parsed.success) {
+    return { error: "Choose a supported model" };
+  }
+
+  await db
+    .insert(appSetting)
+    .values({
+      key: AI_MODEL_KEY,
       updatedAt: new Date(),
       value: parsed.data,
     })

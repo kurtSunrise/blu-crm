@@ -66,6 +66,18 @@ After the user authorized removal, they were deleted from the prod DB (ep-snowy-
 dry-run SELECT → exact-match DELETE (`deal_id=… and type='note' and content like
 '%(safe to delete)%'`), 5 matched and removed, 0 remaining. Throwaway script deleted.
 
+## Addendum — toast + refresh on every deal control (commit dd57566, Version 81add7d8)
+A coworker's added follow-up didn't update or toast. Root cause: `FollowUpForm` and
+`QuoteForm` use `useActionState` with only `revalidatePath` — no `router.refresh()`, no toast.
+The other controls refreshed but gave no feedback. Made all deal controls consistent:
+- Forms now return an `ok` flag from the action; on success they `toast` + `router.refresh()`
+  + reset the form (`follow-up-actions.ts`, `quote-actions.ts`, `follow-up-form.tsx`,
+  `quote-form.tsx`).
+- Quick-log, stage, sub-status, complete-follow-up, quote row actions, and shared-folder link
+  now capture the result, toast success/error, and try/catch thrown failures.
+Verified live: adding a follow-up showed a "Follow-up added" toast and the row appeared in
+place, no reload. Test follow-up cleaned up via the same reviewed exact-match DELETE.
+
 ## Related Files
 - `src/app/(app)/deals/[id]/page.tsx`
 - `src/app/(app)/layout.tsx`, `src/lib/session.ts` (getSession path — open)

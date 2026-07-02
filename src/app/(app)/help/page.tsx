@@ -622,6 +622,11 @@ const FAQS = [
     answer:
       "Lost / Dormant and discarded deals are hidden from the calendar. If the deal is open or Won and still missing, check that its fixed date is filled in on the deal page.",
   },
+  {
+    question: "Do I need to refresh the page to see my changes?",
+    answer:
+      "No. Notes, photos, follow-ups, quotes, and stage or status changes all appear straight away on the deal, and a brief message confirms each one. If a save fails you will see an error message, so nothing is lost silently.",
+  },
 ];
 
 const GLOSSARY = [
@@ -663,6 +668,13 @@ const GLOSSARY = [
 ];
 
 const WHATS_NEW = [
+  {
+    date: "02/07/2026",
+    items: [
+      "Deal updates now show straight away, with no page refresh: add a note, photo, follow-up, or quote, or change the stage or status, and the timeline and lists update in place.",
+      "Every deal action now confirms with a brief on-screen message, and tells you if a save failed instead of leaving you guessing.",
+    ],
+  },
   {
     date: "18/06/2026",
     items: [

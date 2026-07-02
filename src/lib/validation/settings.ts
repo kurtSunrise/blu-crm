@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isKnownAiModel } from "@/lib/ai/models";
 import { SUB_STATUS_COLORS } from "@/lib/labels";
 
 const MAX_THRESHOLD_DAYS = 365;
@@ -32,6 +33,12 @@ export const stageNameSchema = z
 // When the assistant generates and caches a description for a deal file:
 // lazily on first view, or eagerly in the background on upload.
 export const attachmentDescriptionModeSchema = z.enum(["lazy", "eager"]);
+
+// Which Claude model the in-app assistant runs on. Validated against the
+// curated catalog so an unknown id can never be persisted.
+export const aiModelSchema = z
+  .string()
+  .refine(isKnownAiModel, { message: "Choose a supported model" });
 
 const MAX_AI_INSTRUCTIONS_LENGTH = 4000;
 

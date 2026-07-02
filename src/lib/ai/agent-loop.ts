@@ -163,6 +163,8 @@ export const runAgentTurn = async (params: AgentTurnParams): Promise<void> => {
     });
   }
 
+  const model = await getAiModel();
+
   for (let iteration = 0; iteration < MAX_LOOP_ITERATIONS; iteration++) {
     // Per-iteration latches so each status is emitted once: "thinking" the
     // first time the model makes silent progress, "responding" the first time
@@ -173,7 +175,7 @@ export const runAgentTurn = async (params: AgentTurnParams): Promise<void> => {
       {
         max_tokens: MAX_OUTPUT_TOKENS,
         messages,
-        model: getAiModel(),
+        model,
         system,
         thinking: { type: "adaptive" },
         tools: TOOL_DEFINITIONS,

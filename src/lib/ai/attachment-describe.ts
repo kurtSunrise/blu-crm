@@ -61,7 +61,7 @@ export const describeMedia = async (
         role: "user",
       },
     ],
-    model: getAiModel(),
+    model: await getAiModel(),
   });
   return extractText(message);
 };

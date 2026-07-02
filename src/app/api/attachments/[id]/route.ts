@@ -1,5 +1,6 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { eq } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { activity, attachment } from "@/db/schema";
@@ -94,5 +95,6 @@ export async function DELETE(
     createdBy: userId,
   });
 
+  revalidatePath(`/deals/${record.dealId}`);
   return NextResponse.json({ ok: true });
 }

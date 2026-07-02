@@ -3,6 +3,7 @@
 import { Camera } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
 // Mobile-first upload (FR-10): one large target that opens the camera or
@@ -30,12 +31,19 @@ export function AttachmentUpload({ dealId }: { dealId: string }) {
       });
       if (!response.ok) {
         const body = (await response.json()) as { error?: string };
-        setError(body.error ?? "Upload failed. Please try again.");
+        const message = body.error ?? "Upload failed. Please try again.";
+        setError(message);
+        toast.error(message);
         return;
       }
       router.refresh();
+      toast.success(
+        file.type.startsWith("image/") ? "Photo added" : "File added"
+      );
     } catch {
-      setError("Upload failed. Check your connection and try again.");
+      const message = "Upload failed. Check your connection and try again.";
+      setError(message);
+      toast.error(message);
     } finally {
       setIsUploading(false);
       if (inputRef.current) {

@@ -1,5 +1,6 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { eq } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { activity, attachment, deal } from "@/db/schema";
@@ -105,5 +106,6 @@ export async function POST(request: Request): Promise<NextResponse> {
     ctx.waitUntil(describeAttachmentsByIds([attachmentId]));
   }
 
+  revalidatePath(`/deals/${dealId}`);
   return NextResponse.json({ id: created.id }, { status: 201 });
 }

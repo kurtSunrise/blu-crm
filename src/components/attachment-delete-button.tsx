@@ -3,6 +3,7 @@
 import { Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
 // Remove a deal attachment with a two-step confirm (mirrors ArchiveRecordButton).
@@ -30,13 +31,18 @@ export function AttachmentDeleteButton({
           const body = (await response.json().catch(() => ({}))) as {
             error?: string;
           };
-          setError(body.error ?? "Delete failed. Please try again.");
+          const message = body.error ?? "Delete failed. Please try again.";
+          setError(message);
+          toast.error(message);
           return;
         }
         setConfirming(false);
         router.refresh();
+        toast.success("Attachment removed");
       } catch {
-        setError("Delete failed. Check your connection and try again.");
+        const message = "Delete failed. Check your connection and try again.";
+        setError(message);
+        toast.error(message);
       }
     });
   };

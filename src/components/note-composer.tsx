@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,18 +24,28 @@ export function NoteComposer({ dealId }: { dealId: string }) {
     }
     setError(null);
     startTransition(async () => {
-      const result = await logQuickActivity({
-        dealId,
-        type: "note",
-        content: trimmed,
-      });
-      // Keep the typed note in place on failure so it isn't lost.
-      if (result.error) {
-        setError(result.error);
-        return;
+      try {
+        const result = await logQuickActivity({
+          dealId,
+          type: "note",
+          content: trimmed,
+        });
+        // Keep the typed note in place on failure so it isn't lost.
+        if (result.error) {
+          setError(result.error);
+          toast.error(result.error);
+          return;
+        }
+        setContent("");
+        router.refresh();
+        toast.success("Note added");
+      } catch {
+        // The action itself failed (e.g. the server returned an error status).
+        // Surface it instead of leaving the button stuck on "Adding…".
+        const message = "Couldn't save the note. Please try again.";
+        setError(message);
+        toast.error(message);
       }
-      setContent("");
-      router.refresh();
     });
   };
 

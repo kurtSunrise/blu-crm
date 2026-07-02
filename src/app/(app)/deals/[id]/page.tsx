@@ -277,79 +277,88 @@ export default async function DealPage({
     notFound();
   }
 
-  const [subStatusOptions, subStatusPlacement, currentSubStatus] =
-    await Promise.all([
-      getActiveSubStatuses(),
-      getSubStatusPlacement(),
-      record.subStatusId
-        ? getSubStatusById(record.subStatusId)
-        : Promise.resolve<DealSubStatusOption | null>(null),
-    ]);
-
-  const stages = await db
-    .select({
-      id: pipelineStage.id,
-      name: pipelineStage.name,
-      isWon: pipelineStage.isWon,
-      isLost: pipelineStage.isLost,
-    })
-    .from(pipelineStage)
-    .orderBy(pipelineStage.position);
-
-  const users = await db
-    .select({ id: user.id, name: user.name })
-    .from(user)
-    .orderBy(asc(user.name));
-
-  const openFollowUps = await db
-    .select({
-      id: followUp.id,
-      action: followUp.action,
-      dueDate: followUp.dueDate,
-      ownerName: user.name,
-    })
-    .from(followUp)
-    .leftJoin(user, eq(followUp.ownerId, user.id))
-    .where(and(eq(followUp.dealId, id), isNull(followUp.completedAt)))
-    .orderBy(asc(followUp.dueDate));
-
-  const quotes = await db
-    .select({
-      id: quote.id,
-      valueCents: quote.valueCents,
-      status: quote.status,
-      viewToken: quote.viewToken,
-      sentAt: quote.sentAt,
-      viewedAt: quote.viewedAt,
-      createdAt: quote.createdAt,
-    })
-    .from(quote)
-    .where(eq(quote.dealId, id))
-    .orderBy(desc(quote.createdAt));
-
-  const attachments = await db
-    .select({
-      id: attachment.id,
-      fileName: attachment.fileName,
-      contentType: attachment.contentType,
-      createdAt: attachment.createdAt,
-    })
-    .from(attachment)
-    .where(eq(attachment.dealId, id))
-    .orderBy(desc(attachment.createdAt));
-
-  const timeline = await db
-    .select({
-      id: activity.id,
-      type: activity.type,
-      content: activity.content,
-      createdAt: activity.createdAt,
-      authorName: user.name,
-    })
-    .from(activity)
-    .leftJoin(user, eq(activity.createdBy, user.id))
-    .where(eq(activity.dealId, id))
-    .orderBy(desc(activity.createdAt));
+  // The remaining reads are independent of each other, so run them in a single
+  // parallel wave rather than sequentially. On the Cloudflare worker each Neon
+  // query is a separate HTTP round-trip; issuing ~9 of them back-to-back made
+  // the render slow enough to intermittently exceed the runtime's limits and
+  // return a 503 (notably on the server-action re-render after adding a note),
+  // which is why in-place updates failed until a manual reload.
+  const [
+    subStatusOptions,
+    subStatusPlacement,
+    currentSubStatus,
+    stages,
+    users,
+    openFollowUps,
+    quotes,
+    attachments,
+    timeline,
+  ] = await Promise.all([
+    getActiveSubStatuses(),
+    getSubStatusPlacement(),
+    record.subStatusId
+      ? getSubStatusById(record.subStatusId)
+      : Promise.resolve<DealSubStatusOption | null>(null),
+    db
+      .select({
+        id: pipelineStage.id,
+        name: pipelineStage.name,
+        isWon: pipelineStage.isWon,
+        isLost: pipelineStage.isLost,
+      })
+      .from(pipelineStage)
+      .orderBy(pipelineStage.position),
+    db
+      .select({ id: user.id, name: user.name })
+      .from(user)
+      .orderBy(asc(user.name)),
+    db
+      .select({
+        id: followUp.id,
+        action: followUp.action,
+        dueDate: followUp.dueDate,
+        ownerName: user.name,
+      })
+      .from(followUp)
+      .leftJoin(user, eq(followUp.ownerId, user.id))
+      .where(and(eq(followUp.dealId, id), isNull(followUp.completedAt)))
+      .orderBy(asc(followUp.dueDate)),
+    db
+      .select({
+        id: quote.id,
+        valueCents: quote.valueCents,
+        status: quote.status,
+        viewToken: quote.viewToken,
+        sentAt: quote.sentAt,
+        viewedAt: quote.viewedAt,
+        createdAt: quote.createdAt,
+      })
+      .from(quote)
+      .where(eq(quote.dealId, id))
+      .orderBy(desc(quote.createdAt)),
+    db
+      .select({
+        id: attachment.id,
+        fileName: attachment.fileName,
+        contentType: attachment.contentType,
+        createdAt: attachment.createdAt,
+      })
+      .from(attachment)
+      .where(eq(attachment.dealId, id))
+      .orderBy(desc(attachment.createdAt)),
+    db
+      .select({
+        id: activity.id,
+        type: activity.type,
+        content: activity.content,
+        createdAt: activity.createdAt,
+        authorName: user.name,
+      })
+      .from(activity)
+      .leftJoin(user, eq(activity.createdBy, user.id))
+      .where(eq(activity.dealId, id))
+      .orderBy(desc(activity.createdAt)),
+  ]);
 
   const valueCents = record.quotedValueCents ?? record.estimatedValueCents;
 

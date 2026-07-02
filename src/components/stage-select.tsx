@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -35,8 +36,17 @@ export function StageSelect({
 
   const applyMove = (stageId: string, extras: StageMoveExtras = {}) => {
     startTransition(async () => {
-      await moveDealStage({ dealId, stageId, ...extras });
-      router.refresh();
+      try {
+        const result = await moveDealStage({ dealId, stageId, ...extras });
+        if (result?.error) {
+          toast.error(result.error);
+          return;
+        }
+        router.refresh();
+        toast.success("Stage updated");
+      } catch {
+        toast.error("Couldn't change the stage. Please try again.");
+      }
     });
   };
 

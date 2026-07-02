@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { sendQuote, updateQuoteStatus } from "@/lib/actions/quote-actions";
 
@@ -17,10 +18,22 @@ export function QuoteRowActions({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const run = (action: () => Promise<unknown>) => {
+  const run = (
+    action: () => Promise<{ error?: string }>,
+    successMessage: string
+  ) => {
     startTransition(async () => {
-      await action();
-      router.refresh();
+      try {
+        const result = await action();
+        if (result?.error) {
+          toast.error(result.error);
+          return;
+        }
+        router.refresh();
+        toast.success(successMessage);
+      } catch {
+        toast.error("Something went wrong. Please try again.");
+      }
     });
   };
 
@@ -29,7 +42,9 @@ export function QuoteRowActions({
       <Button
         className="h-11"
         disabled={isPending}
-        onClick={() => run(() => sendQuote({ quoteId }))}
+        onClick={() =>
+          run(() => sendQuote({ quoteId }), "Quote marked as sent")
+        }
         variant="secondary"
       >
         Mark as sent
@@ -44,7 +59,10 @@ export function QuoteRowActions({
           className="h-11"
           disabled={isPending}
           onClick={() =>
-            run(() => updateQuoteStatus({ quoteId, status: "accepted" }))
+            run(
+              () => updateQuoteStatus({ quoteId, status: "accepted" }),
+              "Quote accepted"
+            )
           }
         >
           Accepted
@@ -53,7 +71,10 @@ export function QuoteRowActions({
           className="h-11"
           disabled={isPending}
           onClick={() =>
-            run(() => updateQuoteStatus({ quoteId, status: "declined" }))
+            run(
+              () => updateQuoteStatus({ quoteId, status: "declined" }),
+              "Quote declined"
+            )
           }
           variant="secondary"
         >

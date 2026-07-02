@@ -87,23 +87,74 @@ export const linkAttachmentsToThread = async (
   }
 };
 
+type SniffedImageType = Anthropic.Base64ImageSource["media_type"];
+
+// Anthropic sniffs the real bytes and rejects a base64 image whose declared
+// media_type disagrees with them (a 400 that kills the whole turn). The stored
+// contentType is only the browser-declared MIME captured at upload, which
+// browsers and operating systems routinely mislabel (a PNG saved as .jpg, a
+// screenshot paste), so it cannot be trusted as the media_type. We read the
+// magic number and send the true type instead.
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const JPEG_SIGNATURE = [0xff, 0xd8, 0xff];
+const GIF_SIGNATURE = [0x47, 0x49, 0x46, 0x38]; // "GIF8" (87a/89a)
+const RIFF_SIGNATURE = [0x52, 0x49, 0x46, 0x46]; // "RIFF" at offset 0
+const WEBP_SIGNATURE = [0x57, 0x45, 0x42, 0x50]; // "WEBP" at offset 8
+
+const IMAGE_CONTENT_TYPES = new Set<SniffedImageType>([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+]);
+
+const matchesAt = (
+  bytes: Uint8Array,
+  signature: number[],
+  offset = 0
+): boolean => signature.every((byte, index) => bytes[offset + index] === byte);
+
+const detectImageMediaType = (buffer: ArrayBuffer): SniffedImageType | null => {
+  const bytes = new Uint8Array(buffer);
+  if (matchesAt(bytes, PNG_SIGNATURE)) {
+    return "image/png";
+  }
+  if (matchesAt(bytes, JPEG_SIGNATURE)) {
+    return "image/jpeg";
+  }
+  if (matchesAt(bytes, RIFF_SIGNATURE) && matchesAt(bytes, WEBP_SIGNATURE, 8)) {
+    return "image/webp";
+  }
+  if (matchesAt(bytes, GIF_SIGNATURE)) {
+    return "image/gif";
+  }
+  return null;
+};
+
+const isImageContentType = (
+  contentType: string
+): contentType is SniffedImageType =>
+  IMAGE_CONTENT_TYPES.has(contentType as SniffedImageType);
+
 const toMediaBlock = (
   contentType: string,
-  data: string
+  buffer: ArrayBuffer
 ): Anthropic.ImageBlockParam | Anthropic.DocumentBlockParam | null => {
+  const data = arrayBufferToBase64(buffer);
   if (contentType === "application/pdf") {
     return {
       source: { data, media_type: "application/pdf", type: "base64" },
       type: "document",
     };
   }
-  if (
-    contentType === "image/jpeg" ||
-    contentType === "image/png" ||
-    contentType === "image/webp"
-  ) {
+  // Prefer the type sniffed from the bytes; fall back to the stored
+  // contentType only when the magic number is unrecognised.
+  const sniffed = detectImageMediaType(buffer);
+  const mediaType =
+    sniffed ?? (isImageContentType(contentType) ? contentType : null);
+  if (mediaType) {
     return {
-      source: { data, media_type: contentType, type: "base64" },
+      source: { data, media_type: mediaType, type: "base64" },
       type: "image",
     };
   }
@@ -140,10 +191,7 @@ const loadMediaBlocksById = async (
       if (!object) {
         return null;
       }
-      const block = toMediaBlock(
-        row.contentType,
-        arrayBufferToBase64(await object.arrayBuffer())
-      );
+      const block = toMediaBlock(row.contentType, await object.arrayBuffer());
       return block ? ([row.id, block] as const) : null;
     })
   );
@@ -190,10 +238,7 @@ export const loadDealAttachmentMedia = async (
       if (!object) {
         return null;
       }
-      const block = toMediaBlock(
-        row.contentType,
-        arrayBufferToBase64(await object.arrayBuffer())
-      );
+      const block = toMediaBlock(row.contentType, await object.arrayBuffer());
       return block
         ? ({
             block,

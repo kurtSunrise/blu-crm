@@ -7,7 +7,7 @@ import type * as Anthropic from "@/lib/ai/anthropic";
 // erased at build time and costs no bundle bytes. workerd has a native
 // fetch + streaming, so nothing here needs a Node polyfill.
 
-const DEFAULT_MODEL = "claude-opus-4-8";
+const DEFAULT_MODEL = "claude-sonnet-5";
 const DEFAULT_BASE_URL = "https://api.anthropic.com";
 const ANTHROPIC_VERSION = "2023-06-01";
 const ERROR_BODY_MAX = 500;

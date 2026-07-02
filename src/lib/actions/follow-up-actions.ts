@@ -13,6 +13,9 @@ import {
 
 export interface FollowUpActionState {
   error?: string;
+  // Set on a successful create so the form can toast and refresh; a bare {}
+  // (the initial state) is indistinguishable from success otherwise.
+  ok?: boolean;
 }
 
 export const createFollowUp = async (
@@ -32,10 +35,11 @@ export const createFollowUp = async (
 
   // Attribute the write to whoever is signed in; the follow-up's owner is
   // the fallback (public/seeded paths legitimately have no session).
-  return await createFollowUpCore({
+  const result = await createFollowUpCore({
     ...parsed.data,
     createdBy: (await getSessionUserId()) ?? undefined,
   });
+  return result.error ? result : { ok: true };
 };
 
 export const completeFollowUp = async (

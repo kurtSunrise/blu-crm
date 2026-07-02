@@ -15,6 +15,9 @@ import {
 
 export interface QuoteActionState {
   error?: string;
+  // Set on a successful create so the form can toast and refresh; a bare {}
+  // (the initial state) is indistinguishable from success otherwise.
+  ok?: boolean;
 }
 
 export const createQuote = async (
@@ -30,10 +33,11 @@ export const createQuote = async (
     return { error: parsed.error.issues[0]?.message ?? "Invalid quote" };
   }
 
-  return await createQuoteCore({
+  const result = await createQuoteCore({
     ...parsed.data,
     createdBy: (await getSessionUserId()) ?? undefined,
   });
+  return result.error ? result : { ok: true };
 };
 
 export const sendQuote = async (input: unknown): Promise<QuoteActionState> => {

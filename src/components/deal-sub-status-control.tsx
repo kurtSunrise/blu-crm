@@ -3,6 +3,7 @@
 import { CircleDashed } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -92,13 +93,22 @@ export function DealSubStatusControl({
 
   const handleSave = () => {
     startTransition(async () => {
-      await setDealSubStatus({
-        dealId,
-        subStatusId: selected,
-        note: selected ? draftNote : "",
-      });
-      setOpen(false);
-      router.refresh();
+      try {
+        const result = await setDealSubStatus({
+          dealId,
+          subStatusId: selected,
+          note: selected ? draftNote : "",
+        });
+        if (result?.error) {
+          toast.error(result.error);
+          return;
+        }
+        setOpen(false);
+        router.refresh();
+        toast.success("Status updated");
+      } catch {
+        toast.error("Couldn't update the status. Please try again.");
+      }
     });
   };
 

@@ -3,6 +3,7 @@
 import { ExternalLink, FolderOpen, Pencil } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,17 +26,25 @@ export function SharedFolderLink({
 
   const save = () => {
     startTransition(async () => {
-      const result = await updateDealSharedFolderUrl({
-        dealId,
-        sharedFolderUrl: value.trim(),
-      });
-      if (result.error) {
-        setError(result.error);
-        return;
+      try {
+        const result = await updateDealSharedFolderUrl({
+          dealId,
+          sharedFolderUrl: value.trim(),
+        });
+        if (result.error) {
+          setError(result.error);
+          toast.error(result.error);
+          return;
+        }
+        setError(null);
+        setIsEditing(false);
+        router.refresh();
+        toast.success("Shared folder link saved");
+      } catch {
+        const message = "Couldn't save the link. Please try again.";
+        setError(message);
+        toast.error(message);
       }
-      setError(null);
-      setIsEditing(false);
-      router.refresh();
     });
   };
 

@@ -1,6 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useRouter } from "next/navigation";
+import { useActionState, useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,13 +30,29 @@ export function FollowUpForm({
   defaultOwnerId: string | null;
   users: { id: string; name: string }[];
 }) {
+  const router = useRouter();
+  const formRef = useRef<HTMLFormElement>(null);
   const [state, formAction, isPending] = useActionState<
     FollowUpActionState,
     FormData
   >(createFollowUp, {});
 
+  // useActionState doesn't refresh the RSC on its own; on success, force a
+  // refresh so the new follow-up shows immediately, reset the fields, and
+  // confirm with a toast. Errors surface as a toast too (the inline message
+  // stays for accessibility).
+  useEffect(() => {
+    if (state.ok) {
+      toast.success("Follow-up added");
+      formRef.current?.reset();
+      router.refresh();
+    } else if (state.error) {
+      toast.error(state.error);
+    }
+  }, [state, router]);
+
   return (
-    <form action={formAction} className="flex flex-col gap-3">
+    <form action={formAction} className="flex flex-col gap-3" ref={formRef}>
       <input name="dealId" type="hidden" value={dealId} />
       <div className="flex flex-col gap-2">
         <Label htmlFor="follow-up-action">Next action *</Label>

@@ -1,7 +1,12 @@
 "use client";
 
 import { useThreadRuntime } from "@assistant-ui/react";
-import { CheckIcon, ShieldAlertIcon, XIcon } from "lucide-react";
+import {
+  CheckCircle2Icon,
+  CheckIcon,
+  ShieldAlertIcon,
+  XIcon,
+} from "lucide-react";
 import { useId, useState } from "react";
 import { useAiAssistant } from "@/components/ai/ai-context";
 import { Button } from "@/components/ui/button";
@@ -183,10 +188,10 @@ export function ConfirmationCard({ data }: { data: ConfirmationRequestData }) {
   return (
     <section
       aria-label={`Confirm: ${data.summary}`}
-      className="my-2 rounded-lg border border-blu/40 bg-blu/5 p-3"
+      className="my-2 rounded-lg border border-warning/40 bg-warning/5 p-3"
     >
       <div className="flex items-center gap-2">
-        <ShieldAlertIcon aria-hidden className="size-4 shrink-0 text-blu" />
+        <ShieldAlertIcon aria-hidden className="size-4 shrink-0 text-warning" />
         <h3 className="font-medium text-sm">{data.summary}</h3>
       </div>
 
@@ -260,8 +265,19 @@ export function ConfirmationCard({ data }: { data: ConfirmationRequestData }) {
             </Button>
           </>
         ) : (
-          <p className="text-muted-foreground text-xs" role="status">
-            {resolved === "approved" && "Approved"}
+          <p
+            className="flex items-center gap-1.5 text-muted-foreground text-xs"
+            role="status"
+          >
+            {resolved === "approved" && (
+              <>
+                <CheckCircle2Icon
+                  aria-hidden
+                  className="size-3.5 text-success"
+                />
+                <span className="text-success">Approved</span>
+              </>
+            )}
             {resolved === "cancelled" && "Cancelled, nothing was changed"}
             {resolved === null && "Resolved"}
           </p>

@@ -66,7 +66,6 @@ const OFFLINE_MESSAGE =
 // arrives for this long.
 const CLIENT_STALL_TIMEOUT_MS = 45_000;
 const STALL_MESSAGE = "That took longer than expected. Please try again.";
-const THINKING_PLACEHOLDER = "Thinking…";
 
 interface StallWatchdog {
   // (Re)start the countdown; called before the fetch and on every payload.
@@ -191,8 +190,11 @@ interface ChatRequestBody {
 }
 
 // Mutable accumulator for one streamed turn. snapshotOf() renders it into the
-// content parts assistant-ui expects; a "Thinking…" placeholder stands in only
-// while no real text or data has arrived yet.
+// content parts assistant-ui expects. While `thinking` is true and no text or
+// data has arrived yet, the snapshot is an empty array — the message's own
+// status stays "running" for the whole run(), so the UI derives a "thinking"
+// state from `status.type === "running" && content.length === 0` rather than
+// a placeholder string standing in for real content.
 interface StreamState {
   dataParts: AssistantContentPart[];
   text: string;
@@ -203,8 +205,6 @@ const snapshotOf = (state: StreamState): AssistantContentPart[] => {
   const parts: AssistantContentPart[] = [];
   if (state.text.length > 0) {
     parts.push({ text: state.text, type: "text" });
-  } else if (state.thinking && state.dataParts.length === 0) {
-    parts.push({ text: THINKING_PLACEHOLDER, type: "text" });
   }
   parts.push(...state.dataParts);
   return parts;

@@ -1,5 +1,38 @@
-// Minimal RFC 4180 CSV parser: quoted fields, escaped quotes, commas and
-// newlines inside quotes, CRLF or LF line endings. No external dependency.
+// Minimal RFC 4180 CSV parser and writer: quoted fields, escaped quotes,
+// commas and newlines inside quotes, CRLF or LF line endings. No external
+// dependency.
+
+export type CsvValue = number | string | null | undefined;
+
+const NEEDS_QUOTING = /[",\n\r]/;
+// Cells starting with a formula trigger would execute when the CSV is opened
+// in a spreadsheet; a leading apostrophe forces text. Numbers are exempt so a
+// negative value doesn't get mangled.
+const FORMULA_PREFIX = /^[=+\-@\t\r]/;
+
+const escapeCell = (value: CsvValue): string => {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "number") {
+    return String(value);
+  }
+  let text = value;
+  if (FORMULA_PREFIX.test(text)) {
+    text = `'${text}`;
+  }
+  if (NEEDS_QUOTING.test(text)) {
+    text = `"${text.replaceAll('"', '""')}"`;
+  }
+  return text;
+};
+
+// Report exports are hundreds of rows at most, so building the string in
+// memory (no streaming) is fine.
+export const toCsv = (headers: string[], rows: CsvValue[][]): string => {
+  const lines = [headers, ...rows].map((row) => row.map(escapeCell).join(","));
+  return `${lines.join("\r\n")}\r\n`;
+};
 
 export const parseCsv = (text: string): string[][] => {
   const rows: string[][] = [];

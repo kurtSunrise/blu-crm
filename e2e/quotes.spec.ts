@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { queryRows } from "./test-db";
 
 test("a sent quote viewed by the client alerts the owner (US-09)", async ({
   page,
@@ -40,15 +41,25 @@ test("a sent quote viewed by the client alerts the owner (US-09)", async ({
   await expect(page.getByText("$12,500")).toBeVisible();
   await expect(page.getByText(companyName)).toBeVisible();
 
-  // The owner gets the viewed alert (FR-6.2 AC) and the timeline records it.
+  // The viewed alert targets the deal owner (Jess), so it lands in HER
+  // per-user feed, not Kurt's; assert the row server-side.
+  await expect(async () => {
+    const rows = await queryRows<{ email: string }>(
+      `select u.email from "notification" n
+       join "user" u on u.id = n.user_id
+       where n.type = 'quote_viewed' and n.payload->>'dealTitle' like $1`,
+      [`%${companyName}%`]
+    );
+    expect(rows.map((row) => row.email)).toContain("jess@blu.builders");
+  }).toPass({ timeout: 15_000 });
+
   await page.goto("/notifications");
   await expect(
     page
       .locator("li")
       .filter({ hasText: "Quote viewed" })
       .filter({ hasText: companyName })
-      .first()
-  ).toBeVisible();
+  ).toHaveCount(0);
 });
 
 test("an accepted quote's value rolls into the deal (FR-6.1)", async ({

@@ -50,6 +50,7 @@ const TABLES_TO_CLEAR = [
   "chat_message",
   "chat_thread",
   "notification",
+  "notification_preference",
   "activity",
   "follow_up",
   "quote",

@@ -38,6 +38,18 @@ export const SWEEP_STEPS: SweepStep[] = [
     sql: `delete from "chat_thread" where id in (${TEST_THREADS})`,
   },
   {
+    // Notification payloads reference deals only via jsonb (no FK), so match
+    // on the payload's deal id or a timestamp-stamped title, before the deal
+    // rows themselves go.
+    label: "notification",
+    sql: `delete from "notification" where payload->>'dealId' in (${TEST_DEALS}) or payload->>'dealTitle' ~ '${TS}'`,
+  },
+  {
+    // Before activity: stage events also FK the activity rows they mirror.
+    label: "deal_stage_event",
+    sql: `delete from "deal_stage_event" where deal_id in (${TEST_DEALS})`,
+  },
+  {
     label: "activity",
     sql: `delete from "activity" where deal_id in (${TEST_DEALS})`,
   },

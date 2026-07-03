@@ -8,6 +8,7 @@ import {
   isNotNull,
   isNull,
   lt,
+  type SQL,
   sql,
 } from "drizzle-orm";
 import type { TimelineEntry } from "@/components/deal-timeline";
@@ -18,6 +19,7 @@ import {
   deal,
   dealSubStatus,
   followUp,
+  leadSource,
   pipelineStage,
   quote,
   user,
@@ -28,16 +30,32 @@ import {
   getClosingSoonDeals,
   getStaleDeals,
 } from "@/lib/alerts";
-import { awstDayKeyRange, type DateKey } from "@/lib/calendar";
+import {
+  addDays,
+  addMonths,
+  awstDateKey,
+  awstDayKeyRange,
+  DATE_KEY_PATTERN,
+  type DateKey,
+} from "@/lib/calendar";
 import { formatAudFromCents, formatDateAwst, MS_PER_DAY } from "@/lib/format";
 import { LOST_REASON_LABELS, type LostReason } from "@/lib/labels";
+import {
+  DEFAULT_REPORT_PERIOD_DAYS,
+  REPORT_PERIOD_OPTIONS,
+  type ReportOwnerOption,
+} from "@/lib/report-filters";
 
 // A deal's value, mirroring the pipeline board exactly so every surface
 // reconciles (FR-1.4 / FR-8.2 AC): an accepted quote wins; otherwise the high
 // end of the live options (draft/sent/viewed — declined are off the table);
 // otherwise the estimate. Correlated subqueries, so this stays a per-deal
 // scalar and never multiplies rows when summed or grouped.
-const dealValueCents = sql<number>`coalesce(
+//
+// Exported so every report surface (pages, CSV export, trends) sums the SAME
+// expression — any aggregate that bypasses this diverges from the dashboard
+// and breaks the FR-8.2 reconciliation acceptance criterion.
+export const dealValueCents = sql<number>`coalesce(
   (select max(${quote.valueCents}) from ${quote}
     where ${quote.dealId} = ${deal.id} and ${quote.status} = 'accepted'),
   (select max(${quote.valueCents}) from ${quote}
@@ -49,6 +67,140 @@ const dealValueCents = sql<number>`coalesce(
 const PERCENT = 100;
 
 export const REPORT_WEEK_DAYS = 7;
+
+// ---------------------------------------------------------------------------
+// Shared report filters — every report page parses the same searchParams
+// (?days | ?from/?to, ?owner, ?source) into this shape, and the aggregate
+// queries below accept it, so a filter set means the same thing everywhere.
+// ---------------------------------------------------------------------------
+
+export type ReportLeadSource = (typeof leadSource.enumValues)[number];
+
+export interface ReportSearchParams {
+  days?: string;
+  from?: string;
+  owner?: string;
+  source?: string;
+  to?: string;
+}
+
+export interface ReportFilters {
+  // UTC instant the period starts (inclusive).
+  from: Date;
+  // Original date keys when a custom range is active, for the date inputs.
+  fromKey: DateKey | null;
+  ownerId: string | null;
+  // Pill highlight + "last N days" copy; meaningful only without a custom range.
+  periodDays: number;
+  source: ReportLeadSource | null;
+  // Exclusive upper bound; null = up to now (period mode / open-ended range).
+  to: Date | null;
+  toKey: DateKey | null;
+}
+
+const isLeadSource = (value: string): value is ReportLeadSource =>
+  (leadSource.enumValues as readonly string[]).includes(value);
+
+export const parseReportFilters = (
+  params: ReportSearchParams
+): ReportFilters => {
+  const parsedDays = Number(params.days);
+  const periodDays = REPORT_PERIOD_OPTIONS.some((o) => o === parsedDays)
+    ? parsedDays
+    : DEFAULT_REPORT_PERIOD_DAYS;
+
+  // A custom range needs a valid start; the end is optional (open-ended) and
+  // ignored when it would invert the window. Keys are AWST calendar days.
+  const fromKey =
+    params.from && DATE_KEY_PATTERN.test(params.from) ? params.from : null;
+  let toKey = params.to && DATE_KEY_PATTERN.test(params.to) ? params.to : null;
+  if (!fromKey) {
+    toKey = null;
+  } else if (toKey && toKey < fromKey) {
+    toKey = null;
+  }
+
+  const from = fromKey
+    ? awstDayKeyRange(fromKey).start
+    : new Date(Date.now() - periodDays * MS_PER_DAY);
+  const to = toKey ? awstDayKeyRange(toKey).end : null;
+
+  const source =
+    params.source && isLeadSource(params.source) ? params.source : null;
+
+  return {
+    from,
+    fromKey,
+    ownerId: params.owner || null,
+    periodDays,
+    source,
+    to,
+    toKey,
+  };
+};
+
+// Serialize active filters back into query params so links between report
+// surfaces (pills, drill-downs, CSV export) carry the current filter set.
+export const reportFilterParams = (filters: ReportFilters): URLSearchParams => {
+  const params = new URLSearchParams();
+  if (filters.fromKey) {
+    params.set("from", filters.fromKey);
+    if (filters.toKey) {
+      params.set("to", filters.toKey);
+    }
+  } else if (filters.periodDays !== DEFAULT_REPORT_PERIOD_DAYS) {
+    params.set("days", String(filters.periodDays));
+  }
+  if (filters.ownerId) {
+    params.set("owner", filters.ownerId);
+  }
+  if (filters.source) {
+    params.set("source", filters.source);
+  }
+  return params;
+};
+
+// Human label for the active window, e.g. "last 30 days" or "12 May – 2 Jun".
+export const describeReportPeriod = (filters: ReportFilters): string => {
+  if (!filters.fromKey) {
+    return `last ${filters.periodDays} days`;
+  }
+  const fromLabel = formatDateAwst(filters.from);
+  return filters.to
+    ? `${fromLabel} – ${formatDateAwst(new Date(filters.to.getTime() - 1))}`
+    : `since ${fromLabel}`;
+};
+
+// Owner/source conditions applied to the deal row. Date windows are NOT here:
+// each aggregate applies its own (closedAt for win rate, createdAt for
+// activity) because "the pipeline right now" has no date dimension.
+const dealFilterConditions = (filters?: ReportFilters): SQL[] => {
+  const conditions: SQL[] = [];
+  if (filters?.ownerId) {
+    conditions.push(eq(deal.ownerId, filters.ownerId));
+  }
+  if (filters?.source) {
+    conditions.push(eq(deal.source, filters.source));
+  }
+  return conditions;
+};
+
+export const getReportOwners = (): Promise<ReportOwnerOption[]> =>
+  db
+    .select({ id: user.id, name: user.name })
+    .from(user)
+    .where(eq(user.disabled, false))
+    .orderBy(asc(user.name));
+
+// Resolve a stage id to its name for drill-down headings; null if deleted.
+export const getStageName = async (stageId: string): Promise<string | null> => {
+  const [row] = await db
+    .select({ name: pipelineStage.name })
+    .from(pipelineStage)
+    .where(eq(pipelineStage.id, stageId))
+    .limit(1);
+  return row?.name ?? null;
+};
 
 // ---------------------------------------------------------------------------
 // FR-8.1 — pipeline overview and forecast
@@ -65,7 +217,9 @@ export interface StageBreakdownRow {
   weighting: number;
 }
 
-export const getStageBreakdown = async (): Promise<StageBreakdownRow[]> => {
+export const getStageBreakdown = async (
+  filters?: ReportFilters
+): Promise<StageBreakdownRow[]> => {
   const rows = await db
     .select({
       stageId: pipelineStage.id,
@@ -77,9 +231,15 @@ export const getStageBreakdown = async (): Promise<StageBreakdownRow[]> => {
       totalCents: sql<number>`coalesce(sum(${dealValueCents}), 0)`,
     })
     .from(pipelineStage)
+    // Filters live in the join condition so filtered-out stages still return
+    // as zero rows rather than disappearing from the board.
     .leftJoin(
       deal,
-      and(eq(deal.stageId, pipelineStage.id), isNull(deal.deletedAt))
+      and(
+        eq(deal.stageId, pipelineStage.id),
+        isNull(deal.deletedAt),
+        ...dealFilterConditions(filters)
+      )
     )
     .groupBy(pipelineStage.id)
     .orderBy(asc(pipelineStage.position));
@@ -126,9 +286,9 @@ export interface SubStatusBreakdownRow {
   totalCents: number;
 }
 
-export const getSubStatusBreakdown = async (): Promise<
-  SubStatusBreakdownRow[]
-> => {
+export const getSubStatusBreakdown = async (
+  filters?: ReportFilters
+): Promise<SubStatusBreakdownRow[]> => {
   const rows = await db
     .select({
       subStatusId: deal.subStatusId,
@@ -139,7 +299,13 @@ export const getSubStatusBreakdown = async (): Promise<
     })
     .from(deal)
     .innerJoin(dealSubStatus, eq(deal.subStatusId, dealSubStatus.id))
-    .where(and(isNull(deal.deletedAt), isNotNull(deal.subStatusId)))
+    .where(
+      and(
+        isNull(deal.deletedAt),
+        isNotNull(deal.subStatusId),
+        ...dealFilterConditions(filters)
+      )
+    )
     .groupBy(deal.subStatusId, dealSubStatus.label, dealSubStatus.color)
     .orderBy(desc(count(deal.id)));
 
@@ -171,7 +337,10 @@ export interface WinRateSummary {
   wonValueCents: number;
 }
 
-export const getWinRate = async (since: Date): Promise<WinRateSummary> => {
+export const getWinRate = async (
+  since: Date,
+  filters?: ReportFilters
+): Promise<WinRateSummary> => {
   const closed = await db
     .select({
       isWon: pipelineStage.isWon,
@@ -180,7 +349,14 @@ export const getWinRate = async (since: Date): Promise<WinRateSummary> => {
     })
     .from(deal)
     .innerJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
-    .where(and(isNull(deal.deletedAt), gte(deal.closedAt, since)));
+    .where(
+      and(
+        isNull(deal.deletedAt),
+        gte(deal.closedAt, since),
+        ...(filters?.to ? [lt(deal.closedAt, filters.to)] : []),
+        ...dealFilterConditions(filters)
+      )
+    );
 
   let wonCount = 0;
   let wonValueCents = 0;
@@ -228,16 +404,32 @@ export interface ActivityVolumeRow {
 }
 
 export const getActivityVolume = async (
-  since: Date
+  since: Date,
+  filters?: ReportFilters
 ): Promise<ActivityVolumeRow[]> => {
-  const rows = await db
+  // Owner/source filters describe deals, so scoping activity by them needs
+  // the deal row; join it only when a filter is actually set.
+  const scopedByDeal = Boolean(filters?.ownerId || filters?.source);
+  const base = db
     .select({
       personName: user.name,
       activityCount: count(activity.id),
     })
     .from(activity)
-    .leftJoin(user, eq(activity.createdBy, user.id))
-    .where(gte(activity.createdAt, since))
+    .leftJoin(user, eq(activity.createdBy, user.id));
+  const rows = await (scopedByDeal
+    ? base.innerJoin(
+        deal,
+        and(eq(activity.dealId, deal.id), ...dealFilterConditions(filters))
+      )
+    : base
+  )
+    .where(
+      and(
+        gte(activity.createdAt, since),
+        ...(filters?.to ? [lt(activity.createdAt, filters.to)] : [])
+      )
+    )
     .groupBy(user.name)
     .orderBy(desc(count(activity.id)));
 
@@ -246,6 +438,349 @@ export const getActivityVolume = async (
     personName: row.personName ?? "Unattributed",
     activityCount: row.activityCount,
   }));
+};
+
+// ---------------------------------------------------------------------------
+// Trends & forecast (/reports/trends) — deals created and closed over time,
+// weighted forecast by expected close month, and slipped deals. Buckets are
+// AWST calendar weeks/months: date_trunc runs on the Perth-local timestamp so
+// week boundaries land on Perth Mondays, matching awstDayKeyRange semantics.
+// ---------------------------------------------------------------------------
+
+const AWST_TZ = "Australia/Perth";
+
+export type TrendBucket = "month" | "week";
+
+// Beyond ~four months of range, weekly bars get too thin to read on a phone.
+const WEEKLY_BUCKET_MAX_DAYS = 120;
+
+export const trendBucketFor = (filters: ReportFilters): TrendBucket => {
+  const end = filters.to ?? new Date();
+  const rangeDays = (end.getTime() - filters.from.getTime()) / MS_PER_DAY;
+  return rangeDays > WEEKLY_BUCKET_MAX_DAYS ? "month" : "week";
+};
+
+// Bucket start as an AWST-local YYYY-MM-DD key (month buckets use the 1st).
+// The bucket keyword and timezone are inlined (sql.raw), NOT bound parameters:
+// the same expression must appear in SELECT and GROUP BY, and with parameters
+// each occurrence gets a different placeholder number, so Postgres treats them
+// as different expressions and rejects the query. Both values are internal
+// constants, never user input.
+const trendBucketKey = (
+  bucket: TrendBucket,
+  column: SQL | (typeof deal)["createdAt"]
+): SQL<string> =>
+  sql<string>`to_char(date_trunc(${sql.raw(`'${bucket}'`)}, ${column} at time zone ${sql.raw(`'${AWST_TZ}'`)}), 'YYYY-MM-DD')`;
+
+const DAYS_PER_WEEK = 7;
+
+// Monday of the AWST week containing the key (getUTCDay: 0 = Sunday).
+const weekStartKey = (key: DateKey): DateKey => {
+  const weekday = new Date(Date.parse(`${key}T00:00:00Z`)).getUTCDay();
+  return addDays(key, -((weekday + 6) % DAYS_PER_WEEK));
+};
+
+const monthStartKey = (key: DateKey): DateKey => `${key.slice(0, 7)}-01`;
+
+// Every bucket key the filter window spans, so charts render empty periods
+// as zeros instead of skipping them.
+export const trendBucketKeys = (
+  bucket: TrendBucket,
+  filters: ReportFilters
+): DateKey[] => {
+  const end = filters.to ? new Date(filters.to.getTime() - 1) : new Date();
+  const startKey =
+    bucket === "week"
+      ? weekStartKey(awstDateKey(filters.from))
+      : monthStartKey(awstDateKey(filters.from));
+  const endKey =
+    bucket === "week"
+      ? weekStartKey(awstDateKey(end))
+      : monthStartKey(awstDateKey(end));
+
+  const keys: DateKey[] = [];
+  let cursor = startKey;
+  while (cursor <= endKey) {
+    keys.push(cursor);
+    cursor =
+      bucket === "week"
+        ? addDays(cursor, DAYS_PER_WEEK)
+        : `${addMonths(cursor.slice(0, 7), 1)}-01`;
+  }
+  return keys;
+};
+
+export interface CreatedTrendRow {
+  bucketKey: DateKey;
+  count: number;
+  totalCents: number;
+}
+
+export const getCreatedTrend = async (
+  filters: ReportFilters,
+  bucket: TrendBucket
+): Promise<CreatedTrendRow[]> => {
+  const bucketExpr = trendBucketKey(bucket, deal.createdAt);
+  const rows = await db
+    .select({
+      bucketKey: bucketExpr,
+      count: count(deal.id),
+      totalCents: sql<number>`coalesce(sum(${dealValueCents}), 0)`,
+    })
+    .from(deal)
+    .where(
+      and(
+        isNull(deal.deletedAt),
+        gte(deal.createdAt, filters.from),
+        ...(filters.to ? [lt(deal.createdAt, filters.to)] : []),
+        ...dealFilterConditions(filters)
+      )
+    )
+    .groupBy(bucketExpr)
+    .orderBy(bucketExpr);
+
+  return rows.map((row) => ({ ...row, totalCents: Number(row.totalCents) }));
+};
+
+export interface ClosedTrendRow {
+  bucketKey: DateKey;
+  lostCount: number;
+  wonCount: number;
+  wonValueCents: number;
+}
+
+export const getClosedTrend = async (
+  filters: ReportFilters,
+  bucket: TrendBucket
+): Promise<ClosedTrendRow[]> => {
+  const bucketExpr = trendBucketKey(bucket, sql`${deal.closedAt}`);
+  const rows = await db
+    .select({
+      bucketKey: bucketExpr,
+      isWon: pipelineStage.isWon,
+      count: count(deal.id),
+      totalCents: sql<number>`coalesce(sum(${dealValueCents}), 0)`,
+    })
+    .from(deal)
+    .innerJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
+    .where(
+      and(
+        isNull(deal.deletedAt),
+        gte(deal.closedAt, filters.from),
+        ...(filters.to ? [lt(deal.closedAt, filters.to)] : []),
+        ...dealFilterConditions(filters)
+      )
+    )
+    .groupBy(bucketExpr, pipelineStage.isWon)
+    .orderBy(bucketExpr);
+
+  const byBucket = new Map<DateKey, ClosedTrendRow>();
+  for (const row of rows) {
+    const entry = byBucket.get(row.bucketKey) ?? {
+      bucketKey: row.bucketKey,
+      lostCount: 0,
+      wonCount: 0,
+      wonValueCents: 0,
+    };
+    if (row.isWon) {
+      entry.wonCount += row.count;
+      entry.wonValueCents += Number(row.totalCents);
+    } else {
+      entry.lostCount += row.count;
+    }
+    byBucket.set(row.bucketKey, entry);
+  }
+  return [...byBucket.values()];
+};
+
+export interface ForecastMonthRow {
+  count: number;
+  // AWST YYYY-MM, or null for open deals with no expected close date.
+  monthKey: string | null;
+  totalCents: number;
+  weightedCents: number;
+}
+
+export const getForecastByMonth = async (
+  filters?: ReportFilters
+): Promise<ForecastMonthRow[]> => {
+  // Timezone inlined for the same SELECT/GROUP BY matching reason as
+  // trendBucketKey above.
+  const monthExpr = sql<
+    string | null
+  >`to_char(date_trunc('month', ${deal.expectedCloseDate} at time zone ${sql.raw(`'${AWST_TZ}'`)}), 'YYYY-MM')`;
+  const rows = await db
+    .select({
+      monthKey: monthExpr,
+      count: count(deal.id),
+      totalCents: sql<number>`coalesce(sum(${dealValueCents}), 0)`,
+      weightedCents: sql<number>`coalesce(sum(${dealValueCents} * ${pipelineStage.weighting} / ${PERCENT}), 0)`,
+    })
+    .from(deal)
+    .innerJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
+    .where(
+      and(
+        isNull(deal.deletedAt),
+        eq(pipelineStage.isWon, false),
+        eq(pipelineStage.isLost, false),
+        ...dealFilterConditions(filters)
+      )
+    )
+    .groupBy(monthExpr)
+    .orderBy(sql`${monthExpr} nulls last`);
+
+  return rows.map((row) => ({
+    ...row,
+    totalCents: Number(row.totalCents),
+    weightedCents: Number(row.weightedCents),
+  }));
+};
+
+export interface SlippedDealRow {
+  companyName: string | null;
+  daysOverdue: number;
+  expectedCloseDate: Date;
+  id: string;
+  leadId: string;
+  stageName: string;
+  title: string;
+  valueCents: number;
+}
+
+const SLIPPED_DEALS_LIMIT = 50;
+
+// Open deals whose expected close date has passed — forecast slippage.
+export const getSlippedDeals = async (
+  filters?: ReportFilters
+): Promise<SlippedDealRow[]> => {
+  const now = new Date();
+  const rows = await db
+    .select({
+      id: deal.id,
+      leadId: deal.leadId,
+      title: deal.title,
+      companyName: company.name,
+      stageName: pipelineStage.name,
+      valueCents: dealValueCents,
+      expectedCloseDate: deal.expectedCloseDate,
+    })
+    .from(deal)
+    .innerJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
+    .leftJoin(company, eq(deal.companyId, company.id))
+    .where(
+      and(
+        isNull(deal.deletedAt),
+        eq(pipelineStage.isWon, false),
+        eq(pipelineStage.isLost, false),
+        isNotNull(deal.expectedCloseDate),
+        lt(deal.expectedCloseDate, now),
+        ...dealFilterConditions(filters)
+      )
+    )
+    .orderBy(asc(deal.expectedCloseDate))
+    .limit(SLIPPED_DEALS_LIMIT);
+
+  const slipped: SlippedDealRow[] = [];
+  for (const row of rows) {
+    if (!row.expectedCloseDate) {
+      continue;
+    }
+    slipped.push({
+      ...row,
+      expectedCloseDate: row.expectedCloseDate,
+      valueCents: Number(row.valueCents),
+      daysOverdue: Math.floor(
+        (now.getTime() - row.expectedCloseDate.getTime()) / MS_PER_DAY
+      ),
+    });
+  }
+  return slipped;
+};
+
+// ---------------------------------------------------------------------------
+// Drill-down — the deals behind a report number (/reports/deals)
+// ---------------------------------------------------------------------------
+
+export interface ReportDealListRow {
+  closedAt: Date | null;
+  companyName: string | null;
+  createdAt: Date;
+  expectedCloseDate: Date | null;
+  id: string;
+  leadId: string;
+  ownerName: string | null;
+  stageName: string;
+  title: string;
+  valueCents: number;
+}
+
+export interface ReportDealsQuery {
+  filters: ReportFilters;
+  // Restrict to open (not Won / Lost) stages — the pipeline drill-down.
+  open?: boolean;
+  // Closed with this outcome inside the filter window — the win-rate drill-down.
+  outcome?: "lost" | "won";
+  stageId?: string;
+  subStatusId?: string;
+}
+
+const REPORT_DEALS_LIMIT = 200;
+
+export const getReportDeals = async (
+  query: ReportDealsQuery
+): Promise<ReportDealListRow[]> => {
+  const { filters } = query;
+  const conditions: SQL[] = [
+    isNull(deal.deletedAt),
+    ...dealFilterConditions(filters),
+  ];
+  if (query.stageId) {
+    conditions.push(eq(deal.stageId, query.stageId));
+  }
+  if (query.subStatusId) {
+    conditions.push(eq(deal.subStatusId, query.subStatusId));
+  }
+  if (query.open) {
+    conditions.push(
+      eq(pipelineStage.isWon, false),
+      eq(pipelineStage.isLost, false)
+    );
+  }
+  if (query.outcome) {
+    conditions.push(
+      eq(
+        query.outcome === "won" ? pipelineStage.isWon : pipelineStage.isLost,
+        true
+      ),
+      gte(deal.closedAt, filters.from)
+    );
+    if (filters.to) {
+      conditions.push(lt(deal.closedAt, filters.to));
+    }
+  }
+
+  const rows = await db
+    .select({
+      id: deal.id,
+      leadId: deal.leadId,
+      title: deal.title,
+      companyName: company.name,
+      stageName: pipelineStage.name,
+      ownerName: user.name,
+      valueCents: dealValueCents,
+      createdAt: deal.createdAt,
+      closedAt: deal.closedAt,
+      expectedCloseDate: deal.expectedCloseDate,
+    })
+    .from(deal)
+    .innerJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
+    .leftJoin(company, eq(deal.companyId, company.id))
+    .leftJoin(user, eq(deal.ownerId, user.id))
+    .where(and(...conditions))
+    .orderBy(desc(dealValueCents), asc(deal.title))
+    .limit(REPORT_DEALS_LIMIT);
+
+  return rows.map((row) => ({ ...row, valueCents: Number(row.valueCents) }));
 };
 
 // ---------------------------------------------------------------------------

@@ -13,6 +13,7 @@ This document is the shared working agreement for contributors and AI agents in 
 - **Current UI direction**: touch-friendly, mobile-first, shadcn/ui-based interfaces
 - **AI chat**: planned in product docs, not implemented in the current app code
 - **Deployment**: Cloudflare Workers (worker name `blu-crm`) via `@opennextjs/cloudflare` + `wrangler`;
+- **Scheduled work**: Cloudflare cron triggers (`wrangler.jsonc` `triggers.crons`) drive the notification sweeps. The OpenNext worker only exports `fetch`, so `worker-entry.mjs` exports `scheduled` and dispatches an in-memory authenticated request to `/api/cron/notifications` (never a network self-fetch: `global_fetch_strictly_public` is enabled).
 - **Photo storage**: Cloudflare R2 bucket `blu-crm-photos` bound as `PHOTO_BUCKET`; objects stay private and stream through `/api/attachments/[id]`. Local dev uses the simulated binding from `initOpenNextCloudflareForDev()` (persisted under `.wrangler/`)
 
 ---
@@ -202,6 +203,7 @@ Runtime variables the current code reads:
 - `BETTER_AUTH_URL` — canonical deployed URL; needed for callbacks/redirects.
 - `NEXT_PUBLIC_APP_URL` — `plain_text`; inlined into the client bundle (used by `src/lib/auth-client.ts` and QR code generation). Must be set at build time.
 - `ANTHROPIC_API_KEY` and/or `ZAI_API_KEY` — only required if photo search is enabled.
+- `CRON_SECRET` — bearer token guarding `/api/cron/notifications`. The Worker's `scheduled` handler (worker-entry.mjs) sends it when dispatching the notification sweeps declared in `wrangler.jsonc` `triggers.crons`; without it the route returns 503. Set via `wrangler secret put CRON_SECRET` in prod and in `.env.local`/`.dev.vars` for dev and E2E.
 
 ### Core Commands
 ```bash
@@ -244,9 +246,11 @@ Consequences (all confirmed the hard way):
 - Always verify a deploy against the live URL with a cache-busted fresh load, and confirm you are on the `0f665…` account (subdomain `kurt-0f6`). The Cloudflare MCP / `cloudflare-builds` tools may be pointed at the Free `6a435…` account, which is **not** the live site.
 - Until GitHub CI is repointed at the Paid account, treat `npm run deploy` (local, → `0f665…`) as the only path to production.
 
-### Known Runtime Issues (open)
+### Known Runtime Issues (open, mitigated)
 
-- **Cookieless `getSession` hangs on the Cloudflare (workerd) runtime.** Full-document renders that call `getSession()` — e.g. `/` and `/sign-in` — hang and are cancelled by the runtime (`waitUntil() tasks did not complete within the allowed time after invocation end and have been cancelled`), while logged-in RSC navigations succeed and static routes (e.g. `/enquire`) are fine. The same path returns in ~30 ms under `npm run dev` (Node), so it is **workerd-specific**, not a logic bug, and **not a plan limit** (it persists on the Paid worker). Impact: logged-out users, expired sessions, new devices, and new team members cannot load the sign-in page. Not yet root-caused — reproduce on a local Cloudflare build (`npm run preview`) and instrument the auth path (`src/lib/session.ts` → `src/lib/auth.ts`) to find the hanging call.
+- **Intermittent render stall on the Cloudflare (workerd) runtime.** Dynamic renders (full documents AND signed-in RSC navigations, any route) intermittently stall before the response starts: the request burns only ~20-100 ms CPU, no headers are ever sent, no error is thrown, and the invocation ends only when the client disconnects ("Canceled" outcome plus the `waitUntil() tasks did not complete...` warning). Identical requests seconds apart succeed, so it is per-request random, not cold-start, not auth, and not the database — instrumentation (2026-07-02) proved the cookieless path never touches Neon and still hung, while signed-in `/reports` and `/calendar` requests hung in the same incident (one for 38.7 minutes). Local `npm run preview` does NOT reproduce it; it is specific to the deployed runtime, consistent with mid-June 2026 workerd streaming changes (see workerd#6832, opennextjs-cloudflare#1282/#1287). This superseded an earlier incorrect theory that blamed cookieless `getSession`.
+  - **Mitigation (live):** `worker-entry.mjs` (wrangler `main`) wraps the OpenNext worker with a first-response watchdog: GET/HEAD requests that produce no Response within 12 s are retried once (unraced, so genuinely slow responses are never cut off). Each catch logs `[hang-watchdog]` to Workers observability.
+  - **Diagnosis instrumentation (live, temporary):** `[auth-debug]` timing marks in `src/lib/session.ts`, `src/lib/auth.ts`, `src/db/index.ts`, and the sign-in page localise exactly where a hung render stops. Query with Workers observability (`workers/observability/telemetry/query`, filter `$workers.outcome = canceled` or message contains `hang-watchdog`). Remove both once the upstream bug is fixed.
 
 ---
 

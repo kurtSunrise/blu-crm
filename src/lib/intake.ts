@@ -1,6 +1,13 @@
 import { and, eq, ilike, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { activity, company, contact, deal, pipelineStage } from "@/db/schema";
+import {
+  activity,
+  company,
+  contact,
+  deal,
+  dealStageEvent,
+  pipelineStage,
+} from "@/db/schema";
 import { PROJECT_TYPE_LABELS, type ProjectType } from "@/lib/labels";
 import { nextLeadId } from "@/lib/lead-id";
 
@@ -103,14 +110,14 @@ type NewDealValues = Omit<typeof deal.$inferInsert, "leadId">;
 // Lead IDs can race with concurrent intakes, so retry on collisions.
 const insertDealWithLeadId = async (
   values: NewDealValues
-): Promise<string | null> => {
+): Promise<{ createdAt: Date; id: string } | null> => {
   for (let attempt = 1; attempt <= LEAD_ID_INSERT_ATTEMPTS; attempt += 1) {
     try {
       const [created] = await db
         .insert(deal)
         .values({ ...values, leadId: await nextLeadId() })
-        .returning({ id: deal.id });
-      return created?.id ?? null;
+        .returning({ id: deal.id, createdAt: deal.createdAt });
+      return created ?? null;
     } catch (error) {
       const canRetry =
         isUniqueViolation(error) && attempt < LEAD_ID_INSERT_ATTEMPTS;
@@ -152,13 +159,28 @@ export const createLead = async (
   input: CreateLeadInput
 ): Promise<string | null> => {
   const [firstStage] = await db
-    .select({ id: pipelineStage.id })
+    .select({ id: pipelineStage.id, name: pipelineStage.name })
     .from(pipelineStage)
     .orderBy(pipelineStage.position)
     .limit(1);
 
   if (!firstStage) {
     throw new Error("Pipeline stages are not seeded. Run npm run db:seed.");
+  }
+
+  // Resolve the placement stage's name up front so the creation event below
+  // can snapshot it (the stage-event history is name-durable, id-soft).
+  let placementStage = firstStage;
+  if (input.stageId && input.stageId !== firstStage.id) {
+    const [explicitStage] = await db
+      .select({ id: pipelineStage.id, name: pipelineStage.name })
+      .from(pipelineStage)
+      .where(eq(pipelineStage.id, input.stageId))
+      .limit(1);
+    if (!explicitStage) {
+      throw new Error("Unknown pipeline stage for lead placement");
+    }
+    placementStage = explicitStage;
   }
 
   const companyId = input.companyName
@@ -183,11 +205,11 @@ export const createLead = async (
     input.title ??
     (projectTypeLabel ? `${namePart} - ${projectTypeLabel}` : namePart);
 
-  const dealId = await insertDealWithLeadId({
+  const created = await insertDealWithLeadId({
     title,
     estimatedValueCents: input.estimatedValueCents,
     estimatedValueMaxCents: input.estimatedValueMaxCents,
-    stageId: input.stageId ?? firstStage.id,
+    stageId: placementStage.id,
     ownerId: input.ownerId,
     companyId,
     contactId: contactId ?? undefined,
@@ -199,13 +221,28 @@ export const createLead = async (
     updatedBy: input.createdBy ?? input.ownerId,
   });
 
-  if (dealId && input.rawNote) {
+  if (!created) {
+    return null;
+  }
+
+  // Entering the pipeline is the first stage transition; stamping it with the
+  // deal's own createdAt keeps time-in-stage maths exact from day one.
+  await db.insert(dealStageEvent).values({
+    dealId: created.id,
+    toStageId: placementStage.id,
+    toStageName: placementStage.name,
+    source: "create",
+    changedBy: input.createdBy ?? input.ownerId,
+    changedAt: created.createdAt,
+  });
+
+  if (input.rawNote) {
     await db.insert(activity).values({
-      dealId,
+      dealId: created.id,
       type: "note",
       content: input.rawNote,
     });
   }
 
-  return dealId;
+  return created.id;
 };

@@ -113,6 +113,9 @@ test("an overdue follow-up raises an in-app notification (FR-11.1)", async ({
     .click();
 
   await page.getByLabel("Next action *").fill(overdueAction);
+  // The feed is per-user now, so the follow-up must belong to the suite's
+  // session user (Kurt) for the notification to appear in it.
+  await page.getByLabel("Owner *").selectOption({ label: "Kurt Weiss" });
   await page
     .getByLabel("Due *")
     .fill(awstInputDate(new Date(Date.now() - 2 * MS_PER_DAY)));

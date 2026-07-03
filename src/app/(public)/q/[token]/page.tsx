@@ -2,8 +2,9 @@ import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { BrandMark } from "@/components/brand-mark";
 import { db } from "@/db";
-import { activity, deal, notification, quote } from "@/db/schema";
+import { activity, deal, quote } from "@/db/schema";
 import { formatAudFromCents, formatDateAwst } from "@/lib/format";
+import { emitNotification } from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +30,9 @@ const markViewed = async (
   });
 
   if (ownerId) {
-    await db.insert(notification).values({
-      userId: ownerId,
+    await emitNotification({
       type: "quote_viewed",
+      recipientIds: [ownerId],
       payload: { dealId, dealTitle, quoteId, valueCents },
     });
   }

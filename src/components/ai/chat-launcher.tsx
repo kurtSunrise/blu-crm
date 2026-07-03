@@ -1,7 +1,14 @@
 "use client";
 
 import type { ThreadMessageLike } from "@assistant-ui/react";
-import { HistoryIcon, SparklesIcon, SquarePenIcon, XIcon } from "lucide-react";
+import {
+  HistoryIcon,
+  Settings2Icon,
+  SparklesIcon,
+  SquarePenIcon,
+  XIcon,
+} from "lucide-react";
+import Link from "next/link";
 import type * as React from "react";
 import { useState } from "react";
 import { useAiAssistant } from "@/components/ai/ai-context";
@@ -148,9 +155,12 @@ export function AiAssistantDock() {
     <aside
       aria-label="Blu assistant"
       className={cn(
-        "fixed inset-0 z-50 flex-col bg-background md:left-auto md:z-30 md:w-[400px] md:border-l",
-        open ? "flex" : "hidden"
+        "fixed inset-0 z-50 flex flex-col bg-background transition-transform duration-200 ease-out md:left-auto md:z-30 md:w-[400px] md:border-l",
+        open
+          ? "translate-x-0 translate-y-0"
+          : "translate-y-full md:translate-x-full md:translate-y-0"
       )}
+      inert={!open}
     >
       <header className="flex h-14 shrink-0 items-center justify-between border-b pr-2 pl-4">
         <div className="flex items-center gap-2">
@@ -178,6 +188,17 @@ export function AiAssistantDock() {
             variant="ghost"
           >
             <HistoryIcon aria-hidden className="size-4.5" />
+          </Button>
+          <Button
+            // Renders an <a>, so opt out of Base UI's native-button contract.
+            nativeButton={false}
+            render={
+              <Link aria-label="AI assistant settings" href="/settings/ai" />
+            }
+            size="icon"
+            variant="ghost"
+          >
+            <Settings2Icon aria-hidden className="size-4.5" />
           </Button>
           <Button
             aria-label="Close assistant"

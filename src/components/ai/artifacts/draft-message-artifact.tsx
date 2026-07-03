@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckIcon, CopyIcon, PencilIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, PencilIcon, PenLineIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -49,11 +49,14 @@ export function DraftMessageArtifact({ data }: { data: DraftMessageData }) {
   return (
     <section
       aria-label={data.title ?? KIND_LABELS[data.kind]}
-      className="my-2 rounded-lg border bg-muted/30 p-3"
+      className="my-2 rounded-xl border bg-card p-3 shadow-sm"
     >
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h3 className="font-medium text-sm">
+          <h3 className="flex items-center gap-1.5 font-medium text-sm">
+            <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted">
+              <PenLineIcon aria-hidden className="size-3" />
+            </span>
             {data.title ?? KIND_LABELS[data.kind]}
           </h3>
           <p className="text-muted-foreground text-xs">

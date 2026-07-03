@@ -8,15 +8,15 @@ import {
   activity,
   contact,
   deal,
+  dealStageEvent,
   dealSubStatus,
-  notification,
   pipelineStage,
-  user,
 } from "@/db/schema";
 import { dollarsToCents } from "@/lib/format";
 import { createLead } from "@/lib/intake";
 import { LOST_REASON_LABELS } from "@/lib/labels";
 import { updateDealFieldsCore } from "@/lib/mutations/deal";
+import { emitNotification, getHandoverRecipientIds } from "@/lib/notifications";
 import { getSessionUserId } from "@/lib/session";
 import {
   logActivitySchema,
@@ -110,8 +110,26 @@ export const createQuickAddDeal = async (
   redirect("/pipeline");
 };
 
-// Won handovers are routed to Kurt, who receives delivery (PRD US-10).
-const HANDOVER_RECIPIENT_EMAIL = "kurt@blu.builders";
+interface MoveTargetStage {
+  id: string;
+  isLost: boolean;
+  isWon: boolean;
+  name: string;
+}
+
+const stageMoveActivityContent = (
+  stage: MoveTargetStage,
+  lostReason: keyof typeof LOST_REASON_LABELS | undefined,
+  handoverToDelivery: boolean | undefined
+): string => {
+  if (stage.isLost && lostReason) {
+    return `Moved to ${stage.name} (reason: ${LOST_REASON_LABELS[lostReason]})`;
+  }
+  if (stage.isWon && handoverToDelivery) {
+    return `Moved to ${stage.name} (handover to delivery flagged)`;
+  }
+  return `Moved to ${stage.name}`;
+};
 
 export const moveDealStage = async (input: unknown): Promise<ActionState> => {
   const parsed = moveDealStageSchema.safeParse(input);
@@ -140,6 +158,34 @@ export const moveDealStage = async (input: unknown): Promise<ActionState> => {
     return { error: "A reason is required to mark a deal Lost / Dormant" };
   }
 
+  // The current stage (with its name) so the stage-event history records the
+  // transition's "from" side, and so a true no-op re-submit writes nothing.
+  const [previous] = await db
+    .select({
+      stageId: deal.stageId,
+      stageName: pipelineStage.name,
+      lostReason: deal.lostReason,
+      handoverToDelivery: deal.handoverToDelivery,
+    })
+    .from(deal)
+    .leftJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
+    .where(eq(deal.id, dealId))
+    .limit(1);
+
+  if (!previous) {
+    return { error: "Unknown deal" };
+  }
+
+  const isNoOpMove =
+    previous.stageId === stageId &&
+    (stage.isLost ? previous.lostReason === lostReason : true) &&
+    (stage.isWon
+      ? previous.handoverToDelivery === (handoverToDelivery ?? false)
+      : true);
+  if (isNoOpMove) {
+    return {};
+  }
+
   const [moved] = await db
     .update(deal)
     .set({
@@ -160,33 +206,47 @@ export const moveDealStage = async (input: unknown): Promise<ActionState> => {
     return { error: "Unknown deal" };
   }
 
-  let content = `Moved to ${stage.name}`;
-  if (stage.isLost && lostReason) {
-    content = `Moved to ${stage.name} (reason: ${LOST_REASON_LABELS[lostReason]})`;
-  } else if (stage.isWon && handoverToDelivery) {
-    content = `Moved to ${stage.name} (handover to delivery flagged)`;
+  const content = stageMoveActivityContent(
+    stage,
+    lostReason,
+    handoverToDelivery
+  );
+
+  const movedBy = await getSessionUserId();
+  const [stageChangeActivity] = await db
+    .insert(activity)
+    .values({
+      dealId,
+      type: "stage_change",
+      content,
+      createdBy: movedBy,
+    })
+    .returning({ id: activity.id });
+
+  // Same-stage edits (e.g. changing a lost reason) update the deal above but
+  // are not transitions, so only a genuine stage change lands in the history.
+  if (previous.stageId !== stageId) {
+    await db.insert(dealStageEvent).values({
+      dealId,
+      fromStageId: previous.stageId,
+      fromStageName: previous.stageName,
+      toStageId: stage.id,
+      toStageName: stage.name,
+      activityId: stageChangeActivity?.id,
+      source: "move",
+      changedBy: movedBy,
+    });
   }
 
-  await db.insert(activity).values({
-    dealId,
-    type: "stage_change",
-    content,
-    createdBy: await getSessionUserId(),
-  });
-
   if (stage.isWon && handoverToDelivery) {
-    const [recipient] = await db
-      .select({ id: user.id })
-      .from(user)
-      .where(eq(user.email, HANDOVER_RECIPIENT_EMAIL))
-      .limit(1);
-    if (recipient) {
-      await db.insert(notification).values({
-        userId: recipient.id,
-        type: "handover_to_delivery",
-        payload: { dealId, dealTitle: moved.title, leadId: moved.leadId },
-      });
-    }
+    // Won handovers route to the admin-configured recipients (PRD US-10).
+    // No actor suppression: the handover is a delivery work item, so the
+    // recipient must see it even when they closed the deal themselves.
+    await emitNotification({
+      type: "handover_to_delivery",
+      recipientIds: await getHandoverRecipientIds(),
+      payload: { dealId, dealTitle: moved.title, leadId: moved.leadId },
+    });
   }
 
   revalidatePath("/");

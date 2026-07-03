@@ -44,6 +44,7 @@ export interface AlertDeal {
   id: string;
   lastContactAt: Date | null;
   leadId: string;
+  ownerId: string | null;
   stageName: string;
   title: string;
 }
@@ -54,6 +55,7 @@ const openDealColumns = {
   title: deal.title,
   companyName: company.name,
   stageName: pipelineStage.name,
+  ownerId: deal.ownerId,
   lastContactAt: deal.lastContactAt,
   createdAt: deal.createdAt,
   fixedDate: deal.fixedDate,

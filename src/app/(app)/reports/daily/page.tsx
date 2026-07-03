@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { getEntryStyle } from "@/components/deal-timeline";
+import { ReportsNav } from "@/components/reports/reports-nav";
 import { buttonVariants } from "@/components/ui/button";
 import {
   addDays,
@@ -99,6 +100,7 @@ export default async function DailyReportPage({
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6 lg:max-w-5xl">
+      <ReportsNav active="/reports/daily" />
       <header className="flex flex-col gap-3">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="flex flex-col gap-0.5">

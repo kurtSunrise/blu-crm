@@ -1,7 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "blu-crm",
-  "main": ".open-next/worker.js",
+  // Watchdog wrapper around the OpenNext worker (see worker-entry.mjs): bounds
+  // the intermittent stalled-render platform bug by retrying hung GETs.
+  "main": "worker-entry.mjs",
   "compatibility_date": "2026-06-11",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
@@ -22,5 +24,12 @@
   ],
   "observability": {
     "enabled": true
+  },
+  "triggers": {
+    // Times are UTC; Perth is UTC+8 with no DST. Every 20 min: overdue
+    // follow-up sweep. Daily 23:00 UTC = 7:00 AWST: due-today and stale-deal
+    // nudges land before the workday. Dispatched by the scheduled handler in
+    // worker-entry.mjs to /api/cron/notifications.
+    "crons": ["*/20 * * * *", "0 23 * * *"]
   }
 }

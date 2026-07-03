@@ -6,12 +6,20 @@ import { session as sessionTable } from "@/db/schema";
 import { baseUrlFromHeaders, getAuth } from "@/lib/auth";
 
 export const getSession = async () => {
+  // Temporary sign-in hang diagnosis: timing marks around each await so the
+  // wrangler tail shows exactly where a hanging render stops progressing.
+  const startedAt = Date.now();
+  console.log("[auth-debug] getSession start");
   const requestHeaders = await headers();
-  const session = await getAuth(
-    baseUrlFromHeaders(requestHeaders)
-  ).api.getSession({
+  console.log(`[auth-debug] headers ok +${Date.now() - startedAt}ms`);
+  const auth = getAuth(baseUrlFromHeaders(requestHeaders));
+  console.log(`[auth-debug] instance ok +${Date.now() - startedAt}ms`);
+  const session = await auth.api.getSession({
     headers: requestHeaders,
   });
+  console.log(
+    `[auth-debug] api.getSession ok +${Date.now() - startedAt}ms session=${session ? "yes" : "null"}`
+  );
 
   // Defense in depth: if a session was issued before the user was disabled (or
   // disabled mid-session), revoke every session they hold and treat them as

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { queryRows } from "./test-db";
 
 // Matches EMAIL_INTAKE_TOKEN in .env.local (local dev value only).
 const LOCAL_INTAKE_TOKEN = "local-dev-intake-token";
@@ -32,14 +33,25 @@ test("web enquiry lands in the inbox tagged Web and can be assigned (US-03)", as
     0
   );
 
+  // The notification targets the assignee (Jess), so it must NOT appear in
+  // Kurt's now per-user feed; assert the row landed for her server-side.
+  await expect(async () => {
+    const rows = await queryRows<{ email: string }>(
+      `select u.email from "notification" n
+       join "user" u on u.id = n.user_id
+       where n.type = 'lead_assigned' and n.payload->>'dealTitle' like $1`,
+      [`%${companyName}%`]
+    );
+    expect(rows.map((row) => row.email)).toContain("jess@blu.builders");
+  }).toPass({ timeout: 15_000 });
+
   await page.goto("/notifications");
   await expect(
     page
       .locator("li")
       .filter({ hasText: "New lead assigned to you" })
       .filter({ hasText: companyName })
-      .first()
-  ).toBeVisible();
+  ).toHaveCount(0);
 });
 
 test("the enquiry honeypot swallows bot submissions silently", async ({

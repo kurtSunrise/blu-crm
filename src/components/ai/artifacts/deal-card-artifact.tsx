@@ -1,7 +1,13 @@
 "use client";
 
+import { ChevronDownIcon, HandshakeIcon } from "lucide-react";
 import Link from "next/link";
 import type { DealSummaryData } from "@/components/ai/artifacts/deal-list-artifact";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 export interface DealCardData extends DealSummaryData {
   activities: { content: string | null; date: string; type: string }[];
@@ -39,8 +45,14 @@ export function DealCardArtifact({ data }: { data: DealCardData }) {
   return (
     <section
       aria-label={`Deal ${data.leadId}`}
-      className="my-2 rounded-lg border bg-muted/30 p-3"
+      className="my-2 rounded-xl border bg-card p-3 shadow-sm"
     >
+      <div className="mb-2 flex items-center gap-1.5 text-muted-foreground text-xs uppercase tracking-wide">
+        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted">
+          <HandshakeIcon aria-hidden className="size-3" />
+        </span>
+        Deal
+      </div>
       <div className="flex items-start justify-between gap-2">
         <div>
           <Link
@@ -105,22 +117,73 @@ export function DealCardArtifact({ data }: { data: DealCardData }) {
           <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
             Recent activity
           </h4>
-          <ul className="mt-1 flex flex-col gap-1">
-            {data.activities.slice(0, RECENT_ACTIVITY_COUNT).map((entry) => (
-              <li
-                className="text-muted-foreground text-xs"
-                key={`${entry.type}-${entry.date}-${entry.content ?? ""}`}
-              >
-                <span className="font-medium text-foreground">
-                  {entry.type.replaceAll("_", " ")}
-                </span>{" "}
-                {entry.date}
-                {entry.content ? ` — ${entry.content}` : ""}
-              </li>
-            ))}
-          </ul>
+          <ActivityList activities={data.activities} />
         </div>
       ) : null}
     </section>
+  );
+}
+
+function ActivityItem({
+  entry,
+}: {
+  entry: DealCardData["activities"][number];
+}) {
+  return (
+    <li className="text-muted-foreground text-xs">
+      <span className="font-medium text-foreground">
+        {entry.type.replaceAll("_", " ")}
+      </span>{" "}
+      {entry.date}
+      {entry.content ? ` — ${entry.content}` : ""}
+    </li>
+  );
+}
+
+function ActivityList({
+  activities,
+}: {
+  activities: DealCardData["activities"];
+}) {
+  const visible = activities.slice(0, RECENT_ACTIVITY_COUNT);
+  const remaining = activities.slice(RECENT_ACTIVITY_COUNT);
+
+  return (
+    <Collapsible>
+      <ul className="mt-1 flex flex-col gap-1">
+        {visible.map((entry) => (
+          <ActivityItem
+            entry={entry}
+            key={`${entry.type}-${entry.date}-${entry.content ?? ""}`}
+          />
+        ))}
+      </ul>
+      {remaining.length > 0 ? (
+        <>
+          <CollapsibleContent>
+            <ul className="mt-1 flex flex-col gap-1">
+              {remaining.map((entry) => (
+                <ActivityItem
+                  entry={entry}
+                  key={`${entry.type}-${entry.date}-${entry.content ?? ""}`}
+                />
+              ))}
+            </ul>
+          </CollapsibleContent>
+          <CollapsibleTrigger className="group mt-1.5 flex items-center gap-1 text-blu text-xs hover:underline">
+            <span className="group-data-[panel-open]:hidden">
+              Show {remaining.length} more
+            </span>
+            <span className="hidden group-data-[panel-open]:inline">
+              Show less
+            </span>
+            <ChevronDownIcon
+              aria-hidden
+              className="size-3 transition-transform group-data-[panel-open]:rotate-180"
+            />
+          </CollapsibleTrigger>
+        </>
+      ) : null}
+    </Collapsible>
   );
 }

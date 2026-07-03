@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Bell,
   Building2,
   Cpu,
   type LucideIcon,
@@ -23,6 +24,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   { href: "/settings", label: "General", icon: Settings },
   { href: "/settings/statuses", label: "Deal statuses", icon: Tags },
   { href: "/settings/account", label: "Account", icon: User },
+  { href: "/settings/notifications", label: "Notifications", icon: Bell },
   { href: "/settings/company", label: "Company", icon: Building2 },
   { href: "/settings/team", label: "Team", icon: Users },
   { href: "/settings/ai", label: "AI Preferences", icon: Cpu },

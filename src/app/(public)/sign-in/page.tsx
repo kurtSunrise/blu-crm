@@ -11,7 +11,10 @@ export const metadata = {
 };
 
 export default async function SignInPage() {
+  // Temporary sign-in hang diagnosis (see [auth-debug] marks in session.ts).
+  console.log("[auth-debug] sign-in render start");
   const session = await getSession();
+  console.log("[auth-debug] sign-in render after getSession");
   if (session) {
     redirect("/");
   }

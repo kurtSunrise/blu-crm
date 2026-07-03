@@ -1,5 +1,6 @@
 "use client";
 
+import { ListIcon } from "lucide-react";
 import Link from "next/link";
 
 // Client mirror of the server's DealSummary serialization (formatted
@@ -70,13 +71,14 @@ export function DealListArtifact({ data }: { data: DealListData }) {
   return (
     <section
       aria-label={data.title ?? "Deals"}
-      className="my-2 rounded-lg border bg-muted/30 p-2"
+      className="my-2 rounded-xl border bg-card p-2 shadow-sm"
     >
-      {data.title ? (
-        <h3 className="px-1 pb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-          {data.title}
-        </h3>
-      ) : null}
+      <h3 className="flex items-center gap-1.5 px-1 pb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted">
+          <ListIcon aria-hidden className="size-3" />
+        </span>
+        {data.title ?? "Deals"}
+      </h3>
       <ul className="flex flex-col gap-1.5">
         {data.deals.map((deal) => (
           <DealRow deal={deal} key={deal.id} />

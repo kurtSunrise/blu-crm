@@ -1,11 +1,15 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
+  index,
   integer,
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 // ---------------------------------------------------------------------------
@@ -140,6 +144,13 @@ export const quoteStatus = pgEnum("quote_status", [
   "viewed",
   "accepted",
   "declined",
+]);
+
+export const stageEventSource = pgEnum("stage_event_source", [
+  "create",
+  "move",
+  "stage_delete",
+  "backfill",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -299,6 +310,43 @@ export const activity = pgTable("activity", {
     .defaultNow(),
 });
 
+// Structured history of every pipeline-stage transition, one row per move
+// including the initial placement at creation. Powers funnel conversion and
+// time-in-stage reporting, which the free-text stage_change activities cannot.
+// Stage ids are soft references (no FK) because deleteStage hard-deletes
+// pipeline_stage rows; the name snapshots are the durable record and the ids
+// resolve only while the stage still exists.
+export const dealStageEvent = pgTable(
+  "deal_stage_event",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    dealId: text("deal_id")
+      .notNull()
+      .references(() => deal.id),
+    fromStageId: text("from_stage_id"),
+    toStageId: text("to_stage_id"),
+    fromStageName: text("from_stage_name"),
+    toStageName: text("to_stage_name").notNull(),
+    // The stage_change activity row this event mirrors. Uniqueness keys the
+    // backfill script's ON CONFLICT so it can never duplicate a live write.
+    activityId: text("activity_id")
+      .references(() => activity.id)
+      .unique(),
+    source: stageEventSource("source").notNull(),
+    changedBy: text("changed_by").references(() => user.id),
+    changedAt: timestamp("changed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("deal_stage_event_deal_idx").on(table.dealId, table.changedAt),
+    index("deal_stage_event_changed_at_idx").on(table.changedAt),
+    index("deal_stage_event_to_stage_idx").on(table.toStageId),
+  ]
+);
+
 export const followUp = pgTable("follow_up", {
   id: text("id")
     .primaryKey()
@@ -372,20 +420,52 @@ export const appSetting = pgTable("app_setting", {
     .defaultNow(),
 });
 
-export const notification = pgTable("notification", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id),
-  type: text("type").notNull(),
-  payload: jsonb("payload"),
-  readAt: timestamp("read_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const notification = pgTable(
+  "notification",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    type: text("type").notNull(),
+    payload: jsonb("payload"),
+    // Insert-time idempotency for sweep-generated notifications
+    // ("{type}:{subjectId}:{recipientId}"). Null for one-shot events;
+    // Postgres allows unlimited nulls under the unique index.
+    dedupeKey: text("dedupe_key"),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("notification_user_created_idx").on(table.userId, table.createdAt),
+    // Partial index: the polled unread badge count is the hottest query.
+    index("notification_user_unread_idx")
+      .on(table.userId)
+      .where(sql`${table.readAt} is null`),
+    uniqueIndex("notification_dedupe_key_idx").on(table.dedupeKey),
+  ]
+);
+
+// Per-user event-type toggles. Absence of a row means enabled, so new event
+// types default on for everyone without a backfill.
+export const notificationPreference = pgTable(
+  "notification_preference",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    type: text("type").notNull(),
+    enabled: boolean("enabled").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.type] })]
+);
 
 // ---------------------------------------------------------------------------
 // AI assistant (M4 / FR-7) — persisted chat threads, replayable messages, and
@@ -545,11 +625,13 @@ export const schema = {
   company,
   contact,
   deal,
+  dealStageEvent,
   dealSubStatus,
   followUp,
   knowledgeChunk,
   knowledgeDoc,
   notification,
+  notificationPreference,
   pipelineStage,
   quote,
   session,

@@ -1,33 +1,53 @@
-import { CalendarDays, FileText } from "lucide-react";
 import Link from "next/link";
-import { formatAudFromCents, MS_PER_DAY } from "@/lib/format";
+import { ExportCsvLink } from "@/components/reports/export-csv-link";
+import { ReportFilters } from "@/components/reports/report-filters";
+import { ReportsNav } from "@/components/reports/reports-nav";
+import { formatAudFromCents } from "@/lib/format";
 import { subStatusClasses } from "@/lib/labels";
 import {
+  describeReportPeriod,
   getActivityVolume,
+  getReportOwners,
   getStageBreakdown,
   getSubStatusBreakdown,
   getWinRate,
+  parseReportFilters,
+  type ReportSearchParams,
+  reportFilterParams,
   summarisePipeline,
 } from "@/lib/reports";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-const PERIOD_OPTIONS = [7, 30, 90] as const;
-const DEFAULT_PERIOD_DAYS = 30;
-
-const parsePeriodDays = (value: string | undefined): number => {
-  const parsed = Number(value);
-  return PERIOD_OPTIONS.some((option) => option === parsed)
-    ? parsed
-    : DEFAULT_PERIOD_DAYS;
-};
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-1 rounded-lg border bg-card p-3">
+function StatCard({
+  href,
+  label,
+  value,
+}: {
+  href?: string;
+  label: string;
+  value: string;
+}) {
+  const body = (
+    <>
       <span className="font-semibold text-2xl">{value}</span>
       <span className="text-muted-foreground text-xs">{label}</span>
+    </>
+  );
+  if (href) {
+    return (
+      <Link
+        className="flex flex-col gap-1 rounded-lg border bg-card p-3 transition-colors hover:border-blu/50 hover:bg-accent"
+        href={href}
+      >
+        {body}
+      </Link>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1 rounded-lg border bg-card p-3">
+      {body}
     </div>
   );
 }
@@ -35,20 +55,29 @@ function StatCard({ label, value }: { label: string; value: string }) {
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ days?: string }>;
+  searchParams: Promise<ReportSearchParams>;
 }) {
-  const { days } = await searchParams;
-  const periodDays = parsePeriodDays(days);
-  const since = new Date(Date.now() - periodDays * MS_PER_DAY);
+  const filters = parseReportFilters(await searchParams);
+  const periodLabel = describeReportPeriod(filters);
+  const query = reportFilterParams(filters).toString();
 
-  // Independent report queries run in one parallel batch instead of three
+  const drillHref = (extra: Record<string, string>): string => {
+    const params = reportFilterParams(filters);
+    for (const [key, value] of Object.entries(extra)) {
+      params.set(key, value);
+    }
+    return `/reports/deals?${params.toString()}`;
+  };
+
+  // Independent report queries run in one parallel batch instead of
   // sequential Neon round-trips.
-  const [breakdown, winRate, activityVolume, subStatusBreakdown] =
+  const [breakdown, winRate, activityVolume, subStatusBreakdown, owners] =
     await Promise.all([
-      getStageBreakdown(),
-      getWinRate(since),
-      getActivityVolume(since),
-      getSubStatusBreakdown(),
+      getStageBreakdown(filters),
+      getWinRate(filters.from, filters),
+      getActivityVolume(filters.from, filters),
+      getSubStatusBreakdown(filters),
+      getReportOwners(),
     ]);
   const totals = summarisePipeline(breakdown);
 
@@ -71,35 +100,28 @@ export default async function ReportsPage({
           <h1 className="font-semibold text-2xl tracking-tight">Reports</h1>
           <p className="text-muted-foreground text-sm">
             Pipeline value, forecast, and win rate — the same numbers the weekly
-            report uses.
+            report uses. Tap any figure to see the deals behind it.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            className="flex min-h-11 items-center gap-2 rounded-md border px-4 font-medium text-sm transition-colors hover:bg-accent"
-            href="/reports/daily"
-          >
-            <CalendarDays aria-hidden className="size-4" />
-            Daily status
-          </Link>
-          <Link
-            className="flex min-h-11 items-center gap-2 rounded-md bg-blu px-4 font-medium text-sm text-white transition-opacity hover:opacity-90"
-            href="/reports/weekly"
-          >
-            <FileText aria-hidden className="size-4" />
-            Weekly report
-          </Link>
-        </div>
+        <ExportCsvLink query={query} report="pipeline" />
       </header>
+
+      <ReportsNav active="/reports" query={query} />
+      <ReportFilters owners={owners} />
 
       <section aria-label="Pipeline overview" className="flex flex-col gap-3">
         <h2 className="font-heading font-medium text-sm">Pipeline overview</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <StatCard
+            href={drillHref({ open: "1" })}
             label="Open pipeline"
             value={formatAudFromCents(totals.openTotalCents)}
           />
-          <StatCard label="Open deals" value={String(totals.openCount)} />
+          <StatCard
+            href={drillHref({ open: "1" })}
+            label="Open deals"
+            value={String(totals.openCount)}
+          />
           <StatCard
             label="Weighted forecast"
             value={formatAudFromCents(totals.weightedTotalCents)}
@@ -111,38 +133,40 @@ export default async function ReportsPage({
         </p>
         <ul className="flex flex-col gap-2">
           {openStages.map((stage) => (
-            <li
-              className="flex flex-col gap-1.5 rounded-lg border bg-card p-3"
-              key={stage.stageId}
-            >
-              <div className="flex items-baseline justify-between gap-3">
-                <p className="min-w-0 truncate font-medium text-sm">
-                  {stage.stageName}
-                  <span className="text-muted-foreground">
-                    {" "}
-                    · {stage.dealCount} deal{stage.dealCount === 1 ? "" : "s"}
-                  </span>
-                </p>
-                <p className="shrink-0 text-sm">
-                  {formatAudFromCents(stage.totalCents)}
-                  <span className="text-muted-foreground text-xs">
-                    {" "}
-                    · {formatAudFromCents(stage.weightedCents)} at{" "}
-                    {stage.weighting}%
-                  </span>
-                </p>
-              </div>
-              <div
-                aria-hidden
-                className="h-1.5 overflow-hidden rounded-full bg-accent"
+            <li key={stage.stageId}>
+              <Link
+                className="flex flex-col gap-1.5 rounded-lg border bg-card p-3 transition-colors hover:border-blu/50 hover:bg-accent"
+                href={drillHref({ stage: stage.stageId })}
               >
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="min-w-0 truncate font-medium text-sm">
+                    {stage.stageName}
+                    <span className="text-muted-foreground">
+                      {" "}
+                      · {stage.dealCount} deal{stage.dealCount === 1 ? "" : "s"}
+                    </span>
+                  </p>
+                  <p className="shrink-0 text-sm">
+                    {formatAudFromCents(stage.totalCents)}
+                    <span className="text-muted-foreground text-xs">
+                      {" "}
+                      · {formatAudFromCents(stage.weightedCents)} at{" "}
+                      {stage.weighting}%
+                    </span>
+                  </p>
+                </div>
                 <div
-                  className="h-full rounded-full bg-blu"
-                  style={{
-                    width: `${Math.round((stage.totalCents / maxStageCents) * 100)}%`,
-                  }}
-                />
-              </div>
+                  aria-hidden
+                  className="h-1.5 overflow-hidden rounded-full bg-accent"
+                >
+                  <div
+                    className="h-full rounded-full bg-blu"
+                    style={{
+                      width: `${Math.round((stage.totalCents / maxStageCents) * 100)}%`,
+                    }}
+                  />
+                </div>
+              </Link>
             </li>
           ))}
         </ul>
@@ -163,23 +187,25 @@ export default async function ReportsPage({
         {subStatusBreakdown.length > 0 ? (
           <ul className="flex flex-col gap-1">
             {subStatusBreakdown.map((row) => (
-              <li
-                className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 text-sm"
-                key={row.subStatusId}
-              >
-                <span className="flex min-w-0 items-center gap-2 truncate">
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "size-2 shrink-0 rounded-full",
-                      subStatusClasses(row.color).dot
-                    )}
-                  />
-                  <span className="truncate">{row.label}</span>
-                </span>
-                <span className="shrink-0 text-muted-foreground">
-                  {row.dealCount} · {formatAudFromCents(row.totalCents)}
-                </span>
+              <li key={row.subStatusId}>
+                <Link
+                  className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 text-sm transition-colors hover:border-blu/50 hover:bg-accent"
+                  href={drillHref({ subStatus: row.subStatusId })}
+                >
+                  <span className="flex min-w-0 items-center gap-2 truncate">
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "size-2 shrink-0 rounded-full",
+                        subStatusClasses(row.color).dot
+                      )}
+                    />
+                    <span className="truncate">{row.label}</span>
+                  </span>
+                  <span className="shrink-0 text-muted-foreground">
+                    {row.dealCount} · {formatAudFromCents(row.totalCents)}
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>
@@ -190,27 +216,10 @@ export default async function ReportsPage({
         )}
       </section>
 
-      <nav aria-label="Win rate period" className="flex flex-wrap gap-2">
-        {PERIOD_OPTIONS.map((option) => (
-          <Link
-            className={cn(
-              "flex min-h-9 items-center rounded-full border px-4 text-sm",
-              option === periodDays
-                ? "border-blu text-blu"
-                : "text-muted-foreground"
-            )}
-            href={`/reports?days=${option}`}
-            key={option}
-          >
-            Last {option} days
-          </Link>
-        ))}
-      </nav>
-
       <div className="flex flex-col gap-6 lg:grid lg:grid-cols-2 lg:items-start lg:gap-10">
         <section aria-label="Win rate" className="flex flex-col gap-3">
           <h2 className="font-heading font-medium text-sm">
-            Win rate — last {periodDays} days
+            Win rate — {periodLabel}
           </h2>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-2">
             <StatCard
@@ -222,11 +231,17 @@ export default async function ReportsPage({
               }
             />
             <StatCard
+              href={drillHref({ outcome: "won" })}
               label="Won value"
               value={formatAudFromCents(winRate.wonValueCents)}
             />
-            <StatCard label="Won" value={String(winRate.wonCount)} />
             <StatCard
+              href={drillHref({ outcome: "won" })}
+              label="Won"
+              value={String(winRate.wonCount)}
+            />
+            <StatCard
+              href={drillHref({ outcome: "lost" })}
               label="Lost / dormant"
               value={String(winRate.lostCount)}
             />
@@ -252,7 +267,7 @@ export default async function ReportsPage({
 
         <section aria-label="Activity volume" className="flex flex-col gap-3">
           <h2 className="font-heading font-medium text-sm">
-            Activity — last {periodDays} days
+            Activity — {periodLabel}
           </h2>
           {activityVolume.length === 0 ? (
             <p className="text-muted-foreground text-sm">

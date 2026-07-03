@@ -4,7 +4,8 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { activity, deal, notification, user } from "@/db/schema";
+import { activity, deal, user } from "@/db/schema";
+import { emitNotification } from "@/lib/notifications";
 import { getSessionUserId } from "@/lib/session";
 
 export interface InboxActionState {
@@ -55,17 +56,19 @@ export const assignDealOwner = async (
     return { error: "Unknown deal" };
   }
 
+  const assignedBy = await getSessionUserId();
   await db.insert(activity).values({
     dealId,
     type: "note",
     content: `Lead assigned to ${assignee.name}`,
-    createdBy: await getSessionUserId(),
+    createdBy: assignedBy,
   });
 
-  // New-lead-assigned notification (FR-11.1).
-  await db.insert(notification).values({
-    userId: ownerId,
+  // New-lead-assigned notification (FR-11.1). Self-assignments are skipped.
+  await emitNotification({
     type: "lead_assigned",
+    recipientIds: [ownerId],
+    actorId: assignedBy,
     payload: { dealId, dealTitle: assigned.title, leadId: assigned.leadId },
   });
 

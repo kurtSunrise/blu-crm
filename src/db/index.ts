@@ -101,6 +101,10 @@ let cachedDb: Database | undefined;
 // without database credentials.
 export const db = new Proxy({} as Database, {
   get(_target, prop) {
+    if (!cachedDb) {
+      // Temporary sign-in hang diagnosis: marks the isolate's first DB use.
+      console.log("[auth-debug] createDb (first db use in this isolate)");
+    }
     cachedDb ??= createDb();
     const value = Reflect.get(cachedDb, prop, cachedDb);
     return typeof value === "function" ? value.bind(cachedDb) : value;

@@ -105,6 +105,9 @@ const authByBaseUrl = new Map<string, ReturnType<typeof buildAuth>>();
 export const getAuth = (baseURL?: string): ReturnType<typeof buildAuth> => {
   const key = baseURL ?? "";
   const existing = authByBaseUrl.get(key);
+  // Temporary sign-in hang diagnosis: hit/miss tells us whether hanging
+  // requests correlate with a warm isolate reusing a cached instance.
+  console.log(`[auth-debug] getAuth ${existing ? "cache-hit" : "cache-miss"}`);
   if (existing) {
     return existing;
   }

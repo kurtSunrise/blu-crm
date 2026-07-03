@@ -4,6 +4,7 @@ import { asc, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { deal, pipelineStage } from "@/db/schema";
+import { getSessionUserId } from "@/lib/session";
 import { stageNameSchema } from "@/lib/validation/settings";
 
 // Customisable pipeline stages (FR-1.3): rename, reorder, add, remove.
@@ -185,6 +186,19 @@ const deleteStage = async (formData: FormData): Promise<StageActionState> => {
       // Removing a stage requires reassigning its deals (FR-1.3 AC).
       return { error: "Choose a stage to move this stage's deals to." };
     }
+    // Record the forced transition for every affected deal in one round trip
+    // before the bulk move wipes their stage_id. The deleted stage survives in
+    // history only through the from_stage_name snapshot.
+    const changedBy = await getSessionUserId();
+    await db.execute(sql`
+      insert into deal_stage_event
+        (id, deal_id, from_stage_id, from_stage_name,
+         to_stage_id, to_stage_name, source, changed_by)
+      select gen_random_uuid(), d.id, d.stage_id, ${stage.name},
+        ${destination.id}, ${destination.name}, 'stage_delete', ${changedBy}
+      from deal d
+      where d.stage_id = ${stageId}
+    `);
     await db
       .update(deal)
       .set({ stageId: destination.id, updatedAt: new Date() })

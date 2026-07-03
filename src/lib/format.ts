@@ -27,6 +27,17 @@ const AWST_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-AU", {
 export const formatAudFromCents = (cents: number): string =>
   AUD_FORMATTER.format(cents / CENTS_PER_DOLLAR);
 
+const AUD_COMPACT_FORMATTER = new Intl.NumberFormat("en-AU", {
+  style: "currency",
+  currency: "AUD",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+// "$12K" / "$1.2M" — for chart axis ticks where full figures won't fit.
+export const formatAudCompactFromCents = (cents: number): string =>
+  AUD_COMPACT_FORMATTER.format(cents / CENTS_PER_DOLLAR);
+
 export const dollarsToCents = (dollars: number): number =>
   Math.round(dollars * CENTS_PER_DOLLAR);
 

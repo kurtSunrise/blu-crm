@@ -26,6 +26,11 @@ import {
   AiLauncherButton,
 } from "@/components/ai/chat-launcher";
 import { BrandMark } from "@/components/brand-mark";
+import {
+  NotificationBadge,
+  unreadAriaLabel,
+  useUnreadNotificationCount,
+} from "@/components/notification-bell";
 import { SidebarUserMenu } from "@/components/sidebar-user-menu";
 import {
   Tooltip,
@@ -73,16 +78,24 @@ function SidebarLink({
   item,
   active,
   collapsed,
+  badgeCount = 0,
 }: {
   item: { href: string; label: string; icon: typeof Home };
   active: boolean;
   collapsed: boolean;
+  badgeCount?: number;
 }) {
   const Icon = item.icon;
+  // Collapsed links always need a label; expanded ones only when the unread
+  // count is not visible as text.
+  const ariaLabel =
+    collapsed || badgeCount > 0
+      ? unreadAriaLabel(item.label, badgeCount)
+      : undefined;
   const link = (
     <Link
       aria-current={active ? "page" : undefined}
-      aria-label={collapsed ? item.label : undefined}
+      aria-label={ariaLabel}
       className={cn(
         "flex min-h-10 items-center gap-3 rounded-md px-3 text-sm transition-colors",
         collapsed && "justify-center px-0",
@@ -92,7 +105,10 @@ function SidebarLink({
       )}
       href={item.href}
     >
-      <Icon aria-hidden className="size-4.5" />
+      <span className="relative">
+        <Icon aria-hidden className="size-4.5" />
+        <NotificationBadge count={badgeCount} />
+      </span>
       {collapsed ? null : item.label}
     </Link>
   );
@@ -152,6 +168,8 @@ function AppShellInner({
   const pathname = usePathname();
   const { open: assistantOpen } = useAiAssistant();
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  // One poller serves both the desktop sidebar and the mobile header badge.
+  const unreadCount = useUnreadNotificationCount(pathname);
 
   const toggleSidebar = useCallback(() => {
     const next = !collapsed;
@@ -245,6 +263,7 @@ function AppShellInner({
             {SECONDARY_NAV.map((item) => (
               <SidebarLink
                 active={isActivePath(pathname, item.href)}
+                badgeCount={item.href === "/notifications" ? unreadCount : 0}
                 collapsed={collapsed}
                 item={item}
                 key={item.href}
@@ -272,17 +291,22 @@ function AppShellInner({
               <AiLauncherButton />
               {SECONDARY_NAV.map((item) => {
                 const Icon = item.icon;
+                const badgeCount =
+                  item.href === "/notifications" ? unreadCount : 0;
                 return (
                   <Link
                     aria-current={
                       isActivePath(pathname, item.href) ? "page" : undefined
                     }
-                    aria-label={item.label}
+                    aria-label={unreadAriaLabel(item.label, badgeCount)}
                     className="flex min-h-11 min-w-11 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
                     href={item.href}
                     key={item.href}
                   >
-                    <Icon aria-hidden className="size-5" />
+                    <span className="relative">
+                      <Icon aria-hidden className="size-5" />
+                      <NotificationBadge count={badgeCount} />
+                    </span>
                   </Link>
                 );
               })}

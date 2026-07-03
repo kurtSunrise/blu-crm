@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CopyReportButton } from "@/components/copy-report-button";
+import { ReportsNav } from "@/components/reports/reports-nav";
 import { Badge } from "@/components/ui/badge";
 import type { AlertDeal } from "@/lib/alerts";
 import { formatAudFromCents, formatDateAwst } from "@/lib/format";
@@ -130,6 +131,8 @@ export default async function WeeklyReportPage() {
         </div>
         <CopyReportButton text={reportText} />
       </header>
+
+      <ReportsNav active="/reports/weekly" />
 
       <ReportSection number={1} title="Summary">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">

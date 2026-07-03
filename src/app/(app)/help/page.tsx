@@ -410,10 +410,14 @@ const SECTIONS: HelpSection[] = [
     title: "Notifications",
     body: (
       <p className={PARA_CLASSES}>
-        The bell collects everything that needs eyes: new leads assigned to you,
-        overdue follow-ups, quote-viewed alerts, and Won handovers. Unread items
-        are highlighted; "Mark all read" clears the lot. Most notifications link
-        straight to the deal they are about.
+        The bell shows your unread count and collects everything that needs your
+        eyes: new leads assigned to you, follow-ups due today or overdue, quiet
+        deals needing attention, quote-viewed alerts, and Won handovers. The
+        feed is yours alone; teammates each have their own. Tap a notification
+        to jump to its deal (it marks itself read), tick the button on a card to
+        flip read state, or "Mark all read" to clear your lot. Choose which
+        types you receive under Settings then Notifications; admins also pick
+        who receives Won handovers there.
       </p>
     ),
   },
@@ -425,17 +429,30 @@ const SECTIONS: HelpSection[] = [
         <p className={PARA_CLASSES}>
           The dashboard is the morning glance: the open pipeline total, deal
           count, and what needs attention today. Reports is the sit-down view
-          with the same numbers the weekly Monday report uses.
+          with the same numbers the weekly Monday report uses, split into four
+          views — <strong>Overview</strong>, <strong>Trends</strong>,{" "}
+          <strong>Weekly</strong>, and <strong>Daily</strong> — switched with
+          the pills at the top.
         </p>
         <ol className={STEP_CLASSES}>
+          <li>
+            <strong>Filters</strong> sit above every report: pick a period (last
+            7, 30, or 90 days, or your own from / to dates) and narrow to one
+            owner or lead source. Filters follow you between the report views.
+          </li>
+          <li>
+            <strong>Tap any figure to drill down.</strong> The stat cards, stage
+            bars, and on-hold rows on the Overview all open a list of the exact
+            deals behind that number; tap a deal to open it.
+          </li>
           <li>
             <strong>Pipeline overview</strong> shows the open total and the
             weighted forecast, which scales each stage's value by its win
             likelihood (weightings are set in Settings).
           </li>
           <li>
-            <strong>Win rate</strong> covers a chosen period: won value, won and
-            lost counts, and the lost reasons so you can see why work slips
+            <strong>Win rate</strong> covers the chosen period: won value, won
+            and lost counts, and the lost reasons so you can see why work slips
             away.
           </li>
           <li>
@@ -443,13 +460,25 @@ const SECTIONS: HelpSection[] = [
             flagged and the total value held up, so stuck work stays visible.
           </li>
           <li>
-            <strong>Copy report</strong> puts the whole thing on the clipboard
-            as plain text, ready to paste into an email or WhatsApp.
+            <strong>Trends</strong> charts new pipeline against won value week
+            by week, shows the weighted forecast by expected close month, and
+            lists <strong>slipped deals</strong> — open deals past their
+            expected close date that need re-dating or a decision. Hover or tap
+            a chart point for the exact figures, or open "View as table".
           </li>
           <li>
-            <strong>Daily status</strong> (linked from the Reports header) shows
-            everything that happened on each deal on a given day, with
-            day-by-day navigation.
+            <strong>Export CSV</strong> (on the Overview, Trends, and drill-down
+            pages) downloads the numbers on screen — with your current filters
+            applied — for a spreadsheet.
+          </li>
+          <li>
+            <strong>Weekly</strong> is the seven-section Monday report;{" "}
+            <strong>Copy report</strong> puts it on the clipboard as plain text,
+            ready to paste into an email or WhatsApp.
+          </li>
+          <li>
+            <strong>Daily</strong> shows everything that happened on each deal
+            on a given day, with day-by-day navigation.
           </li>
         </ol>
       </>
@@ -487,9 +516,11 @@ const SECTIONS: HelpSection[] = [
             Settings, AI Preferences.
           </li>
           <li>
-            <strong>Files and photos</strong>: attach an image or PDF to the
-            chat with the paperclip, and ask about photos or files already on a
-            deal; the assistant can read them and the deal's notes for context.
+            <strong>Files and photos</strong>: attach an image or PDF with the
+            paperclip, or drag a file straight onto the chat, and ask about
+            photos or files already on a deal; the assistant can read them and
+            the deal's notes for context. Tap a photo you've sent to see it full
+            size.
           </li>
           <li>
             <strong>Confirmation gating</strong>: any change (new lead, stage
@@ -500,7 +531,8 @@ const SECTIONS: HelpSection[] = [
           <li>
             <strong>History</strong>: the clock button lists your recent
             conversations; pick one to resume it. The pencil button starts a
-            fresh conversation.
+            fresh conversation, and the gear button jumps straight to AI
+            Preferences.
           </li>
         </ol>
         <p className={PARA_CLASSES}>
@@ -697,6 +729,10 @@ const GLOSSARY = [
     "Open pipeline value with each stage scaled by its win likelihood; weightings are set in Settings, General.",
   ],
   [
+    "Slipped deal",
+    "An open deal whose expected close date has passed; listed on the Trends report so it gets re-dated or decided.",
+  ],
+  [
     "Role",
     "Sales or Admin. Admins also manage team members and shared settings.",
   ],
@@ -704,8 +740,20 @@ const GLOSSARY = [
 
 const WHATS_NEW = [
   {
+    date: "03/07/2026",
+    items: [
+      "A refreshed assistant chat: clearer sense of when it's thinking versus replying, smoother open and close, and a settings shortcut in the header.",
+      "Drag a photo or PDF straight onto the assistant chat instead of using the paperclip, with an upload indicator while it sends; tap a sent photo to see it full size.",
+      "Deal cards, deal lists, and drafts in the assistant now have their own icon so you can tell them apart at a glance, and long activity lists have a Show more link.",
+    ],
+  },
+  {
     date: "02/07/2026",
     items: [
+      "Reports grew up: filter every report by period (including a custom date range), owner, and lead source, and tap any figure, stage bar, or on-hold row to see the exact deals behind it.",
+      "New Trends report: new pipeline vs won value charted week by week, the weighted forecast by expected close month, and a slipped-deals list of open deals past their expected close date.",
+      "Export CSV from the reports (Overview, Trends, and any drill-down list) with your current filters applied.",
+      "Every pipeline stage move is now recorded as structured history, powering upcoming funnel and time-in-stage reporting.",
       "Deal updates now show straight away, with no page refresh: add a note, photo, follow-up, or quote, or change the stage or status, and the timeline and lists update in place.",
       "Every deal action now confirms with a brief on-screen message, and tells you if a save failed instead of leaving you guessing.",
       "Admins can choose which Claude model the assistant runs on under Settings, AI Preferences.",

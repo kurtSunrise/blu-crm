@@ -83,7 +83,9 @@
   --success: #00582a;
   --success-foreground: #f3fbf5;
   --chart-1: #0074c9;
-  --chart-2: #00ab60;
+  /* Darkened from #00ab60 to keep >= 3:1 mark contrast on --card (#fdfdfe);
+     validated with chart-1 for CVD separation (dataviz palette checks). */
+  --chart-2: #00975a;
   --chart-3: #e49e22;
   --chart-4: #e40014;
   --chart-5: #5e646c;
@@ -128,7 +130,9 @@
   --success: #2bbb71;
   --success-foreground: #06090f;
   --chart-1: #0082e5;
-  --chart-2: #2bbb71;
+  /* Darkened from #2bbb71 into the dark-mode mark lightness band; validated
+     with chart-1 for CVD separation (dataviz palette checks). */
+  --chart-2: #21a865;
   --chart-3: #f2af48;
   --chart-4: #ff6568;
   --chart-5: #82868e;

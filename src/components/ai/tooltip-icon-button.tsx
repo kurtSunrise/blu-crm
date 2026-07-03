@@ -26,11 +26,12 @@ export function TooltipIconButton({
     <Tooltip>
       <TooltipTrigger
         render={
+          // No explicit type: Base UI's useButton already defaults native
+          // buttons to type="button", and the render prop may swap in an <a>.
           <Button
             aria-label={tooltip}
             className={cn("size-9 rounded-full", className)}
             size="icon"
-            type="button"
             variant="ghost"
             {...props}
           />

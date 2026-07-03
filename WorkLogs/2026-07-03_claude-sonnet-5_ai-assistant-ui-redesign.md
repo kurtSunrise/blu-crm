@@ -53,6 +53,11 @@ Follow-on request: show the context chip in the history list too, plus search to
 - `src/app/api/chat/threads/route.ts` — passes `?q=` through.
 - `src/components/ai/thread-history.tsx` — search input (debounced 250ms, sr-only label, `type="search"`), context chip per row (mirrors the composer chip), and a distinct "No conversations match that search" empty state.
 
+## Addendum 3: Header tooltips + history hover previews (same session)
+
+- Dock header icons (New conversation / History / Settings / Close) now use `TooltipIconButton`; the hardcoded `type="button"` was removed from that helper (Base UI's `useButton` already defaults native buttons to it, and the settings button renders an `<a>` where the attribute would be invalid).
+- History rows got a pipeline-card-style hover tooltip: "Opened with" (first user message), "Latest" (most recent message, suppressed when it duplicates the first), and message count. Fed by `previewsForThreads` in `threads.ts` — three parallel indexed queries (two `DISTINCT ON`, one grouped count) over the listed page's thread ids, reusing `displayTextFromContent` so page-context/tool blocks stay out of snippets, truncated to 140 chars server-side. Parallel on purpose per the deal-page-503 lesson.
+
 ## Next Steps
 
 - User (or a future session with browser access) should run the manual checklist from the plan: open/close the panel, send a message and watch it stream, trigger a confirmation card (both Confirm and Cancel), attach a file both via the button and via drag-and-drop, resume a thread from history, and check all of the above at a mobile viewport width.

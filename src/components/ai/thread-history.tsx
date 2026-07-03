@@ -10,6 +10,11 @@ import { useEffect, useId, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { formatRelativeDayAwst } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +23,11 @@ export interface ThreadListEntry {
   id: string;
   lastMessageAt: string | null;
   originPage: string | null;
+  preview: {
+    firstMessage: string | null;
+    lastMessage: string | null;
+    messageCount: number;
+  };
   status: "idle" | "awaiting_confirmation";
   title: string | null;
 }
@@ -37,6 +47,81 @@ function ContextChip({
       <Icon aria-hidden className="size-3 shrink-0 text-blu" />
       <span className="truncate">{context.label}</span>
     </span>
+  );
+}
+
+// A history row with a hover preview (same pattern as the pipeline card
+// tooltip): how the conversation opened, its latest exchange, and its size.
+function ThreadRow({
+  active,
+  onSelect,
+  thread,
+}: {
+  active: boolean;
+  onSelect: (threadId: string) => void;
+  thread: ThreadListEntry;
+}) {
+  const row = (
+    <button
+      className={cn(
+        "flex min-h-11 w-full flex-col gap-1 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent/50",
+        active && "bg-accent"
+      )}
+      onClick={() => onSelect(thread.id)}
+      type="button"
+    >
+      <span className="line-clamp-1 font-medium text-sm">
+        {thread.title ?? "New conversation"}
+      </span>
+      {thread.context ? <ContextChip context={thread.context} /> : null}
+      <span className="flex items-center gap-2 text-muted-foreground text-xs">
+        {thread.lastMessageAt
+          ? formatRelativeDayAwst(new Date(thread.lastMessageAt))
+          : "No messages"}
+        {thread.status === "awaiting_confirmation" ? (
+          <Badge variant="secondary">Awaiting confirmation</Badge>
+        ) : null}
+      </span>
+    </button>
+  );
+
+  const tooltipRows: { label: string; value: string }[] = [];
+  if (thread.preview.firstMessage) {
+    tooltipRows.push({
+      label: "Opened with",
+      value: thread.preview.firstMessage,
+    });
+  }
+  if (
+    thread.preview.lastMessage &&
+    thread.preview.lastMessage !== thread.preview.firstMessage
+  ) {
+    tooltipRows.push({ label: "Latest", value: thread.preview.lastMessage });
+  }
+  if (thread.preview.messageCount > 0) {
+    tooltipRows.push({
+      label: "Messages",
+      value: String(thread.preview.messageCount),
+    });
+  }
+  if (tooltipRows.length === 0) {
+    return row;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger render={row} />
+      <TooltipContent align="start" className="max-w-xs" side="left">
+        <dl className="flex flex-col gap-1.5 text-left">
+          {tooltipRows.map((entry) => (
+            <div key={entry.label}>
+              <dt className="font-medium">{entry.label}</dt>
+              <dd className="text-background/70">{entry.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -147,29 +232,11 @@ export function ThreadHistory({
           <ul className="flex flex-col gap-1 p-3">
             {threads.map((thread) => (
               <li key={thread.id}>
-                <button
-                  className={cn(
-                    "flex min-h-11 w-full flex-col gap-1 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent/50",
-                    thread.id === activeThreadId && "bg-accent"
-                  )}
-                  onClick={() => onSelect(thread.id)}
-                  type="button"
-                >
-                  <span className="line-clamp-1 font-medium text-sm">
-                    {thread.title ?? "New conversation"}
-                  </span>
-                  {thread.context ? (
-                    <ContextChip context={thread.context} />
-                  ) : null}
-                  <span className="flex items-center gap-2 text-muted-foreground text-xs">
-                    {thread.lastMessageAt
-                      ? formatRelativeDayAwst(new Date(thread.lastMessageAt))
-                      : "No messages"}
-                    {thread.status === "awaiting_confirmation" ? (
-                      <Badge variant="secondary">Awaiting confirmation</Badge>
-                    ) : null}
-                  </span>
-                </button>
+                <ThreadRow
+                  active={thread.id === activeThreadId}
+                  onSelect={onSelect}
+                  thread={thread}
+                />
               </li>
             ))}
           </ul>

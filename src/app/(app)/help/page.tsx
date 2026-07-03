@@ -748,6 +748,7 @@ const WHATS_NEW = [
       "A refreshed assistant chat: clearer sense of when it's thinking versus replying, smoother open and close, and a settings shortcut in the header.",
       "On a deal or contact page, the assistant now shows a chip above the message box naming the record it's drawing on.",
       "Assistant history now shows which deal or contact each conversation was about, and a search box finds older chats by title, deal, or contact name.",
+      "Hover a conversation in assistant history for a preview of how it opened and its latest exchange, like the pipeline card preview; the panel's header buttons also explain themselves on hover.",
       "Drag a photo or PDF straight onto the assistant chat instead of using the paperclip, with an upload indicator while it sends; tap a sent photo to see it full size.",
       "Deal cards, deal lists, and drafts in the assistant now have their own icon so you can tell them apart at a glance, and long activity lists have a Show more link.",
     ],

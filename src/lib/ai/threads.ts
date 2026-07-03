@@ -1,4 +1,15 @@
-import { and, asc, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import { db } from "@/db";
 import { chatMessage, chatThread, contact, deal } from "@/db/schema";
 import type * as Anthropic from "@/lib/ai/anthropic";
@@ -114,11 +125,21 @@ export interface ThreadContext {
   label: string;
 }
 
+// Hover-preview material for a history row (the assistant's equivalent of
+// the pipeline card tooltip): how the conversation opened, the latest
+// exchange, and its size.
+export interface ThreadPreview {
+  firstMessage: string | null;
+  lastMessage: string | null;
+  messageCount: number;
+}
+
 export interface ThreadListItem {
   context: ThreadContext | null;
   id: string;
   lastMessageAt: Date | null;
   originPage: string | null;
+  preview: ThreadPreview;
   status: "idle" | "awaiting_confirmation";
   title: string | null;
 }
@@ -128,6 +149,87 @@ const LIKE_SPECIALS = /[%_\\]/g;
 
 const likePattern = (query: string): string =>
   `%${query.replaceAll(LIKE_SPECIALS, "\\$&")}%`;
+
+const PREVIEW_MAX_CHARS = 140;
+
+const previewSnippet = (content: unknown): string | null => {
+  const text = displayTextFromContent(content).trim();
+  if (!text) {
+    return null;
+  }
+  return text.length > PREVIEW_MAX_CHARS
+    ? `${text.slice(0, PREVIEW_MAX_CHARS)}…`
+    : text;
+};
+
+// One preview per thread in three small indexed queries (DISTINCT ON for
+// the first user turn and the latest turn, plus counts), run in parallel —
+// per-thread queries or sequential awaits are what caused the deal-page 503s
+// on workerd.
+const previewsForThreads = async (
+  threadIds: string[]
+): Promise<Map<string, ThreadPreview>> => {
+  if (threadIds.length === 0) {
+    return new Map();
+  }
+
+  const [firstUserRows, lastRows, countRows] = await Promise.all([
+    db
+      .selectDistinctOn([chatMessage.threadId], {
+        content: chatMessage.content,
+        threadId: chatMessage.threadId,
+      })
+      .from(chatMessage)
+      .where(
+        and(
+          inArray(chatMessage.threadId, threadIds),
+          eq(chatMessage.role, "user")
+        )
+      )
+      .orderBy(chatMessage.threadId, asc(chatMessage.createdAt)),
+    db
+      .selectDistinctOn([chatMessage.threadId], {
+        content: chatMessage.content,
+        threadId: chatMessage.threadId,
+      })
+      .from(chatMessage)
+      .where(inArray(chatMessage.threadId, threadIds))
+      .orderBy(chatMessage.threadId, desc(chatMessage.createdAt)),
+    db
+      .select({ messageCount: count(), threadId: chatMessage.threadId })
+      .from(chatMessage)
+      .where(inArray(chatMessage.threadId, threadIds))
+      .groupBy(chatMessage.threadId),
+  ]);
+
+  const previews = new Map<string, ThreadPreview>();
+  for (const id of threadIds) {
+    previews.set(id, {
+      firstMessage: null,
+      lastMessage: null,
+      messageCount: 0,
+    });
+  }
+  for (const row of firstUserRows) {
+    const preview = previews.get(row.threadId);
+    if (preview) {
+      preview.firstMessage = previewSnippet(row.content);
+    }
+  }
+  for (const row of lastRows) {
+    const preview = previews.get(row.threadId);
+    if (preview) {
+      preview.lastMessage = previewSnippet(row.content);
+    }
+  }
+  for (const row of countRows) {
+    const preview = previews.get(row.threadId);
+    if (preview) {
+      preview.messageCount = row.messageCount;
+    }
+  }
+  return previews;
+};
 
 // Recent conversations for the history view, most recently active first.
 // A search query matches the thread title and the linked deal (title or
@@ -173,6 +275,13 @@ export const listThreadsForUser = async (
     .orderBy(sql`${chatThread.lastMessageAt} desc nulls last`)
     .limit(THREAD_LIST_LIMIT);
 
+  const previews = await previewsForThreads(rows.map((row) => row.id));
+  const emptyPreview: ThreadPreview = {
+    firstMessage: null,
+    lastMessage: null,
+    messageCount: 0,
+  };
+
   return rows.map(({ contactName, dealLeadId, dealTitle, ...thread }) => {
     let context: ThreadContext | null = null;
     if (dealTitle) {
@@ -181,7 +290,11 @@ export const listThreadsForUser = async (
     } else if (contactName) {
       context = { kind: "contact", label: contactName };
     }
-    return { ...thread, context };
+    return {
+      ...thread,
+      context,
+      preview: previews.get(thread.id) ?? emptyPreview,
+    };
   });
 };
 

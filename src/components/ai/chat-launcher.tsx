@@ -15,7 +15,7 @@ import { useAiAssistant } from "@/components/ai/ai-context";
 import { AiRuntimeProvider } from "@/components/ai/ai-runtime-provider";
 import { ChatPanel } from "@/components/ai/chat-panel";
 import { ThreadHistory } from "@/components/ai/thread-history";
-import { Button } from "@/components/ui/button";
+import { TooltipIconButton } from "@/components/ai/tooltip-icon-button";
 import { cn } from "@/lib/utils";
 
 // Launcher button used in the desktop sidebar and the mobile header. Forwards
@@ -168,47 +168,29 @@ export function AiAssistantDock() {
           <h2 className="font-heading font-semibold text-sm">Blu assistant</h2>
         </div>
         <div className="flex items-center">
-          <Button
-            aria-label="New conversation"
-            onClick={startNewChat}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
+          <TooltipIconButton onClick={startNewChat} tooltip="New conversation">
             <SquarePenIcon aria-hidden className="size-4.5" />
-          </Button>
-          <Button
-            aria-label="Conversation history"
+          </TooltipIconButton>
+          <TooltipIconButton
             aria-pressed={view === "history"}
             onClick={() =>
               setView((current) => (current === "history" ? "chat" : "history"))
             }
-            size="icon"
-            type="button"
-            variant="ghost"
+            tooltip="Conversation history"
           >
             <HistoryIcon aria-hidden className="size-4.5" />
-          </Button>
-          <Button
+          </TooltipIconButton>
+          <TooltipIconButton
             // Renders an <a>, so opt out of Base UI's native-button contract.
             nativeButton={false}
-            render={
-              <Link aria-label="AI assistant settings" href="/settings/ai" />
-            }
-            size="icon"
-            variant="ghost"
+            render={<Link href="/settings/ai" />}
+            tooltip="AI assistant settings"
           >
             <Settings2Icon aria-hidden className="size-4.5" />
-          </Button>
-          <Button
-            aria-label="Close assistant"
-            onClick={() => setOpen(false)}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
+          </TooltipIconButton>
+          <TooltipIconButton onClick={() => setOpen(false)} tooltip="Close">
             <XIcon aria-hidden className="size-5" />
-          </Button>
+          </TooltipIconButton>
         </div>
       </header>
       <div className="min-h-0 flex-1">

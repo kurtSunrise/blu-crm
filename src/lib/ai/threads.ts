@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { chatMessage, chatThread } from "@/db/schema";
+import { chatMessage, chatThread, contact, deal } from "@/db/schema";
 import type * as Anthropic from "@/lib/ai/anthropic";
 import {
   isBluMediaBlock,
@@ -109,7 +109,13 @@ export const clearThreadPending = async (threadId: string): Promise<void> => {
 
 const THREAD_LIST_LIMIT = 30;
 
+export interface ThreadContext {
+  kind: "deal" | "contact";
+  label: string;
+}
+
 export interface ThreadListItem {
+  context: ThreadContext | null;
   id: string;
   lastMessageAt: Date | null;
   originPage: string | null;
@@ -117,12 +123,43 @@ export interface ThreadListItem {
   title: string | null;
 }
 
+// % and _ are LIKE wildcards; a literal search must not let them through.
+const LIKE_SPECIALS = /[%_\\]/g;
+
+const likePattern = (query: string): string =>
+  `%${query.replaceAll(LIKE_SPECIALS, "\\$&")}%`;
+
 // Recent conversations for the history view, most recently active first.
+// A search query matches the thread title and the linked deal (title or
+// lead id) or contact name, over the user's whole history, not just the
+// most recent page.
 export const listThreadsForUser = async (
-  userId: string
-): Promise<ThreadListItem[]> =>
-  db
+  userId: string,
+  query?: string
+): Promise<ThreadListItem[]> => {
+  const conditions = [
+    eq(chatThread.userId, userId),
+    isNull(chatThread.archivedAt),
+  ];
+  const trimmed = query?.trim();
+  if (trimmed) {
+    const pattern = likePattern(trimmed);
+    const searchCondition = or(
+      ilike(chatThread.title, pattern),
+      ilike(deal.title, pattern),
+      ilike(deal.leadId, pattern),
+      ilike(contact.name, pattern)
+    );
+    if (searchCondition) {
+      conditions.push(searchCondition);
+    }
+  }
+
+  const rows = await db
     .select({
+      contactName: contact.name,
+      dealLeadId: deal.leadId,
+      dealTitle: deal.title,
       id: chatThread.id,
       lastMessageAt: chatThread.lastMessageAt,
       originPage: chatThread.originPage,
@@ -130,9 +167,23 @@ export const listThreadsForUser = async (
       title: chatThread.title,
     })
     .from(chatThread)
-    .where(and(eq(chatThread.userId, userId), isNull(chatThread.archivedAt)))
+    .leftJoin(deal, eq(chatThread.dealId, deal.id))
+    .leftJoin(contact, eq(chatThread.contactId, contact.id))
+    .where(and(...conditions))
     .orderBy(sql`${chatThread.lastMessageAt} desc nulls last`)
     .limit(THREAD_LIST_LIMIT);
+
+  return rows.map(({ contactName, dealLeadId, dealTitle, ...thread }) => {
+    let context: ThreadContext | null = null;
+    if (dealTitle) {
+      // Same label shape as the composer's context chip.
+      context = { kind: "deal", label: `${dealLeadId} · ${dealTitle}` };
+    } else if (contactName) {
+      context = { kind: "contact", label: contactName };
+    }
+    return { ...thread, context };
+  });
+};
 
 export interface DisplayMessageAttachment {
   contentType: string;

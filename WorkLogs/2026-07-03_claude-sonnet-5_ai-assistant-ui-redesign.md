@@ -45,6 +45,14 @@ The user asked to adopt Microsoft Copilot's "referenced topic" chip. Investigati
 - Side benefit: explicit ids now flow to `/api/chat` instead of relying purely on pathname inference.
 - No dismiss control in v1: the server would still infer context from the pathname, so a dismissable chip would lie. If dismissal is wanted later it needs a "suppress page context" flag through to the server.
 
+## Addendum 2: History context chips + search (same session)
+
+Follow-on request: show the context chip in the history list too, plus search to find older chats. `chat_thread` already stores `dealId`/`contactId` per thread, so:
+
+- `src/lib/ai/threads.ts` — `listThreadsForUser` now left-joins `deal` and `contact`, returns a `context` label per thread (`LEAD-ID · Title` for deals, name for contacts — same shape as the composer chip), and takes an optional search query (`ilike` over thread title, deal title, lead id, contact name, with LIKE-wildcard escaping) applied over the user's whole history before the 30-row limit, so search genuinely reaches older chats.
+- `src/app/api/chat/threads/route.ts` — passes `?q=` through.
+- `src/components/ai/thread-history.tsx` — search input (debounced 250ms, sr-only label, `type="search"`), context chip per row (mirrors the composer chip), and a distinct "No conversations match that search" empty state.
+
 ## Next Steps
 
 - User (or a future session with browser access) should run the manual checklist from the plan: open/close the panel, send a message and watch it stream, trigger a confirmation card (both Confirm and Cancel), attach a file both via the button and via drag-and-drop, resume a thread from history, and check all of the above at a mobile viewport width.

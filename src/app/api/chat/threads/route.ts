@@ -13,6 +13,7 @@ export async function GET(request: Request): Promise<Response> {
       { status: 401 }
     );
   }
-  const threads = await listThreadsForUser(assistantUser.id);
+  const query = new URL(request.url).searchParams.get("q") ?? undefined;
+  const threads = await listThreadsForUser(assistantUser.id, query);
   return NextResponse.json({ threads });
 }

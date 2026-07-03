@@ -532,9 +532,10 @@ const SECTIONS: HelpSection[] = [
           </li>
           <li>
             <strong>History</strong>: the clock button lists your recent
-            conversations; pick one to resume it. The pencil button starts a
-            fresh conversation, and the gear button jumps straight to AI
-            Preferences.
+            conversations, each showing the deal or contact it was about; pick
+            one to resume it. The search box finds older chats by title, deal,
+            or contact name. The pencil button starts a fresh conversation, and
+            the gear button jumps straight to AI Preferences.
           </li>
         </ol>
         <p className={PARA_CLASSES}>
@@ -746,6 +747,7 @@ const WHATS_NEW = [
     items: [
       "A refreshed assistant chat: clearer sense of when it's thinking versus replying, smoother open and close, and a settings shortcut in the header.",
       "On a deal or contact page, the assistant now shows a chip above the message box naming the record it's drawing on.",
+      "Assistant history now shows which deal or contact each conversation was about, and a search box finds older chats by title, deal, or contact name.",
       "Drag a photo or PDF straight onto the assistant chat instead of using the paperclip, with an upload indicator while it sends; tap a sent photo to see it full size.",
       "Deal cards, deal lists, and drafts in the assistant now have their own icon so you can tell them apart at a glance, and long activity lists have a Show more link.",
     ],

@@ -17,10 +17,12 @@ import {
   CheckIcon,
   CopyIcon,
   FileTextIcon,
+  HandshakeIcon,
   Loader2Icon,
   PaperclipIcon,
   SparklesIcon,
   SquareIcon,
+  UserIcon,
   XIcon,
 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
@@ -295,6 +297,26 @@ function AddAttachmentButton({
   );
 }
 
+// Copilot-style context chip: shows which deal or contact the assistant is
+// drawing on (registered by the page via AiEntityBeacon and already sent to
+// /api/chat as pageContext — this makes that invisible context visible).
+function ContextChip() {
+  const { entity } = useAiAssistant();
+  if (!entity?.label) {
+    return null;
+  }
+  const Icon = entity.dealId ? HandshakeIcon : UserIcon;
+  return (
+    <p className="flex w-fit max-w-full items-center gap-1.5 rounded-full border bg-muted px-3 py-1.5 text-xs">
+      <Icon aria-hidden className="size-3.5 shrink-0 text-blu" />
+      <span className="truncate">
+        <span className="sr-only">The assistant is using </span>
+        {entity.label}
+      </span>
+    </p>
+  );
+}
+
 function Composer() {
   const { attachmentError } = useAiAssistant();
   const { addFiles, uploading } = useAttachmentUpload();
@@ -302,6 +324,7 @@ function Composer() {
 
   return (
     <div className="flex w-full flex-col gap-2">
+      <ContextChip />
       <div className="flex flex-wrap items-center gap-1.5 empty:hidden">
         <ComposerPrimitive.Attachments components={ATTACHMENT_COMPONENTS} />
         {uploading ? (

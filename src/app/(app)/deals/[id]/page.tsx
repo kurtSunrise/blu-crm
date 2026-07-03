@@ -2,6 +2,7 @@ import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AiEntityBeacon } from "@/components/ai/ai-entity-beacon";
 import { AttachmentDeleteButton } from "@/components/attachment-delete-button";
 import { AttachmentUpload } from "@/components/attachment-upload";
 import { CompleteFollowUpButton } from "@/components/complete-follow-up-button";
@@ -368,6 +369,10 @@ export default async function DealPage({
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6 lg:max-w-6xl">
+      <AiEntityBeacon
+        dealId={record.id}
+        label={`${record.leadId} · ${record.title}`}
+      />
       <header className="flex flex-col gap-1">
         <p className="font-mono text-muted-foreground text-xs">
           {record.leadId}

@@ -2,6 +2,7 @@ import { desc, eq, inArray, or } from "drizzle-orm";
 import { Mail, MessageSquare, Pencil, Phone } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AiEntityBeacon } from "@/components/ai/ai-entity-beacon";
 import { ArchiveRecordButton } from "@/components/archive-record-button";
 import { DealTimeline } from "@/components/deal-timeline";
 import { Badge } from "@/components/ui/badge";
@@ -130,6 +131,7 @@ export default async function ContactPage({
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6 lg:max-w-6xl">
+      <AiEntityBeacon contactId={person.id} label={person.name} />
       <header className="flex flex-col gap-3">
         <p className="text-muted-foreground text-xs">
           <Link className="underline-offset-2 hover:underline" href="/contacts">

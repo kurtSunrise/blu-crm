@@ -35,6 +35,16 @@ Redesign the AI Assistant chat UI (`src/components/ai/**`) to a "best in class" 
 - `ActionBarPrimitive.Copy asChild` wrapping the new `TooltipIconButton` compound component risked losing ref-forwarding through the Tooltip/Button nesting; simplified to a plain `Button`, matching the existing `ComposerPrimitive.Send`/`Cancel` pattern already proven in this file.
 - No manual UI verification was possible this session (browser extension not connected, panel requires auth). Flagged explicitly to the user rather than claiming full verification.
 
+## Addendum: Context Chip (Copilot-style, same session)
+
+The user asked to adopt Microsoft Copilot's "referenced topic" chip. Investigation showed the plumbing already existed but was half-wired: `registerEntity`/`clearEntity` in `ai-context.tsx` were never called by any page (dead code), while the server independently derives the deal/contact from the pathname in `buildPageContext` — so the assistant was already using page context invisibly. Fix:
+
+- New `src/components/ai/ai-entity-beacon.tsx` — client component rendered by the deal and contact detail pages; registers `{dealId|contactId, label}` on mount, clears on unmount.
+- `chat-panel.tsx` — new `ContextChip` above the composer showing the entity label (Handshake icon for deals, User icon for contacts) with an sr-only "The assistant is using" prefix.
+- Deal page label is `LEAD-ID · Title`; contact page label is the person's name.
+- Side benefit: explicit ids now flow to `/api/chat` instead of relying purely on pathname inference.
+- No dismiss control in v1: the server would still infer context from the pathname, so a dismissable chip would lie. If dismissal is wanted later it needs a "suppress page context" flag through to the server.
+
 ## Next Steps
 
 - User (or a future session with browser access) should run the manual checklist from the plan: open/close the panel, send a message and watch it stream, trigger a confirmation card (both Confirm and Cancel), attach a file both via the button and via drag-and-drop, resume a thread from history, and check all of the above at a mobile viewport width.

@@ -493,7 +493,9 @@ const SECTIONS: HelpSection[] = [
           The assistant (the sparkles button in the sidebar, or in the header on
           a phone) is a chat that works the CRM with you. It reads the live
           pipeline, never stale snapshots, and it can prepare changes, but
-          nothing is ever applied without your say-so.
+          nothing is ever applied without your say-so. On a deal or contact
+          page, a chip above the message box shows the record the assistant is
+          drawing on, so questions like "summarise this deal" just work.
         </p>
         <ol className={STEP_CLASSES}>
           <li>
@@ -743,6 +745,7 @@ const WHATS_NEW = [
     date: "03/07/2026",
     items: [
       "A refreshed assistant chat: clearer sense of when it's thinking versus replying, smoother open and close, and a settings shortcut in the header.",
+      "On a deal or contact page, the assistant now shows a chip above the message box naming the record it's drawing on.",
       "Drag a photo or PDF straight onto the assistant chat instead of using the paperclip, with an upload indicator while it sends; tap a sent photo to see it full size.",
       "Deal cards, deal lists, and drafts in the assistant now have their own icon so you can tell them apart at a glance, and long activity lists have a Show more link.",
     ],

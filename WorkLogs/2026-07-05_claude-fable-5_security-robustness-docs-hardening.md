@@ -67,10 +67,16 @@ Continues from and commits the streams logged in:
 - Dev DB schema push applied (`rate_limit` table).
 - Preview (`npm run preview`) verified end to end: all six global headers present on dynamic routes; `X-Content-Type-Options: nosniff` on static assets via `public/_headers`; unauthenticated attachment fetch and chat POST return 401; unknown routes 404; and 12 rapid bad sign-ins with a client IP header returned 10 x 401 then 429 with the counter row keyed `ip|/sign-in/email` in `rate_limit`. Local curl without a forwarded IP is not limited (no key); Cloudflare always supplies the client IP in production.
 
+## Deployment (2026-07-05, user-approved)
+
+- `npm run db:push:prod` executed exactly one additive statement, `CREATE TABLE "rate_limit"`; no destructive statements, no data touched (verified with stdin closed so any drop prompt would abort).
+- Deployed versions `b221dbc9` then `4ab0aafa` to the Paid account (kurt-0f6); cron triggers and R2 bindings intact. This deploy carried contacts phase 1 live.
+- Post-deploy findings: all six security headers on dynamic routes, nosniff on static assets, cookieless fresh load 200 in under 1s, unknown route 404, unauth attachment 401.
+- **Discovery**: rate limiting silently skipped on the deployed Worker because Cloudflare hands Workers `cf-connecting-ip`, not `x-forwarded-for` (Better Auth's default lookup). Fixed in commit `608b212` by setting `advanced.ipAddress.ipAddressHeaders` to `["cf-connecting-ip", "x-forwarded-for"]` (edge-set, not spoofable). Verified on prod: 10 x 401 then 429, counter row keyed by real client IP.
+
 ## Next Steps
 
-- **Prod rollout order matters**: run `npm run db:push:prod` BEFORE `npm run deploy`. The `rate_limit` table must exist first; database-storage rate limiting would break prod auth without it.
-- Deploy is user-initiated only and will carry contacts phase 1 along when it happens.
+- Future work: nonce-based script-src CSP; possible CTE fusion of deleteStage; remove [auth-debug] instrumentation when workerd#6832 resolves.
 - Post-deploy check: 11 rapid bad sign-ins should give a 429.
 - Future work: nonce-based script-src CSP; possible CTE fusion of `deleteStage`.
 

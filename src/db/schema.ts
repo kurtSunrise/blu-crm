@@ -380,6 +380,9 @@ export const quote = pgTable("quote", {
   viewToken: text("view_token").unique(),
   sentAt: timestamp("sent_at", { withTimezone: true }),
   viewedAt: timestamp("viewed_at", { withTimezone: true }),
+  // When the client decided: stamped on the accepted/declined transition.
+  // Drives time-to-accept in the quote analytics (Reports, Team).
+  respondedAt: timestamp("responded_at", { withTimezone: true }),
   createdBy: text("created_by").references(() => user.id),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

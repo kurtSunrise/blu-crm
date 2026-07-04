@@ -1,7 +1,8 @@
-import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { PageHeader } from "@/components/page-header";
 import { ExportCsvLink } from "@/components/reports/export-csv-link";
 import { ReportFilters } from "@/components/reports/report-filters";
+import { ReportsNav } from "@/components/reports/reports-nav";
 import { formatAudFromCents, formatDateAwst } from "@/lib/format";
 import { LEAD_SOURCE_LABELS } from "@/lib/labels";
 import {
@@ -110,29 +111,19 @@ export default async function ReportDealsPage({
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 lg:max-w-5xl">
-      <header className="flex flex-col gap-2">
-        <Link
-          className="flex min-h-9 w-fit items-center gap-1.5 text-muted-foreground text-sm transition-colors hover:text-foreground"
-          href={backHref}
-        >
-          <ArrowLeft aria-hidden className="size-4" />
-          Back to reports
-        </Link>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <h1 className="font-semibold text-2xl tracking-tight">
-              {scopeLabel}
-            </h1>
-            <p className="text-muted-foreground text-sm">
-              {deals.length} deal{deals.length === 1 ? "" : "s"}
-              {qualifiers.length > 0 ? ` ${qualifiers.join(", ")}` : ""} ·{" "}
-              {formatAudFromCents(totalCents)}
-            </p>
-          </div>
+      <PageHeader
+        actions={
           <ExportCsvLink query={exportParams.toString()} report="deals" />
-        </div>
-      </header>
+        }
+        backHref={backHref}
+        backLabel="Back to reports"
+        subtitle={`${deals.length} deal${deals.length === 1 ? "" : "s"}${
+          qualifiers.length > 0 ? ` ${qualifiers.join(", ")}` : ""
+        } · ${formatAudFromCents(totalCents)}`}
+        title={scopeLabel}
+      />
 
+      <ReportsNav query={reportFilterParams(filters).toString()} />
       <ReportFilters owners={owners} />
 
       {deals.length === 0 ? (

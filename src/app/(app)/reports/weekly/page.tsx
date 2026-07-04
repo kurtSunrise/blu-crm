@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CopyReportButton } from "@/components/copy-report-button";
+import { PageHeader } from "@/components/page-header";
 import { ReportsNav } from "@/components/reports/reports-nav";
 import { Badge } from "@/components/ui/badge";
 import type { AlertDeal } from "@/lib/alerts";
@@ -115,12 +116,10 @@ export default async function WeeklyReportPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="font-semibold text-2xl tracking-tight">
-            Weekly Pipeline Report
-          </h1>
-          <p className="text-muted-foreground text-sm">
+      <PageHeader
+        actions={<CopyReportButton text={reportText} />}
+        subtitle={
+          <p>
             {formatDateAwst(report.weekStart)} to{" "}
             {formatDateAwst(report.generatedAt)} · numbers match{" "}
             <Link className="underline underline-offset-2" href="/reports">
@@ -128,9 +127,9 @@ export default async function WeeklyReportPage() {
             </Link>{" "}
             for the same period · Private and Confidential
           </p>
-        </div>
-        <CopyReportButton text={reportText} />
-      </header>
+        }
+        title="Weekly Pipeline Report"
+      />
 
       <ReportsNav active="/reports/weekly" />
 

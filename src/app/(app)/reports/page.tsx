@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/page-header";
 import { ExportCsvLink } from "@/components/reports/export-csv-link";
 import { ReportFilters } from "@/components/reports/report-filters";
 import { ReportsNav } from "@/components/reports/reports-nav";
@@ -95,16 +96,11 @@ export default async function ReportsPage({
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 lg:max-w-5xl">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="font-semibold text-2xl tracking-tight">Reports</h1>
-          <p className="text-muted-foreground text-sm">
-            Pipeline value, forecast, and win rate — the same numbers the weekly
-            report uses. Tap any figure to see the deals behind it.
-          </p>
-        </div>
-        <ExportCsvLink query={query} report="pipeline" />
-      </header>
+      <PageHeader
+        actions={<ExportCsvLink query={query} report="pipeline" />}
+        subtitle="Pipeline value, forecast, and win rate — the same numbers the weekly report uses. Tap any figure to see the deals behind it."
+        title="Reports"
+      />
 
       <ReportsNav active="/reports" query={query} />
       <ReportFilters owners={owners} />

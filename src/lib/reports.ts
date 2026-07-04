@@ -17,6 +17,7 @@ import {
   activity,
   company,
   deal,
+  dealStageEvent,
   dealSubStatus,
   followUp,
   leadSource,
@@ -695,6 +696,364 @@ export const getSlippedDeals = async (
     });
   }
   return slipped;
+};
+
+// ---------------------------------------------------------------------------
+// Funnel & stage velocity (/reports/funnel) — built on deal_stage_event.
+// The cohort is "deals created inside the filter window"; a deal counts as
+// having reached a stage if any of its stage events landed on that stage's
+// position or later (so stage-skipping deals still count), with Won as the
+// terminal step. Events whose stage was later deleted resolve to no current
+// stage and are excluded, which the page discloses via the data-quality note.
+// ---------------------------------------------------------------------------
+
+const SECONDS_PER_DAY = 86_400;
+
+// The cohort filter shared by both funnel queries.
+const funnelCohortWhere = (filters: ReportFilters) =>
+  and(
+    isNull(deal.deletedAt),
+    gte(deal.createdAt, filters.from),
+    ...(filters.to ? [lt(deal.createdAt, filters.to)] : []),
+    ...dealFilterConditions(filters)
+  );
+
+export interface FunnelStep {
+  // Percentage of the previous step that made it here; null for the first.
+  conversionFromPrevious: number | null;
+  reachedCount: number;
+  // null for the terminal Won step (it is an outcome, not a board stage).
+  stageId: string | null;
+  stageName: string;
+}
+
+export interface FunnelConversion {
+  cohortCount: number;
+  steps: FunnelStep[];
+}
+
+const PERCENT_ROUND = 100;
+
+export const getFunnelConversion = async (
+  filters: ReportFilters
+): Promise<FunnelConversion> => {
+  const result = await db.execute(sql`
+    with cohort as (
+      select ${deal.id} as id from ${deal} where ${funnelCohortWhere(filters)}
+    ),
+    reached as (
+      select e.deal_id,
+        max(ps.position)
+          filter (where not ps.is_won and not ps.is_lost) as max_open_position,
+        bool_or(ps.is_won) as reached_won
+      from ${dealStageEvent} e
+      join ${pipelineStage} ps on ps.id = e.to_stage_id
+      where e.deal_id in (select id from cohort)
+      group by e.deal_id
+    )
+    select ps.id as stage_id, ps.name as stage_name, ps.position,
+      (select count(*) from reached r
+        where r.max_open_position >= ps.position or r.reached_won
+      )::int as reached_count,
+      (select count(*) from reached r where r.reached_won)::int as won_count,
+      (select count(*) from cohort)::int as cohort_count
+    from ${pipelineStage} ps
+    where not ps.is_won and not ps.is_lost
+    order by ps.position
+  `);
+
+  const rows = result.rows as {
+    cohort_count: number;
+    reached_count: number;
+    stage_id: string;
+    stage_name: string;
+    won_count: number;
+  }[];
+
+  const cohortCount = rows[0] ? Number(rows[0].cohort_count) : 0;
+  const wonCount = rows[0] ? Number(rows[0].won_count) : 0;
+
+  const steps: FunnelStep[] = [];
+  for (const row of rows) {
+    const reachedCount = Number(row.reached_count);
+    const previous = steps.at(-1);
+    steps.push({
+      stageId: row.stage_id,
+      stageName: row.stage_name,
+      reachedCount,
+      conversionFromPrevious:
+        previous && previous.reachedCount > 0
+          ? Math.round((reachedCount / previous.reachedCount) * PERCENT_ROUND)
+          : null,
+    });
+  }
+  const lastOpen = steps.at(-1);
+  steps.push({
+    stageId: null,
+    stageName: "Won",
+    reachedCount: wonCount,
+    conversionFromPrevious:
+      lastOpen && lastOpen.reachedCount > 0
+        ? Math.round((wonCount / lastOpen.reachedCount) * PERCENT_ROUND)
+        : null,
+  });
+
+  return { cohortCount, steps };
+};
+
+export interface StageVelocityRow {
+  // Mean/median days a deal spent in the stage before moving on.
+  avgDays: number | null;
+  completedCount: number;
+  // Deals from the cohort sitting in the stage right now, and for how long.
+  currentAvgDays: number | null;
+  currentCount: number;
+  medianDays: number | null;
+  stageId: string;
+  stageName: string;
+}
+
+export const getStageVelocity = async (
+  filters: ReportFilters
+): Promise<StageVelocityRow[]> => {
+  const result = await db.execute(sql`
+    with cohort as (
+      select ${deal.id} as id from ${deal} where ${funnelCohortWhere(filters)}
+    ),
+    spans as (
+      select e.deal_id, e.to_stage_id, e.changed_at,
+        lead(e.changed_at) over (
+          partition by e.deal_id order by e.changed_at, e.id
+        ) as left_at
+      from ${dealStageEvent} e
+      where e.deal_id in (select id from cohort)
+    )
+    select ps.id as stage_id, ps.name as stage_name, ps.position,
+      count(*) filter (where s.left_at is not null)::int as completed_count,
+      avg(extract(epoch from s.left_at - s.changed_at))
+        filter (where s.left_at is not null) as avg_seconds,
+      percentile_cont(0.5) within group (
+        order by extract(epoch from s.left_at - s.changed_at)
+      ) filter (where s.left_at is not null) as median_seconds,
+      count(*) filter (where s.left_at is null)::int as current_count,
+      avg(extract(epoch from now() - s.changed_at))
+        filter (where s.left_at is null) as current_avg_seconds
+    from spans s
+    join ${pipelineStage} ps on ps.id = s.to_stage_id
+    where not ps.is_won and not ps.is_lost
+    group by ps.id, ps.name, ps.position
+    order by ps.position
+  `);
+
+  const toDays = (seconds: unknown): number | null =>
+    seconds === null || seconds === undefined
+      ? null
+      : Number(seconds) / SECONDS_PER_DAY;
+
+  return (
+    result.rows as {
+      avg_seconds: string | null;
+      completed_count: number;
+      current_avg_seconds: string | null;
+      current_count: number;
+      median_seconds: string | null;
+      stage_id: string;
+      stage_name: string;
+    }[]
+  ).map((row) => ({
+    stageId: row.stage_id,
+    stageName: row.stage_name,
+    completedCount: Number(row.completed_count),
+    avgDays: toDays(row.avg_seconds),
+    medianDays: toDays(row.median_seconds),
+    currentCount: Number(row.current_count),
+    currentAvgDays: toDays(row.current_avg_seconds),
+  }));
+};
+
+export interface StageEventQuality {
+  // Oldest event written by a live hook; history before this is backfilled.
+  firstLiveAt: Date | null;
+  hasBackfill: boolean;
+}
+
+export const getStageEventQuality = async (): Promise<StageEventQuality> => {
+  const result = await db.execute(sql`
+    select bool_or(${dealStageEvent.source} = 'backfill') as has_backfill,
+      min(${dealStageEvent.changedAt})
+        filter (where ${dealStageEvent.source} <> 'backfill') as first_live
+    from ${dealStageEvent}
+  `);
+  const [row] = result.rows as {
+    first_live: string | null;
+    has_backfill: boolean | null;
+  }[];
+  return {
+    hasBackfill: Boolean(row?.has_backfill),
+    firstLiveAt: row?.first_live ? new Date(row.first_live) : null,
+  };
+};
+
+// ---------------------------------------------------------------------------
+// Team & quotes (/reports/team) — quote pipeline conversion and per-person
+// activity/follow-through. Quote window keys on quote.createdAt; follow-up
+// window keys on dueDate (the period the work was due, not when it was set).
+// ---------------------------------------------------------------------------
+
+export interface QuoteFunnel {
+  acceptedCount: number;
+  acceptedValueCents: number;
+  // Sent → accepted decision lag, accepted quotes only.
+  avgDaysSentToResponse: number | null;
+  avgDaysSentToViewed: number | null;
+  declinedCount: number;
+  draftCount: number;
+  sentCount: number;
+  totalCount: number;
+  viewedCount: number;
+}
+
+export const getQuoteFunnel = async (
+  filters: ReportFilters
+): Promise<QuoteFunnel> => {
+  const [row] = await db
+    .select({
+      totalCount: count(quote.id),
+      draftCount: sql<number>`count(*) filter (where ${quote.status} = 'draft')`,
+      sentCount: sql<number>`count(${quote.sentAt})`,
+      viewedCount: sql<number>`count(${quote.viewedAt})`,
+      acceptedCount: sql<number>`count(*) filter (where ${quote.status} = 'accepted')`,
+      declinedCount: sql<number>`count(*) filter (where ${quote.status} = 'declined')`,
+      acceptedValueCents: sql<number>`coalesce(sum(${quote.valueCents}) filter (where ${quote.status} = 'accepted'), 0)`,
+      avgSecondsSentToViewed: sql<
+        string | null
+      >`avg(extract(epoch from ${quote.viewedAt} - ${quote.sentAt}))`,
+      avgSecondsSentToResponse: sql<
+        string | null
+      >`avg(extract(epoch from ${quote.respondedAt} - ${quote.sentAt})) filter (where ${quote.status} = 'accepted')`,
+    })
+    .from(quote)
+    .innerJoin(deal, eq(quote.dealId, deal.id))
+    .where(
+      and(
+        isNull(deal.deletedAt),
+        gte(quote.createdAt, filters.from),
+        ...(filters.to ? [lt(quote.createdAt, filters.to)] : []),
+        ...dealFilterConditions(filters)
+      )
+    );
+
+  const toDays = (seconds: string | null): number | null =>
+    seconds === null ? null : Number(seconds) / SECONDS_PER_DAY;
+
+  return {
+    totalCount: Number(row?.totalCount ?? 0),
+    draftCount: Number(row?.draftCount ?? 0),
+    sentCount: Number(row?.sentCount ?? 0),
+    viewedCount: Number(row?.viewedCount ?? 0),
+    acceptedCount: Number(row?.acceptedCount ?? 0),
+    declinedCount: Number(row?.declinedCount ?? 0),
+    acceptedValueCents: Number(row?.acceptedValueCents ?? 0),
+    avgDaysSentToViewed: toDays(row?.avgSecondsSentToViewed ?? null),
+    avgDaysSentToResponse: toDays(row?.avgSecondsSentToResponse ?? null),
+  };
+};
+
+export interface ActivityMixRow {
+  countsByType: Record<string, number>;
+  personName: string;
+  totalCount: number;
+}
+
+export const getActivityMix = async (
+  filters: ReportFilters
+): Promise<ActivityMixRow[]> => {
+  // Owner/source filters describe deals, so scoping needs the deal row; join
+  // it only when a filter is actually set (matches getActivityVolume).
+  const scopedByDeal = Boolean(filters.ownerId || filters.source);
+  const base = db
+    .select({
+      personName: user.name,
+      type: activity.type,
+      typeCount: count(activity.id),
+    })
+    .from(activity)
+    .leftJoin(user, eq(activity.createdBy, user.id));
+  const rows = await (scopedByDeal
+    ? base.innerJoin(
+        deal,
+        and(eq(activity.dealId, deal.id), ...dealFilterConditions(filters))
+      )
+    : base
+  )
+    .where(
+      and(
+        gte(activity.createdAt, filters.from),
+        ...(filters.to ? [lt(activity.createdAt, filters.to)] : [])
+      )
+    )
+    .groupBy(user.name, activity.type);
+
+  const byPerson = new Map<string, ActivityMixRow>();
+  for (const row of rows) {
+    const personName = row.personName ?? "Unattributed";
+    const entry = byPerson.get(personName) ?? {
+      personName,
+      totalCount: 0,
+      countsByType: {},
+    };
+    entry.countsByType[row.type] = row.typeCount;
+    entry.totalCount += row.typeCount;
+    byPerson.set(personName, entry);
+  }
+  return [...byPerson.values()].sort((a, b) => b.totalCount - a.totalCount);
+};
+
+export interface FollowUpStatsRow {
+  completedCount: number;
+  onTimeCount: number;
+  overdueOpenCount: number;
+  personName: string;
+  totalCount: number;
+}
+
+export const getFollowUpStats = async (
+  filters: ReportFilters
+): Promise<FollowUpStatsRow[]> => {
+  const rows = await db
+    .select({
+      personName: user.name,
+      totalCount: count(followUp.id),
+      completedCount: sql<number>`count(${followUp.completedAt})`,
+      onTimeCount: sql<number>`count(*) filter (where ${followUp.completedAt} <= ${followUp.dueDate})`,
+      overdueOpenCount: sql<number>`count(*) filter (where ${followUp.completedAt} is null and ${followUp.dueDate} < now())`,
+    })
+    .from(followUp)
+    .leftJoin(user, eq(followUp.ownerId, user.id))
+    .innerJoin(
+      deal,
+      and(
+        eq(followUp.dealId, deal.id),
+        isNull(deal.deletedAt),
+        ...dealFilterConditions(filters)
+      )
+    )
+    .where(
+      and(
+        gte(followUp.dueDate, filters.from),
+        ...(filters.to ? [lt(followUp.dueDate, filters.to)] : [])
+      )
+    )
+    .groupBy(user.name)
+    .orderBy(desc(count(followUp.id)));
+
+  return rows.map((row) => ({
+    personName: row.personName ?? "Unassigned",
+    totalCount: Number(row.totalCount),
+    completedCount: Number(row.completedCount),
+    onTimeCount: Number(row.onTimeCount),
+    overdueOpenCount: Number(row.overdueOpenCount),
+  }));
 };
 
 // ---------------------------------------------------------------------------

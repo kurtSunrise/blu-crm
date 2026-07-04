@@ -85,7 +85,8 @@ export const updateQuoteStatus = async (
 
   const [updated] = await db
     .update(quote)
-    .set({ status, updatedAt: new Date() })
+    // respondedAt marks the client's decision moment for quote analytics.
+    .set({ status, respondedAt: new Date(), updatedAt: new Date() })
     .where(eq(quote.id, quoteId))
     .returning({ dealId: quote.dealId, valueCents: quote.valueCents });
 

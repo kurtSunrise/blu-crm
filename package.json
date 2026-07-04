@@ -54,6 +54,8 @@
     "db:migrate-sub-status:prod": "dotenv -e .env.production -- tsx scripts/migrate-sub-status.ts",
     "db:backfill-stage-events": "dotenv -e .env.local -- tsx scripts/backfill-stage-events.ts",
     "db:backfill-stage-events:prod": "dotenv -e .env.production -- tsx scripts/backfill-stage-events.ts",
+    "db:backfill-quote-responded": "dotenv -e .env.local -- tsx scripts/backfill-quote-responded.ts",
+    "db:backfill-quote-responded:prod": "dotenv -e .env.production -- tsx scripts/backfill-quote-responded.ts",
     "db:backfill-notification-dedupe": "dotenv -e .env.local -- tsx scripts/backfill-notification-dedupe.ts",
     "db:backfill-notification-dedupe:prod": "dotenv -e .env.production -- tsx scripts/backfill-notification-dedupe.ts",
     "db:studio": "dotenv -e .env.local -- drizzle-kit studio",

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/page-header";
 import type { ForecastChartPoint } from "@/components/reports/charts/forecast-chart";
 import { ForecastChart } from "@/components/reports/charts/forecast-chart";
 import type { TrendChartPoint } from "@/components/reports/charts/trend-chart";
@@ -103,15 +104,11 @@ export default async function TrendsPage({
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 lg:max-w-5xl">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="font-semibold text-2xl tracking-tight">Trends</h1>
-          <p className="text-muted-foreground text-sm">
-            How the pipeline is moving over time, and where the forecast lands.
-          </p>
-        </div>
-        <ExportCsvLink query={query} report="trends" />
-      </header>
+      <PageHeader
+        actions={<ExportCsvLink query={query} report="trends" />}
+        subtitle="How the pipeline is moving over time, and where the forecast lands."
+        title="Trends"
+      />
 
       <ReportsNav active="/reports/trends" query={query} />
       <ReportFilters owners={owners} />

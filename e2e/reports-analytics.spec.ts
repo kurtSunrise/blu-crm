@@ -4,6 +4,13 @@ import { expect, test } from "@playwright/test";
 // charts, CSV export, and the dashboard/report reconciliation guarantee
 // (FR-8.2 AC: report numbers match the dashboard for the same period).
 
+const OPEN_PIPELINE_LINK = /Open pipeline/;
+const OWNER_PARAM = /owner=/;
+const TREND_CHART_NAME = /new pipeline value/i;
+const FORECAST_CHART_NAME = /expected close month/i;
+const COHORT_LINE = /deals? in this cohort/;
+const LEADING_COUNT = /^(\d+)/;
+
 const quickAddDeal = async (
   page: import("@playwright/test").Page,
   companyName: string,
@@ -42,7 +49,7 @@ test("report figures drill down to the deals behind them", async ({
   await quickAddDeal(page, companyName, "17500");
 
   await page.goto("/reports");
-  await page.getByRole("link", { name: /Open pipeline/ }).click();
+  await page.getByRole("link", { name: OPEN_PIPELINE_LINK }).click();
   await page.waitForURL("**/reports/deals?*");
   await expect(
     page.getByRole("heading", { name: "Open pipeline" })
@@ -87,7 +94,7 @@ test("the owner filter excludes deals that belong to nobody", async ({
     .getAttribute("value");
   expect(firstOwner).toBeTruthy();
   await ownerSelect.selectOption(firstOwner as string);
-  await expect(page).toHaveURL(/owner=/);
+  await expect(page).toHaveURL(OWNER_PARAM);
   await expect(page.getByText(companyName, { exact: false })).toHaveCount(0);
 });
 
@@ -131,11 +138,9 @@ test("trends page charts render with the created deal counted", async ({
 
   await page.goto("/reports/trends");
   await expect(page.getByRole("heading", { name: "Trends" })).toBeVisible();
+  await expect(page.getByRole("img", { name: TREND_CHART_NAME })).toBeVisible();
   await expect(
-    page.getByRole("img", { name: /new pipeline value/i })
-  ).toBeVisible();
-  await expect(
-    page.getByRole("img", { name: /expected close month/i })
+    page.getByRole("img", { name: FORECAST_CHART_NAME })
   ).toBeVisible();
 
   // The summary tiles count at least this test's deal.
@@ -152,6 +157,86 @@ test("trends page charts render with the created deal counted", async ({
 
   // The table fallback exists for screen readers / no-hover use.
   await expect(page.getByText("View as table")).toBeVisible();
+});
+
+test("funnel report shows conversion steps and time in stage", async ({
+  page,
+}, testInfo) => {
+  const companyName = `Funnel Co ${testInfo.project.name} ${Date.now()}`;
+
+  // A fresh deal moved one stage on guarantees a non-empty cohort with at
+  // least one completed stage span, whatever else is in the shared DB.
+  await quickAddDeal(page, companyName, "6000");
+  await page
+    .getByRole("button", { name: `Move ${companyName} to another stage` })
+    .click();
+  await page.getByRole("menuitem", { name: "Qualified" }).click();
+  await expect(
+    page
+      .locator('section[aria-label="Qualified"]')
+      .getByRole("heading", { name: companyName })
+  ).toBeVisible();
+
+  await page.goto("/reports/funnel");
+  await expect(page.getByRole("heading", { name: "Funnel" })).toBeVisible();
+
+  const funnelSection = page.locator('section[aria-label="Stage funnel"]');
+  await expect(
+    funnelSection.getByText("Lead Captured", { exact: false }).first()
+  ).toBeVisible();
+  await expect(funnelSection.getByText("Won").first()).toBeVisible();
+
+  // Poll until the server write is visible in the cohort count.
+  await expect(async () => {
+    await page.reload();
+    const cohortText = await page.getByText(COHORT_LINE).textContent();
+    expect(
+      Number(cohortText?.match(LEADING_COUNT)?.[1] ?? "0")
+    ).toBeGreaterThan(0);
+  }).toPass({ timeout: 15_000 });
+
+  await expect(
+    page.locator('section[aria-label="Time in stage"]')
+  ).toBeVisible();
+});
+
+test("team report shows quotes, activity, and follow-through", async ({
+  page,
+}, testInfo) => {
+  const companyName = `Team Co ${testInfo.project.name} ${Date.now()}`;
+
+  // A stage move logs an attributed activity, so the signed-in user is
+  // guaranteed a row in the activity list whatever else is in the shared DB.
+  await quickAddDeal(page, companyName, "4000");
+  await page
+    .getByRole("button", { name: `Move ${companyName} to another stage` })
+    .click();
+  await page.getByRole("menuitem", { name: "Qualified" }).click();
+  await expect(
+    page
+      .locator('section[aria-label="Qualified"]')
+      .getByRole("heading", { name: companyName })
+  ).toBeVisible();
+
+  await page.goto("/reports/team");
+  await expect(
+    page.getByRole("heading", { name: "Team", exact: true })
+  ).toBeVisible();
+  await expect(page.locator('section[aria-label="Quotes"]')).toBeVisible();
+  await expect(
+    page.locator('section[aria-label="Follow-through"]')
+  ).toBeVisible();
+
+  // Poll until the stage-move activity lands in the per-person list.
+  const activitySection = page.locator(
+    'section[aria-label="Activity by person"]'
+  );
+  await expect(async () => {
+    await page.reload();
+    await expect(activitySection.getByText("logged").first()).toBeVisible({
+      timeout: 1000,
+    });
+  }).toPass({ timeout: 15_000 });
 });
 
 test("CSV export returns the pipeline dataset for a signed-in user", async ({

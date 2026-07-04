@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { getEntryStyle } from "@/components/deal-timeline";
+import { PageHeader } from "@/components/page-header";
 import { ReportsNav } from "@/components/reports/reports-nav";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -101,21 +102,8 @@ export default async function DailyReportPage({
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6 lg:max-w-5xl">
       <ReportsNav active="/reports/daily" />
-      <header className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="flex flex-col gap-0.5">
-            <h1 className="font-semibold text-2xl tracking-tight">
-              Daily status
-            </h1>
-            <h2 className="text-muted-foreground text-sm">
-              {heading} · {relativeLabel}
-            </h2>
-            <p className="text-muted-foreground text-sm">
-              {deals.length === 0
-                ? "Nothing logged"
-                : `${deals.length} deal${deals.length === 1 ? "" : "s"} touched · ${activityCount} ${activityCount === 1 ? "activity" : "activities"}`}
-            </p>
-          </div>
+      <PageHeader
+        actions={
           <nav
             aria-label="Day navigation"
             className="flex flex-wrap items-center gap-2"
@@ -143,8 +131,21 @@ export default async function DailyReportPage({
             </Link>
             <DateJump dateKey={dateKey} />
           </nav>
-        </div>
-      </header>
+        }
+        subtitle={
+          <>
+            <h2 className="text-sm">
+              {heading} · {relativeLabel}
+            </h2>
+            <p className="text-sm">
+              {deals.length === 0
+                ? "Nothing logged"
+                : `${deals.length} deal${deals.length === 1 ? "" : "s"} touched · ${activityCount} ${activityCount === 1 ? "activity" : "activities"}`}
+            </p>
+          </>
+        }
+        title="Daily status"
+      />
 
       {deals.length === 0 ? (
         <p className="rounded-lg border bg-card p-6 text-center text-muted-foreground text-sm">

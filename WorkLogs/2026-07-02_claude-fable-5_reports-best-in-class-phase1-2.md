@@ -47,6 +47,59 @@ Verification: ultracite clean on changed files, `npm run build` passes, `e2e/rep
 - shadcn CLI reformatted `src/components/ui/card.tsx` (style churn only); reverted via `git checkout`.
 - Full-repo ultracite remains blocked by the pre-existing stray `.kilo` worktree; checks were scoped to changed files (same as the 2026-07-02 deal-value-range log).
 
+## Addendum 3 (2026-07-03): Phase 4 shipped, plan complete
+
+- Quote analytics & team report deployed (version cac8a81b), completing all
+  four phases of the reports plan.
+- Schema: `quote.respondedAt` (stamped on the accepted/declined transition in
+  `updateQuoteStatus`); `scripts/backfill-quote-responded.ts` +
+  `db:backfill-quote-responded[:prod]` stamps legacy decided quotes from
+  updated_at (idempotent). Rollout order push -> deploy -> backfill; prod
+  backfill stamped 0 rows (no pre-existing decided quotes).
+- Queries in `src/lib/reports.ts`: `getQuoteFunnel` (windowed on
+  quote.createdAt; sent/viewed/accepted/declined counts, accepted value, avg
+  days sent->viewed and sent->accepted), `getActivityMix` (per-person counts
+  by activity type), `getFollowUpStats` (windowed on dueDate: completed,
+  on-time, still-overdue per person).
+- New `/reports/team` page (+loading): quote funnel tiles with conversion
+  percentages, per-person activity bars with a type-mix line (single-hue bars
+  by design, no categorical palette risk), follow-through list, win-rate
+  tiles. "Team" added to the reports nav (now six views); help page updated
+  (Reports section + What's new).
+- Tidy-ups: four new report routes added to `e2e/accessibility.spec.ts`
+  static scans (all pass); `scripts/probe-lingering.ts` fixed (two lint
+  errors plus a missing `deal_stage_event` delete that would now break it on
+  FK); `reports-analytics.spec.ts` regexes hoisted to module scope for the
+  repo-wide lint.
+- e2e: new team test; 8/9 then the pre-existing date-range test flaked on an
+  HMR full-reload mid-test and passed clean on retry (environment, not
+  product). Post-deploy note: /reports/team 404'd for ~2 minutes after deploy
+  (stale-isolate propagation, same oddity the notifications log saw), then
+  settled to the correct 307.
+
+## Addendum 2 (2026-07-03): Phase 3 shipped
+
+- Funnel & stage velocity built on the Phase 1 event table and deployed
+  (version 2727db8b): `getFunnelConversion` (cohort = deals created in the
+  filter window; "reached stage >= position" semantics with Won terminal, one
+  CTE query), `getStageVelocity` (lead() window spans per deal; median/avg
+  completed dwell + current dwell per stage), `getStageEventQuality`
+  (backfill cutoff) in `src/lib/reports.ts`.
+- New `/reports/funnel` page (+loading): funnel bars with per-step conversion
+  and cohort share, time-in-stage list with a Bottleneck badge on the slowest
+  stage, backfill data-quality footnote. "Funnel" added to the reports nav.
+- No schema changes; no drill-down links from funnel bars on purpose (a
+  "reached" cohort is not the same set as "currently in stage", so linking to
+  the stage drill-down would show different numbers).
+- e2e: new funnel test in `reports-analytics.spec.ts` (8/8 desktop, incl. a
+  fix for four `useTopLevelRegex` lint errors surfaced by the repo-wide biome
+  scope fix from the notifications work).
+- Help page: Funnel added to the Reports section (five views) and a
+  03/07/2026 What's new entry.
+- Coordination: built after confirming the concurrent notifications overhaul
+  was fully deployed (its work log documents push/backfill/secret); this
+  deploy ships both cleanly.
+
 ## Addendum (2026-07-03)
 
 - Prod rollout completed on 2026-07-02: `db:push:prod`, `npm run deploy`, then `db:backfill-stage-events:prod` (71 events, verification clean).

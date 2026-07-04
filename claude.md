@@ -1,17 +1,19 @@
-# Blu Shed — Workshop Inventory Portal
+# Blu CRM
 
-## Project Overview
+**Blu CRM** is a mobile-first client and sales-pipeline portal for Blu Builders (https://blubuilders.com.au/). A three-person sales team (admins Andy and Kurt, sales Jess) runs enquiries through an eight-stage pipeline: intake, quoting, follow-ups, won/lost, reports, and an AI assistant.
 
-**Blu CMS** is a mobile-first web portal for Blu Builders to operate as a CRM (Customer Relationship Management), search, and manage client relationships — especially for the sales pipeline. See `PRD.md` for full product requirements.
+Sources of truth:
+- `PRD.md` is the product requirements document.
+- `WorkLogs/TEAM_CONSTITUTION.md` is the mandatory operating policy, including deployment topology and work-log rules.
+- `WorkLogs/` holds the dated build history.
 
 ## Team Constitution (Mandatory)
-Before doing any work, read and follow:
-`WorkLogs/TEAM_CONSTITUTION.md`
 
-Process requirements:
+Before doing any work, read and follow `WorkLogs/TEAM_CONSTITUTION.md`.
+
 - If a task conflicts with the constitution, stop and ask the user.
 - At the start of each task, summarize the applicable constitution rules before editing.
-- Treat this constitution as required operating policy for this workspace.
+- Write a work log in `WorkLogs/` when a substantial task finishes.
 
 ## Tech Stack
 
@@ -23,117 +25,96 @@ Process requirements:
 | UI Components | shadcn/ui with Base UI primitives |
 | Styling | Tailwind CSS 4 |
 | E2E Testing | Playwright |
-| Database | Neon PostgreSQL (serverless) with Drizzle ORM |
-| Auth | Better Auth with Drizzle adapter |
-| AI / Vision | Anthropic Claude API and Z.AI (vision providers; AI chat itself is V2) |
-| Hosting | Cloudflare Workers via `@opennextjs/cloudflare` + `wrangler` |
-| Photo Storage | Cloudflare R2 (`PHOTO_BUCKET` binding) |
+| Database | Neon PostgreSQL (HTTP driver, no transactions) with Drizzle ORM |
+| Auth | Better Auth with Drizzle adapter (email/password; optional Microsoft SSO) |
+| AI Assistant | Anthropic Claude API (agent loop + tools in `src/lib/ai/`); Z.AI wired as an alternate vision provider |
+| Hosting | Cloudflare Workers via `@opennextjs/cloudflare` + `wrangler`; `worker-entry.mjs` wraps the OpenNext worker |
+| File Storage | Cloudflare R2 (`PHOTO_BUCKET`), private objects streamed via `/api/attachments/[id]` and `/api/chat/attachments/[id]` |
 
-## Quick Reference
+## Commands
 
-- **Format code**: `npm exec -- ultracite fix`
-- **Check for issues**: `npm exec -- ultracite check`
-- **Diagnose setup**: `npm exec -- ultracite doctor`
-- **Run dev server**: `npm run dev`
-- **Run E2E tests**: `npx playwright test`
-- **Local preview of the Cloudflare bundle**: `npm run preview`
-- **Deploy to Cloudflare**: `npm run deploy`
-- **Push schema to prod Neon**: `npm run db:push:prod` (reads `.env.production`)
+```bash
+npm run dev                 # dev server
+npm run build               # production build (next build --webpack)
+npm run preview             # local Cloudflare Worker preview
+npm run deploy              # build + deploy to Cloudflare (the ONLY path to prod)
 
-**Always run `npm exec -- ultracite fix` before committing.**
+npm exec -- ultracite check # lint (also: npm run check)
+npm exec -- ultracite fix   # format + autofix (run before committing)
+npm run test:e2e            # Playwright (also: test:e2e:headed)
 
-## Core Principles
+npm run db:push             # drizzle-kit push, reads .env.local
+npm run db:push:prod        # drizzle-kit push, reads .env.production
+npm run db:seed             # seed team users + stages (see SEED_USER_PASSWORD)
+npm run db:studio           # Drizzle Studio
+npm run db:clean:e2e        # sweep e2e data (guarded, sweep-only off localhost)
 
-Write code that is **accessible, performant, type-safe, and maintainable**. Focus on clarity and explicit intent over brevity. This app is used on phones and tablets on a workshop floor — prioritise speed, large touch targets, and legibility.
+npm run knowledge:import    # import knowledge/*.md into Postgres for assistant RAG
+npm run ai:eval             # assistant eval harness (evals/, 80% pass gate)
 
-### Type Safety & Explicitness
+# One-off migration/backfill scripts (each has a :prod variant):
+# db:migrate-sub-status, db:backfill-stage-events,
+# db:backfill-quote-responded, db:backfill-notification-dedupe
+```
 
-- Use explicit types for function parameters and return values when they enhance clarity
-- Prefer `unknown` over `any` when the type is genuinely unknown
-- Use const assertions (`as const`) for immutable values and literal types
-- Leverage TypeScript's type narrowing instead of type assertions
-- Use meaningful variable names instead of magic numbers — extract constants with descriptive names
+Verification trio for product changes: `npm exec -- ultracite check`, `npm run build`, and `npm run test:e2e` for user-facing flows.
 
-### Modern JavaScript/TypeScript
+## Architecture Map
 
-- Use arrow functions for callbacks and short functions
-- Prefer `for...of` loops over `.forEach()` and indexed `for` loops
-- Use optional chaining (`?.`) and nullish coalescing (`??`) for safer property access
-- Prefer template literals over string concatenation
-- Use destructuring for object and array assignments
-- Use `const` by default, `let` only when reassignment is needed, never `var`
+App routes (`src/app/(app)/`, session-gated by the layout): dashboard `/`, `pipeline` (+ `/closed`), `deals` (+ `[id]`, `new`), `contacts`, `companies`, `calendar`, `inbox`, `notifications`, `tasks`, `help`, `reports` (+ `daily`, `weekly`, `deals`, `trends`, `funnel`, `team`), `settings` (+ `account`, `ai`, `company`, `import`, `notifications`, `statuses`, `team`).
 
-### Async & Promises
+Public routes (`src/app/(public)/`): `sign-in`, `enquire` (public enquiry form), `q/[token]` (tokenised client quote view).
 
-- Always `await` promises in async functions — don't forget to use the return value
-- Use `async/await` syntax instead of promise chains for better readability
-- Handle errors appropriately in async code with try-catch blocks
-- Don't use async functions as Promise executors
+API routes (`src/app/api/`): `auth/[...all]` (Better Auth), `chat` + `chat/threads` + `chat/attachments` (assistant), `attachments` (deal files), `cron/notifications` (CRON_SECRET bearer), `intake/email` (EMAIL_INTAKE_TOKEN bearer), `enquiries` (public, rate-limited + honeypot), `notifications/unread-count`, `reports/export`.
 
-### React & JSX
+`src/lib/` modules: `actions/` (server actions returning typed `*ActionState`), `ai/` (agent loop, tools, threads, knowledge RAG), `validation/` (zod schemas for every action and API body), `mutations/` (shared write cores), plus helpers (`reports.ts`, `alerts.ts`, `notifications.ts`, `session.ts`, `auth.ts`). `src/db/` holds the Drizzle schema, seed, and the driver-switching client.
 
-- Use function components over class components
-- Call hooks at the top level only, never conditionally
-- Specify all dependencies in hook dependency arrays correctly
-- Use the `key` prop for elements in iterables (prefer unique IDs over array indices)
-- Nest children between opening and closing tags instead of passing as props
-- Don't define components inside other components
-- Use semantic HTML and ARIA attributes for accessibility:
-  - Provide meaningful alt text for images
-  - Use proper heading hierarchy
-  - Add labels for form inputs
-  - Include keyboard event handlers alongside mouse events
-  - Use semantic elements (`<button>`, `<nav>`, etc.) instead of divs with roles
+## Data Layer and Action Rules
 
-### Error Handling & Debugging
+- **No transactions.** The Neon HTTP driver runs each statement independently. Order multi-statement writes so any prefix leaves recoverable state (see `deleteStage` in `src/lib/actions/stage-actions.ts`); a single SQL statement is atomic.
+- **Never stack sequential awaits in a render.** Fan out independent queries with `Promise.all` (model: `src/lib/contacts-directory-data.ts`). History: ~10 serial Neon queries in one render caused production 503s on workerd.
+- **Unbounded list queries get a LIMIT.** Convention is 200 (`REPORT_DEALS_LIMIT` in `src/lib/reports.ts`). Known accepted exception: the contacts directory scans the whole table; revisit with pagination around ~2,000 contacts.
+- **Server actions are endpoints.** The `(app)` layout gate does not protect them. Every action must gate itself with `requireActionSession` / `requireActionAdmin` (`src/lib/session.ts`, typed results, no redirect) and wrap its body in `runAction` (`src/lib/actions/run-action.ts`) so infra failures return `{ error }` instead of an unhandled server-action error. `runAction` uses `unstable_rethrow`, so `redirect()`/`notFound()` still work inside it.
+- **Admin-only surfaces**: team management, sub-statuses, stage management, org-wide settings (alerts, AI model/instructions, weightings, tooltip). Everything else is open to any signed-in user by design (single-org, three users; no multi-tenancy).
+- **Error boundaries** exist at `src/app/(app)/error.tsx`, `src/app/error.tsx`, `src/app/global-error.tsx`, plus `not-found.tsx` at root, `(app)`, and `q/[token]`. Keep them client-only, no db/session imports. `global-error.tsx` must own `<html>`/`<body>`.
+- **Security headers** are set globally in `next.config.ts` (nosniff, frame-ancestors, HSTS, referrer/permissions policy). The attachment routes add `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox` on streamed files because upload MIME is client-supplied. A script-src CSP is future work (needs nonce plumbing).
 
-- Remove `console.log`, `debugger`, and `alert` statements from production code
-- Throw `Error` objects with descriptive messages, not strings or other values
-- Use `try-catch` blocks meaningfully — don't catch errors just to rethrow them
-- Prefer early returns over nested conditionals for error cases
+## Deployment and Operations (read before deploying)
 
-### Code Organization
+- **Split-brain accounts.** The live site `https://blu-crm.kurt-0f6.workers.dev/` is served by the Paid Cloudflare account `0f665...` and is deployed ONLY by a local `npm run deploy`. GitHub push CI deploys a dead copy on a separate Free account and never touches prod. `limits.cpu_ms` in `wrangler.jsonc` is Paid-only (Free rejects it with API error 100328).
+- **Prod DB is separate.** The live Worker uses its own Neon database via a secret, not the `.env.local` dev database. Migrate prod explicitly with `npm run db:push:prod` (reads `.env.production`). Some rollouts have ordering requirements; check the constitution and WorkLogs (e.g. schema push before deploy for new tables the auth layer reads, such as `rate_limit`).
+- **Hang watchdog.** `worker-entry.mjs` (the wrangler `main`) retries GET/HEAD requests that produce no response within 12s, logging `[hang-watchdog]`. It mitigates an intermittent upstream workerd streaming stall. Temporary `[auth-debug]` timing logs exist in `src/lib/session.ts`, `src/lib/auth.ts`, and `src/db/index.ts`; remove them once the upstream bug is fixed.
+- **Cron.** `wrangler.jsonc` `triggers.crons` fires the `scheduled` handler in `worker-entry.mjs`, which dispatches an in-memory request to `/api/cron/notifications` with the `CRON_SECRET` bearer (never a network self-fetch; `global_fetch_strictly_public` is enabled).
+- **Before deploying**: check free disk (`df -h /`); a full disk has silently shipped a corrupt OpenNext bundle. Verify deploys against the live URL with a cache-busted fresh load.
 
-- Keep functions focused and under reasonable cognitive complexity limits
-- Extract complex conditions into well-named boolean variables
-- Use early returns to reduce nesting
-- Prefer simple conditionals over nested ternary operators
-- Group related code together and separate concerns
+### Environment Variables
 
-### Security
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | Neon Postgres. A localhost/127.0.0.1 URL switches `src/db/index.ts` to the node-postgres driver (local dev/E2E) |
+| `BETTER_AUTH_SECRET` | Required by Better Auth; insecure fallback without it |
+| `BETTER_AUTH_URL` | Canonical deployed URL for auth callbacks |
+| `NEXT_PUBLIC_APP_URL` | Build-time inlined; used by auth client + QR generation |
+| `ANTHROPIC_API_KEY` / `ZAI_API_KEY` | AI assistant and vision providers |
+| `CRON_SECRET` | Bearer guarding `/api/cron/notifications` (503 when unset) |
+| `EMAIL_INTAKE_TOKEN` | Bearer guarding `/api/intake/email` |
+| `SEED_USER_PASSWORD` | Seed account password. Required for non-local databases; the `blu-crm-dev` fallback is local-only and the seed script fails hard otherwise |
+| `CHAT_DAILY_MESSAGE_LIMIT` | Optional per-user daily assistant message cap (default 200, returns 429 past it) |
+| `AUTH_RATE_LIMIT_ENABLED` | Set to `true` (via `wrangler.jsonc` vars) to enable Better Auth sign-in rate limiting; the NODE_ENV default never fires on workerd. Off in `next dev`/Playwright |
 
-- Add `rel="noopener"` when using `target="_blank"` on links
-- Avoid `dangerouslySetInnerHTML` unless absolutely necessary
-- Don't use `eval()` or assign directly to `document.cookie`
-- Validate and sanitize user input
+## Testing and AI Evals
 
-### Performance
+- Playwright is the e2e framework; artifacts go under `output/playwright/`. The suite signs in as the seeded admin. The tablet project is WebKit and needs `--workers=1` to avoid goto hangs.
+- The assistant is mocked in e2e via `e2e/mock-anthropic-server.ts`; real-model quality is checked by `npm run ai:eval` (fixtures in `evals/`, 80% pass gate, tools never executed).
+- `knowledge/` holds the company knowledge corpus (brand voice, pricing, sales process) imported into Postgres by `npm run knowledge:import` for the assistant's knowledge-base tool.
+- Auth accounts are seed-created (`npm run db:seed`); there is no sign-up or password-reset UI.
 
-- Avoid spread syntax in accumulators within loops
-- Use top-level regex literals instead of creating them in loops
-- Prefer specific imports over namespace imports
-- Avoid barrel files (index files that re-export everything)
+## Code Style
 
----
-
-## Testing
-
-- Use Playwright for end-to-end and browser workflow testing
-- Prioritise Playwright coverage for the core mobile flows: search, browse by location, QR entry points, reorder, and quick add
-- Prefer Playwright assertions that verify visible user behaviour rather than implementation details
-- Use Playwright projects or viewports that reflect phone and tablet usage on the workshop floor
-- Write assertions inside `it()` or `test()` blocks
-- Avoid done callbacks in async tests — use async/await instead
-- Don't use `.only` or `.skip` in committed code
-- Keep test suites reasonably flat — avoid excessive `describe` nesting
-
-## When Biome Can't Help
-
-Focus your attention on:
-
-1. **Business logic correctness** — Biome can't validate your algorithms
-2. **Meaningful naming** — use descriptive names for functions, variables, and types
-3. **Architecture decisions** — component structure, data flow, and API design
-4. **Edge cases** — handle boundary conditions and error states
-5. **Mobile UX** — large touch targets, fast interactions, works with dirty hands
-6. **Accessibility** — screen readers, keyboard nav, colour contrast
+- Follow Ultracite/Biome; run `npm exec -- ultracite fix` before committing.
+- Explicit types where they add clarity; `unknown` over `any`; narrowing over assertions; no non-null assertions.
+- Server components by default; `"use client"` only when interactivity requires it. No components defined inside components.
+- Validate all user input with zod (`src/lib/validation/`) before persistence.
+- Mobile-first UX: large touch targets, fast interactions, legible on phones and tablets.
+- Semantic HTML and accessible patterns: labels on inputs, keyboard access, meaningful heading hierarchy.
+- No `console.log` leftovers (structured `[tag]` observability logs like `[hang-watchdog]`, `[action-error]`, `[notify]` are the sanctioned exception).

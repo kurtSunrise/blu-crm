@@ -1,6 +1,6 @@
 # Blu Team Constitution
 
-This document is the shared working agreement for contributors and AI agents in the Blu Shed repository. It should describe the project as it exists in the codebase today, not an aspirational stack from an earlier draft.
+This document is the shared working agreement for contributors and AI agents in the Blu CRM repository. It should describe the project as it exists in the codebase today, not an aspirational stack from an earlier draft.
 
 ---
 
@@ -9,9 +9,9 @@ This document is the shared working agreement for contributors and AI agents in 
 - **Product**: Blu CRM, a mobile-first CRM portal
 - **Framework style**: Next.js App Router
 - **Current backend direction**: Neon PostgreSQL with Drizzle ORM
-- **Current auth direction**: Better Auth with a Drizzle adapter; route gating is not yet wired
+- **Current auth direction**: Better Auth with a Drizzle adapter. Route gating is layered: the `(app)` layout requires a session for every in-shell page, and every server action gates itself with `requireActionSession`/`requireActionAdmin` (`src/lib/session.ts`) because actions are POST-addressable endpoints the layout gate does not cover. Sign-in is rate limited on the Worker (Better Auth `rateLimit`, database storage, `rate_limit` table, switched on by the `AUTH_RATE_LIMIT_ENABLED` var in `wrangler.jsonc` because the NODE_ENV default never fires on workerd)
 - **Current UI direction**: touch-friendly, mobile-first, shadcn/ui-based interfaces
-- **AI chat**: planned in product docs, not implemented in the current app code
+- **AI chat**: shipped (M4). Agent loop and tools live in `src/lib/ai/`, the endpoint is `/api/chat` (per-user daily message cap, default 200), threads are user-scoped, and the eval harness in `evals/` runs via `npm run ai:eval` with an 80% pass gate
 - **Deployment**: Cloudflare Workers (worker name `blu-crm`) via `@opennextjs/cloudflare` + `wrangler`;
 - **Scheduled work**: Cloudflare cron triggers (`wrangler.jsonc` `triggers.crons`) drive the notification sweeps. The OpenNext worker only exports `fetch`, so `worker-entry.mjs` exports `scheduled` and dispatches an in-memory authenticated request to `/api/cron/notifications` (never a network self-fetch: `global_fetch_strictly_public` is enabled).
 - **Photo storage**: Cloudflare R2 bucket `blu-crm-photos` bound as `PHOTO_BUCKET`; objects stay private and stream through `/api/attachments/[id]`. Local dev uses the simulated binding from `initOpenNextCloudflareForDev()` (persisted under `.wrangler/`)
@@ -128,6 +128,13 @@ This document is the shared working agreement for contributors and AI agents in 
 - Keep Better Auth configuration aligned with the Drizzle schema and DB client.
 - Do not introduce SQLite-specific assumptions into new code or documentation.
 
+### Hardening Conventions (2026-07-04, detail in CLAUDE.md)
+- Every server action gates itself (`requireActionSession`/`requireActionAdmin`) and wraps its body in `runAction` (`src/lib/actions/run-action.ts`) so infra failures return a typed `{ error }`.
+- Independent queries in a render fan out with `Promise.all`; never stack sequential awaits (historical prod 503 cause).
+- Unbounded list queries take a LIMIT (convention 200).
+- No transactions on the Neon HTTP driver: order multi-statement writes so any prefix leaves recoverable state; a single SQL statement is atomic.
+- Error boundaries live at `src/app/(app)/error.tsx`, `src/app/error.tsx`, `src/app/global-error.tsx`, plus `not-found.tsx` files; security headers are set in `next.config.ts` and on the attachment streaming routes.
+
 ---
 
 ## Testing Standards
@@ -160,7 +167,7 @@ This document is the shared working agreement for contributors and AI agents in 
 - Avoid noisy comments that restate the code.
 
 ### Project Documentation
-- Keep `AGENTS.md`, `CLAUDE.md`, `PRD.md`, and `WorkLogs/TEAM_CONSTITUTION.md` aligned with the actual project state.
+- Keep `AGENT.md`, `CLAUDE.md`, `PRD.md`, and `WorkLogs/TEAM_CONSTITUTION.md` aligned with the actual project state. `AGENT.md` is a pointer to `CLAUDE.md`; keep it that way so the two cannot drift apart.
 - When the stack or workflow changes, update the relevant docs in the same body of work.
 - Do not document scripts or tools that do not exist in `package.json`.
 
@@ -204,6 +211,9 @@ Runtime variables the current code reads:
 - `NEXT_PUBLIC_APP_URL` — `plain_text`; inlined into the client bundle (used by `src/lib/auth-client.ts` and QR code generation). Must be set at build time.
 - `ANTHROPIC_API_KEY` and/or `ZAI_API_KEY` — only required if photo search is enabled.
 - `CRON_SECRET` — bearer token guarding `/api/cron/notifications`. The Worker's `scheduled` handler (worker-entry.mjs) sends it when dispatching the notification sweeps declared in `wrangler.jsonc` `triggers.crons`; without it the route returns 503. Set via `wrangler secret put CRON_SECRET` in prod and in `.env.local`/`.dev.vars` for dev and E2E.
+- `EMAIL_INTAKE_TOKEN` — bearer token guarding `/api/intake/email` (503 when unset).
+- `SEED_USER_PASSWORD` — password for the three seeded accounts. `src/db/seed.ts` fails hard when it is unset and the target database is not localhost (the `blu-crm-dev` fallback is a known string and must never reach a remote database).
+- `CHAT_DAILY_MESSAGE_LIMIT` — optional per-user daily assistant message cap (default 200; `/api/chat` returns 429 past it).
 
 ### Core Commands
 ```bash

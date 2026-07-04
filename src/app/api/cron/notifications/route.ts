@@ -23,6 +23,8 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
+  // A plain compare is fine here: the secret is long and random, and the
+  // Cloudflare network path adds far more timing noise than the comparison.
   const authorization = request.headers.get("authorization");
   if (authorization !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });

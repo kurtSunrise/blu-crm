@@ -74,58 +74,62 @@ export default async function Home() {
   const { start, end } = awstDayRange();
   const winRateSince = new Date(Date.now() - WIN_RATE_WINDOW_DAYS * MS_PER_DAY);
 
-  const stages = await getStageBreakdown();
-  const winRate = await getWinRate(winRateSince);
-  const thresholds = await getAlertThresholds();
-  const staleDeals = await getStaleDeals(thresholds.staleDays);
-  const closingSoonDeals = await getClosingSoonDeals(
-    thresholds.closingSoonDays
-  );
+  // Two waves rather than eight serial round trips: stacked sequential Neon
+  // queries in one render have caused production 503s on workerd. Only the
+  // stale/closing-soon alerts depend on thresholds, so they wait for wave 1.
+  const [stages, winRate, thresholds, [inboxCount], dueTasks, recentActivity] =
+    await Promise.all([
+      getStageBreakdown(),
+      getWinRate(winRateSince),
+      getAlertThresholds(),
+      db
+        .select({ value: count(deal.id) })
+        .from(deal)
+        .where(and(isNull(deal.ownerId), isNull(deal.deletedAt))),
+      // Today's working list: overdue first, then due today (FR-5.2).
+      db
+        .select({
+          id: followUp.id,
+          action: followUp.action,
+          dueDate: followUp.dueDate,
+          ownerName: user.name,
+          dealId: deal.id,
+          dealTitle: deal.title,
+        })
+        .from(followUp)
+        .innerJoin(deal, eq(followUp.dealId, deal.id))
+        .leftJoin(user, eq(followUp.ownerId, user.id))
+        .where(
+          and(
+            isNull(followUp.completedAt),
+            isNull(deal.deletedAt),
+            lt(followUp.dueDate, end)
+          )
+        )
+        .orderBy(followUp.dueDate)
+        .limit(LIST_LIMIT + 1),
+      db
+        .select({
+          id: activity.id,
+          type: activity.type,
+          content: activity.content,
+          createdAt: activity.createdAt,
+          authorName: user.name,
+          dealId: deal.id,
+          dealTitle: deal.title,
+        })
+        .from(activity)
+        .innerJoin(deal, eq(activity.dealId, deal.id))
+        .leftJoin(user, eq(activity.createdBy, user.id))
+        .where(isNull(deal.deletedAt))
+        .orderBy(desc(activity.createdAt))
+        .limit(ACTIVITY_LIMIT),
+    ]);
 
-  const [inboxCount] = await db
-    .select({ value: count(deal.id) })
-    .from(deal)
-    .where(and(isNull(deal.ownerId), isNull(deal.deletedAt)));
-
-  // Today's working list: overdue first, then due today (FR-5.2).
-  const dueTasks = await db
-    .select({
-      id: followUp.id,
-      action: followUp.action,
-      dueDate: followUp.dueDate,
-      ownerName: user.name,
-      dealId: deal.id,
-      dealTitle: deal.title,
-    })
-    .from(followUp)
-    .innerJoin(deal, eq(followUp.dealId, deal.id))
-    .leftJoin(user, eq(followUp.ownerId, user.id))
-    .where(
-      and(
-        isNull(followUp.completedAt),
-        isNull(deal.deletedAt),
-        lt(followUp.dueDate, end)
-      )
-    )
-    .orderBy(followUp.dueDate)
-    .limit(LIST_LIMIT + 1);
-
-  const recentActivity = await db
-    .select({
-      id: activity.id,
-      type: activity.type,
-      content: activity.content,
-      createdAt: activity.createdAt,
-      authorName: user.name,
-      dealId: deal.id,
-      dealTitle: deal.title,
-    })
-    .from(activity)
-    .innerJoin(deal, eq(activity.dealId, deal.id))
-    .leftJoin(user, eq(activity.createdBy, user.id))
-    .where(isNull(deal.deletedAt))
-    .orderBy(desc(activity.createdAt))
-    .limit(ACTIVITY_LIMIT);
+  const [staleDeals, closingSoonDeals] = await Promise.all([
+    getStaleDeals(thresholds.staleDays),
+    getClosingSoonDeals(thresholds.closingSoonDays),
+  ]);
 
   const openStages = stages.filter((stage) => !(stage.isWon || stage.isLost));
   const totals = summarisePipeline(stages);

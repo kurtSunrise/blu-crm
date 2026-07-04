@@ -123,6 +123,10 @@ export const logActivitySchema = z.object({
 
 export type LogActivityInput = z.infer<typeof logActivitySchema>;
 
+// The scheme check matters: z.url() alone accepts javascript:/data: URLs,
+// and this value is rendered as an href.
+const HTTP_URL_PATTERN = /^https?:\/\//i;
+
 // A valid http(s) link, or an empty string which clears the field.
 export const updateSharedFolderSchema = z.object({
   dealId: z.string().min(1),
@@ -131,6 +135,10 @@ export const updateSharedFolderSchema = z.object({
     .trim()
     .max(2000)
     .url("Enter a valid link (including https://)")
+    .refine(
+      (value) => HTTP_URL_PATTERN.test(value),
+      "Links must start with http:// or https://"
+    )
     .or(z.literal("")),
 });
 

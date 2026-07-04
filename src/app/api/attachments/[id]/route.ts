@@ -48,6 +48,12 @@ export async function GET(
         "application/octet-stream",
       "Content-Disposition": `inline; filename="${record.fileName}"`,
       "Cache-Control": "private, max-age=3600",
+      // The stored content type is the client-supplied upload MIME. The
+      // allowlist excludes active types (html/svg), and these two headers
+      // close the residual risk of a browser executing a mislabelled file
+      // in the app's origin.
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "sandbox",
     },
   });
 }

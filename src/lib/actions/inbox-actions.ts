@@ -5,8 +5,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { activity, deal, user } from "@/db/schema";
+import { runAction } from "@/lib/actions/run-action";
 import { emitNotification } from "@/lib/notifications";
-import { getSessionUserId } from "@/lib/session";
+import { requireActionSession } from "@/lib/session";
 
 export interface InboxActionState {
   error?: string;
@@ -30,71 +31,79 @@ const revalidateInboxViews = (dealId: string): void => {
 
 export const assignDealOwner = async (
   input: unknown
-): Promise<InboxActionState> => {
-  const parsed = assignSchema.safeParse(input);
-  if (!parsed.success) {
-    return { error: "Invalid assignment" };
-  }
-  const { dealId, ownerId } = parsed.data;
+): Promise<InboxActionState> =>
+  runAction(async () => {
+    const auth = await requireActionSession();
+    if (!auth.ok) {
+      return { error: auth.error };
+    }
+    const parsed = assignSchema.safeParse(input);
+    if (!parsed.success) {
+      return { error: "Invalid assignment" };
+    }
+    const { dealId, ownerId } = parsed.data;
 
-  const [assignee] = await db
-    .select({ id: user.id, name: user.name })
-    .from(user)
-    .where(eq(user.id, ownerId))
-    .limit(1);
-  if (!assignee) {
-    return { error: "Unknown owner" };
-  }
+    const [assignee] = await db
+      .select({ id: user.id, name: user.name })
+      .from(user)
+      .where(eq(user.id, ownerId))
+      .limit(1);
+    if (!assignee) {
+      return { error: "Unknown owner" };
+    }
 
-  const [assigned] = await db
-    .update(deal)
-    .set({ ownerId, updatedBy: ownerId, updatedAt: new Date() })
-    .where(eq(deal.id, dealId))
-    .returning({ id: deal.id, title: deal.title, leadId: deal.leadId });
+    const [assigned] = await db
+      .update(deal)
+      .set({ ownerId, updatedBy: ownerId, updatedAt: new Date() })
+      .where(eq(deal.id, dealId))
+      .returning({ id: deal.id, title: deal.title, leadId: deal.leadId });
 
-  if (!assigned) {
-    return { error: "Unknown deal" };
-  }
+    if (!assigned) {
+      return { error: "Unknown deal" };
+    }
 
-  const assignedBy = await getSessionUserId();
-  await db.insert(activity).values({
-    dealId,
-    type: "note",
-    content: `Lead assigned to ${assignee.name}`,
-    createdBy: assignedBy,
+    const assignedBy = auth.session.user.id;
+    await db.insert(activity).values({
+      dealId,
+      type: "note",
+      content: `Lead assigned to ${assignee.name}`,
+      createdBy: assignedBy,
+    });
+
+    // New-lead-assigned notification (FR-11.1). Self-assignments are skipped.
+    await emitNotification({
+      type: "lead_assigned",
+      recipientIds: [ownerId],
+      actorId: assignedBy,
+      payload: { dealId, dealTitle: assigned.title, leadId: assigned.leadId },
+    });
+
+    revalidateInboxViews(dealId);
+    return {};
   });
-
-  // New-lead-assigned notification (FR-11.1). Self-assignments are skipped.
-  await emitNotification({
-    type: "lead_assigned",
-    recipientIds: [ownerId],
-    actorId: assignedBy,
-    payload: { dealId, dealTitle: assigned.title, leadId: assigned.leadId },
-  });
-
-  revalidateInboxViews(dealId);
-  return {};
-};
 
 // Discard is a soft delete (PRD §7: no hard deletes in V1).
-export const discardLead = async (
-  input: unknown
-): Promise<InboxActionState> => {
-  const parsed = discardSchema.safeParse(input);
-  if (!parsed.success) {
-    return { error: "Invalid lead" };
-  }
+export const discardLead = async (input: unknown): Promise<InboxActionState> =>
+  runAction(async () => {
+    const auth = await requireActionSession();
+    if (!auth.ok) {
+      return { error: auth.error };
+    }
+    const parsed = discardSchema.safeParse(input);
+    if (!parsed.success) {
+      return { error: "Invalid lead" };
+    }
 
-  const [discarded] = await db
-    .update(deal)
-    .set({ deletedAt: new Date(), updatedAt: new Date() })
-    .where(eq(deal.id, parsed.data.dealId))
-    .returning({ id: deal.id });
+    const [discarded] = await db
+      .update(deal)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(eq(deal.id, parsed.data.dealId))
+      .returning({ id: deal.id });
 
-  if (!discarded) {
-    return { error: "Unknown deal" };
-  }
+    if (!discarded) {
+      return { error: "Unknown deal" };
+    }
 
-  revalidateInboxViews(parsed.data.dealId);
-  return {};
-};
+    revalidateInboxViews(parsed.data.dealId);
+    return {};
+  });

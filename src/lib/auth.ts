@@ -3,7 +3,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { account, session, user, verification } from "@/db/schema";
+import { account, rateLimit, session, user, verification } from "@/db/schema";
 
 // On the Cloudflare Worker, env vars and secrets are only present on
 // process.env inside a request context, not at module-load time. The previous
@@ -39,10 +39,27 @@ const buildAuth = (baseURL: string | undefined) => {
     secret: readEnv("BETTER_AUTH_SECRET"),
     database: drizzleAdapter(db, {
       provider: "pg",
-      schema: { account, session, user, verification },
+      schema: { account, rateLimit, session, user, verification },
     }),
     emailAndPassword: {
       enabled: true,
+    },
+    // Better Auth's own "enabled in production" default never fires on
+    // workerd (NODE_ENV is not visible there), so the switch is an explicit
+    // var set in wrangler.jsonc: on for the deployed Worker and `npm run
+    // preview`, off for `next dev` and Playwright. Counters live in Postgres
+    // because Workers isolates each keep their own memory; 10 sign-in
+    // attempts/min/IP blunts credential stuffing while staying generous for
+    // a 3-person team.
+    rateLimit: {
+      enabled: readEnv("AUTH_RATE_LIMIT_ENABLED") === "true",
+      storage: "database",
+      modelName: "rateLimit",
+      window: 60,
+      max: 60,
+      customRules: {
+        "/sign-in/email": { window: 60, max: 10 },
+      },
     },
     socialProviders: microsoftConfigured
       ? {

@@ -60,3 +60,29 @@ export const getSessionUserId = async (): Promise<string | null> => {
   const session = await getSession();
   return session?.user.id ?? null;
 };
+
+type SessionData = NonNullable<Awaited<ReturnType<typeof getSession>>>;
+
+// Server actions are POST-addressable endpoints in their own right; the
+// (app) layout's requireSession() does not gate them. Every action must
+// verify the session itself. These helpers return a typed result instead
+// of redirecting so they fit the actions' { error?: string } convention.
+export type ActionAuth =
+  | { ok: true; session: SessionData }
+  | { ok: false; error: string };
+
+export const requireActionSession = async (): Promise<ActionAuth> => {
+  const session = await getSession();
+  if (!session) {
+    return { ok: false, error: "Your session has expired. Sign in again." };
+  }
+  return { ok: true, session };
+};
+
+export const requireActionAdmin = async (): Promise<ActionAuth> => {
+  const auth = await requireActionSession();
+  if (auth.ok && auth.session.user.role !== "admin") {
+    return { ok: false, error: "Only admins can do this." };
+  }
+  return auth;
+};

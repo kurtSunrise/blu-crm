@@ -12,12 +12,13 @@ import {
   dealSubStatus,
   pipelineStage,
 } from "@/db/schema";
+import { runAction } from "@/lib/actions/run-action";
 import { dollarsToCents } from "@/lib/format";
 import { createLead } from "@/lib/intake";
 import { LOST_REASON_LABELS } from "@/lib/labels";
 import { updateDealFieldsCore } from "@/lib/mutations/deal";
 import { emitNotification, getHandoverRecipientIds } from "@/lib/notifications";
-import { getSessionUserId } from "@/lib/session";
+import { requireActionSession } from "@/lib/session";
 import {
   logActivitySchema,
   moveDealStageSchema,
@@ -54,6 +55,20 @@ const resolveValueRangeDollars = (
 export const createQuickAddDeal = async (
   _prevState: ActionState,
   formData: FormData
+): Promise<ActionState> =>
+  runAction(async () => {
+    const auth = await requireActionSession();
+    if (!auth.ok) {
+      return { error: auth.error };
+    }
+    return createQuickAddDealForUser(formData, auth.session.user.id);
+  });
+
+// Body extracted to keep cognitive complexity within the lint budget; the
+// runAction callback adds a nesting level that pushed the inline form over.
+const createQuickAddDealForUser = async (
+  formData: FormData,
+  sessionUserId: string
 ): Promise<ActionState> => {
   const parsed = quickAddDealSchema.safeParse({
     companyName: formData.get("companyName"),
@@ -80,7 +95,6 @@ export const createQuickAddDeal = async (
     return { error: "Selected contact no longer exists" };
   }
 
-  const sessionUserId = await getSessionUserId();
   const { minDollars, maxDollars } = resolveValueRangeDollars(
     input.estimatedValueDollars,
     input.estimatedValueMaxDollars
@@ -131,7 +145,21 @@ const stageMoveActivityContent = (
   return `Moved to ${stage.name}`;
 };
 
-export const moveDealStage = async (input: unknown): Promise<ActionState> => {
+export const moveDealStage = async (input: unknown): Promise<ActionState> =>
+  runAction(async () => {
+    const auth = await requireActionSession();
+    if (!auth.ok) {
+      return { error: auth.error };
+    }
+    return moveDealStageForUser(input, auth.session.user.id);
+  });
+
+// Body extracted to keep cognitive complexity within the lint budget; the
+// runAction callback adds a nesting level that pushed the inline form over.
+const moveDealStageForUser = async (
+  input: unknown,
+  movedBy: string
+): Promise<ActionState> => {
   const parsed = moveDealStageSchema.safeParse(input);
   if (!parsed.success) {
     return { error: "Invalid stage move" };
@@ -212,7 +240,6 @@ export const moveDealStage = async (input: unknown): Promise<ActionState> => {
     handoverToDelivery
   );
 
-  const movedBy = await getSessionUserId();
   const [stageChangeActivity] = await db
     .insert(activity)
     .values({
@@ -264,55 +291,78 @@ const QUICK_LOG_LABELS: Record<string, string> = {
   note: "Note",
 };
 
-export const logQuickActivity = async (
-  input: unknown
-): Promise<ActionState> => {
-  const parsed = logActivitySchema.safeParse(input);
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid activity" };
-  }
-  const { dealId, type, content } = parsed.data;
+export const logQuickActivity = async (input: unknown): Promise<ActionState> =>
+  runAction(async () => {
+    const auth = await requireActionSession();
+    if (!auth.ok) {
+      return { error: auth.error };
+    }
+    const parsed = logActivitySchema.safeParse(input);
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Invalid activity" };
+    }
+    const { dealId, type, content } = parsed.data;
 
-  const now = new Date();
-  await db.insert(activity).values({
-    dealId,
-    type,
-    content: content ?? QUICK_LOG_LABELS[type],
-    createdBy: await getSessionUserId(),
+    const now = new Date();
+    await db.insert(activity).values({
+      dealId,
+      type,
+      content: content ?? QUICK_LOG_LABELS[type],
+      createdBy: auth.session.user.id,
+    });
+    await db
+      .update(deal)
+      .set({ lastContactAt: now, updatedAt: now })
+      .where(eq(deal.id, dealId));
+
+    revalidatePath(`/deals/${dealId}`);
+    revalidatePath("/pipeline");
+    revalidatePath("/contacts");
+    revalidatePath("/");
+    return {};
   });
-  await db
-    .update(deal)
-    .set({ lastContactAt: now, updatedAt: now })
-    .where(eq(deal.id, dealId));
-
-  revalidatePath(`/deals/${dealId}`);
-  return {};
-};
 
 export const updateDealSharedFolderUrl = async (
   input: unknown
-): Promise<ActionState> => {
-  const parsed = updateSharedFolderSchema.safeParse(input);
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid link" };
-  }
-  const { dealId, sharedFolderUrl } = parsed.data;
+): Promise<ActionState> =>
+  runAction(async () => {
+    const auth = await requireActionSession();
+    if (!auth.ok) {
+      return { error: auth.error };
+    }
+    const parsed = updateSharedFolderSchema.safeParse(input);
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Invalid link" };
+    }
+    const { dealId, sharedFolderUrl } = parsed.data;
 
-  const result = await updateDealFieldsCore({
-    dealId,
-    // An empty submission clears the stored link.
-    sharedFolderUrl: sharedFolderUrl === "" ? null : sharedFolderUrl,
-    updatedBy: (await getSessionUserId()) ?? undefined,
+    const result = await updateDealFieldsCore({
+      dealId,
+      // An empty submission clears the stored link.
+      sharedFolderUrl: sharedFolderUrl === "" ? null : sharedFolderUrl,
+      updatedBy: auth.session.user.id,
+    });
+
+    if (result.error) {
+      return { error: result.error };
+    }
+    return {};
   });
 
-  if (result.error) {
-    return { error: result.error };
-  }
-  return {};
-};
+export const setDealSubStatus = async (input: unknown): Promise<ActionState> =>
+  runAction(async () => {
+    const auth = await requireActionSession();
+    if (!auth.ok) {
+      return { error: auth.error };
+    }
+    return setDealSubStatusForUser(input, auth.session.user.id);
+  });
 
-export const setDealSubStatus = async (
-  input: unknown
+// Body extracted to keep cognitive complexity within the lint budget; the
+// runAction callback adds a nesting level that pushed the inline form over.
+const setDealSubStatusForUser = async (
+  input: unknown,
+  sessionUserId: string
 ): Promise<ActionState> => {
   const parsed = setDealSubStatusSchema.safeParse(input);
   if (!parsed.success) {
@@ -384,7 +434,7 @@ export const setDealSubStatus = async (
     dealId,
     type: "note",
     content,
-    createdBy: await getSessionUserId(),
+    createdBy: sessionUserId,
   });
 
   revalidatePath("/pipeline");

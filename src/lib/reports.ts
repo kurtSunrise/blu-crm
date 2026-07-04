@@ -1084,6 +1084,7 @@ export interface ReportDealsQuery {
 }
 
 const REPORT_DEALS_LIMIT = 200;
+const REPORT_ACTIONS_LIMIT = 200;
 
 export const getReportDeals = async (
   query: ReportDealsQuery
@@ -1214,58 +1215,74 @@ export const getWeeklyReport = async (
     now.getTime() + REPORT_WEEK_DAYS * MS_PER_DAY
   );
 
-  const thresholds = await getAlertThresholds();
-  const breakdown = await getStageBreakdown();
-  const needsAttention = await getStaleDeals(thresholds.staleDays);
-  const closingSoon = await getClosingSoonDeals(thresholds.closingSoonDays);
-
-  const [newThisWeek] = await db
-    .select({ value: count(deal.id) })
-    .from(deal)
-    .where(and(isNull(deal.deletedAt), gte(deal.createdAt, weekStart)));
-
-  const openDeals = await db
-    .select(reportDealColumns)
-    .from(deal)
-    .innerJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
-    .leftJoin(company, eq(deal.companyId, company.id))
-    .where(
-      and(
-        isNull(deal.deletedAt),
-        eq(pipelineStage.isWon, false),
-        eq(pipelineStage.isLost, false)
+  // Two waves rather than eight serial round trips: stacked sequential Neon
+  // queries in one render have caused production 503s on workerd. Only the
+  // two alert lists depend on thresholds, so they wait for wave 1. Result
+  // sets are capped at the report limits; ordering puts the rows that matter
+  // (top-of-funnel stages, largest values, soonest actions) before the cut.
+  const [
+    thresholds,
+    breakdown,
+    [newThisWeek],
+    openDeals,
+    closedThisWeek,
+    actions,
+  ] = await Promise.all([
+    getAlertThresholds(),
+    getStageBreakdown(),
+    db
+      .select({ value: count(deal.id) })
+      .from(deal)
+      .where(and(isNull(deal.deletedAt), gte(deal.createdAt, weekStart))),
+    db
+      .select(reportDealColumns)
+      .from(deal)
+      .innerJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
+      .leftJoin(company, eq(deal.companyId, company.id))
+      .where(
+        and(
+          isNull(deal.deletedAt),
+          eq(pipelineStage.isWon, false),
+          eq(pipelineStage.isLost, false)
+        )
       )
-    )
-    .orderBy(asc(pipelineStage.position), desc(dealValueCents));
-
-  const closedThisWeek = await db
-    .select({ ...reportDealColumns, isWon: pipelineStage.isWon })
-    .from(deal)
-    .innerJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
-    .leftJoin(company, eq(deal.companyId, company.id))
-    .where(and(isNull(deal.deletedAt), gte(deal.closedAt, weekStart)))
-    .orderBy(desc(dealValueCents));
-
-  const actions = await db
-    .select({
-      id: followUp.id,
-      action: followUp.action,
-      dueDate: followUp.dueDate,
-      ownerName: user.name,
-      dealId: deal.id,
-      dealTitle: deal.title,
-    })
-    .from(followUp)
-    .innerJoin(deal, eq(followUp.dealId, deal.id))
-    .leftJoin(user, eq(followUp.ownerId, user.id))
-    .where(
-      and(
-        isNull(followUp.completedAt),
-        isNull(deal.deletedAt),
-        lt(followUp.dueDate, actionsHorizon)
+      .orderBy(asc(pipelineStage.position), desc(dealValueCents))
+      .limit(REPORT_DEALS_LIMIT),
+    db
+      .select({ ...reportDealColumns, isWon: pipelineStage.isWon })
+      .from(deal)
+      .innerJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
+      .leftJoin(company, eq(deal.companyId, company.id))
+      .where(and(isNull(deal.deletedAt), gte(deal.closedAt, weekStart)))
+      .orderBy(desc(dealValueCents))
+      .limit(REPORT_DEALS_LIMIT),
+    db
+      .select({
+        id: followUp.id,
+        action: followUp.action,
+        dueDate: followUp.dueDate,
+        ownerName: user.name,
+        dealId: deal.id,
+        dealTitle: deal.title,
+      })
+      .from(followUp)
+      .innerJoin(deal, eq(followUp.dealId, deal.id))
+      .leftJoin(user, eq(followUp.ownerId, user.id))
+      .where(
+        and(
+          isNull(followUp.completedAt),
+          isNull(deal.deletedAt),
+          lt(followUp.dueDate, actionsHorizon)
+        )
       )
-    )
-    .orderBy(asc(followUp.dueDate));
+      .orderBy(asc(followUp.dueDate))
+      .limit(REPORT_ACTIONS_LIMIT),
+  ]);
+
+  const [needsAttention, closingSoon] = await Promise.all([
+    getStaleDeals(thresholds.staleDays),
+    getClosingSoonDeals(thresholds.closingSoonDays),
+  ]);
 
   const openStages = breakdown.filter((row) => !(row.isWon || row.isLost));
   const openByStage = openStages.map((stage) => ({

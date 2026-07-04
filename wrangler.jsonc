@@ -22,6 +22,13 @@
       "bucket_name": "blu-crm-cache"
     }
   ],
+  "vars": {
+    // Explicit switch for Better Auth sign-in rate limiting (database
+    // storage, rate_limit table). Its NODE_ENV-based default never enables
+    // on workerd, so the Worker opts in here; `next dev` and Playwright do
+    // not read wrangler vars and stay unlimited.
+    "AUTH_RATE_LIMIT_ENABLED": "true"
+  },
   "observability": {
     "enabled": true
   },

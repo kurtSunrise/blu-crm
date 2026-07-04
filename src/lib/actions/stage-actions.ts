@@ -4,7 +4,8 @@ import { asc, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { deal, pipelineStage } from "@/db/schema";
-import { getSessionUserId } from "@/lib/session";
+import { runAction } from "@/lib/actions/run-action";
+import { getSessionUserId, requireActionAdmin } from "@/lib/session";
 import { stageNameSchema } from "@/lib/validation/settings";
 
 // Customisable pipeline stages (FR-1.3): rename, reorder, add, remove.
@@ -179,6 +180,12 @@ const deleteStage = async (formData: FormData): Promise<StageActionState> => {
     .from(deal)
     .where(eq(deal.stageId, stageId));
 
+  // No transactions on the Neon HTTP driver: the statements below run
+  // independently, so they are ordered for prefix-recoverability. Stage
+  // history is written first (a spurious history row is harmless), deals
+  // are moved before the stage row is deleted (no deal can point at a
+  // missing stage), and position compaction runs last (uncompacted
+  // positions are cosmetic). Single statements remain atomic.
   if (dealCount.value > 0) {
     const reassignTo = formData.get("reassignToStageId");
     const destination = stages.find((row) => row.id === reassignTo);
@@ -226,29 +233,35 @@ const deleteStage = async (formData: FormData): Promise<StageActionState> => {
 export const manageStages = async (
   _prevState: StageActionState,
   formData: FormData
-): Promise<StageActionState> => {
-  const intent = formData.get("intent");
+): Promise<StageActionState> =>
+  runAction(async () => {
+    const auth = await requireActionAdmin();
+    if (!auth.ok) {
+      return { error: auth.error };
+    }
 
-  let result: StageActionState;
-  switch (intent) {
-    case "add":
-      result = await addStage(formData);
-      break;
-    case "rename":
-      result = await renameStage(formData);
-      break;
-    case "move":
-      result = await moveStage(formData);
-      break;
-    case "delete":
-      result = await deleteStage(formData);
-      break;
-    default:
-      result = { error: "Unknown stage action." };
-  }
+    const intent = formData.get("intent");
 
-  if (result.message) {
-    revalidateStageSurfaces();
-  }
-  return result;
-};
+    let result: StageActionState;
+    switch (intent) {
+      case "add":
+        result = await addStage(formData);
+        break;
+      case "rename":
+        result = await renameStage(formData);
+        break;
+      case "move":
+        result = await moveStage(formData);
+        break;
+      case "delete":
+        result = await deleteStage(formData);
+        break;
+      default:
+        result = { error: "Unknown stage action." };
+    }
+
+    if (result.message) {
+      revalidateStageSurfaces();
+    }
+    return result;
+  });

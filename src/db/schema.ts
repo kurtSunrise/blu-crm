@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -89,6 +90,16 @@ export const verification = pgTable("verification", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+});
+
+// Better Auth's rate-limit counters (sign-in throttling). Database storage is
+// required on Workers: in-memory counters are per-isolate and effectively
+// useless there. lastRequest is a millisecond epoch, hence bigint.
+export const rateLimit = pgTable("rate_limit", {
+  id: text("id").primaryKey(),
+  key: text("key"),
+  count: integer("count"),
+  lastRequest: bigint("last_request", { mode: "number" }),
 });
 
 // ---------------------------------------------------------------------------

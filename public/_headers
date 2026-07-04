@@ -1,0 +1,4 @@
+# Headers for the Workers static-assets layer, which serves files without
+# invoking the worker, so next.config.ts headers() never applies to them.
+/*
+  X-Content-Type-Options: nosniff

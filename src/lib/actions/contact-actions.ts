@@ -2,14 +2,15 @@
 
 import { and, eq, ilike, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { db } from "@/db";
 import { company, contact } from "@/db/schema";
+import { runAction } from "@/lib/actions/run-action";
 import {
   type DuplicateCandidate,
   findDuplicateContacts,
 } from "@/lib/duplicates";
-import { getSessionUserId } from "@/lib/session";
+import { requireActionSession } from "@/lib/session";
 import {
   createContactSchema,
   updateContactSchema,
@@ -64,62 +65,80 @@ const findOrCreateCompany = async (
 export const createContact = async (
   _prevState: ContactActionState,
   formData: FormData
-): Promise<ContactActionState> => {
-  const parsed = createContactSchema.safeParse({
-    name: formData.get("name"),
-    email: formData.get("email") ?? undefined,
-    phone: formData.get("phone") ?? undefined,
-    title: formData.get("title") ?? undefined,
-    companyName: formData.get("companyName") ?? undefined,
-    allowDuplicate: formData.get("allowDuplicate") === "true",
-  });
-
-  const values = submittedValues(formData);
-
-  if (!parsed.success) {
-    return {
-      error: parsed.error.issues[0]?.message ?? "Invalid input",
-      values,
-    };
-  }
-
-  const input = parsed.data;
-
-  if (!input.allowDuplicate) {
-    const duplicates = await findDuplicateContacts(input);
-    if (duplicates.length > 0) {
-      return { duplicates, values };
+): Promise<ContactActionState> =>
+  runAction(async () => {
+    const auth = await requireActionSession();
+    if (!auth.ok) {
+      return { error: auth.error };
     }
-  }
+    const parsed = createContactSchema.safeParse({
+      name: formData.get("name"),
+      email: formData.get("email") ?? undefined,
+      phone: formData.get("phone") ?? undefined,
+      title: formData.get("title") ?? undefined,
+      companyName: formData.get("companyName") ?? undefined,
+      allowDuplicate: formData.get("allowDuplicate") === "true",
+    });
 
-  const companyId = input.companyName
-    ? await findOrCreateCompany(input.companyName)
-    : undefined;
+    const values = submittedValues(formData);
 
-  const sessionUserId = await getSessionUserId();
-  const [created] = await db
-    .insert(contact)
-    .values({
-      name: input.name,
-      email: input.email,
-      phone: input.phone,
-      title: input.title,
-      companyId,
-      createdBy: sessionUserId,
-      updatedBy: sessionUserId,
-    })
-    .returning({ id: contact.id });
+    if (!parsed.success) {
+      return {
+        error: parsed.error.issues[0]?.message ?? "Invalid input",
+        values,
+      };
+    }
 
-  if (!created) {
-    return { error: "Failed to create the contact", values };
-  }
+    const input = parsed.data;
 
-  revalidatePath("/contacts");
-  redirect(`/contacts/${created.id}`);
-};
+    if (!input.allowDuplicate) {
+      const duplicates = await findDuplicateContacts(input);
+      if (duplicates.length > 0) {
+        return { duplicates, values };
+      }
+    }
+
+    const companyId = input.companyName
+      ? await findOrCreateCompany(input.companyName)
+      : undefined;
+
+    const sessionUserId = auth.session.user.id;
+    const [created] = await db
+      .insert(contact)
+      .values({
+        name: input.name,
+        email: input.email,
+        phone: input.phone,
+        title: input.title,
+        companyId,
+        createdBy: sessionUserId,
+        updatedBy: sessionUserId,
+      })
+      .returning({ id: contact.id });
+
+    if (!created) {
+      return { error: "Failed to create the contact", values };
+    }
+
+    revalidatePath("/contacts");
+    redirect(`/contacts/${created.id}`);
+  });
 
 export const updateContact = async (
   _prevState: ContactActionState,
+  formData: FormData
+): Promise<ContactActionState> =>
+  runAction(async () => {
+    const auth = await requireActionSession();
+    if (!auth.ok) {
+      return { error: auth.error };
+    }
+    return updateContactFromForm(formData);
+  });
+
+// Body extracted to keep cognitive complexity within the lint budget; the
+// runAction callback adds a nesting level that pushed the inline form over.
+const updateContactFromForm = async (
   formData: FormData
 ): Promise<ContactActionState> => {
   const contactId = formData.get("contactId");
@@ -180,11 +199,20 @@ export const updateContact = async (
 // Soft delete per PRD §7: the contact leaves lists and search, but their
 // deals, quotes, and timeline history stay intact.
 export const archiveContact = async (contactId: string): Promise<void> => {
-  await db
-    .update(contact)
-    .set({ deletedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(contact.id, contactId), isNull(contact.deletedAt)));
+  const auth = await requireActionSession();
+  if (!auth.ok) {
+    return;
+  }
+  try {
+    await db
+      .update(contact)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(contact.id, contactId), isNull(contact.deletedAt)));
 
-  revalidatePath("/contacts");
-  redirect("/contacts");
+    revalidatePath("/contacts");
+    redirect("/contacts");
+  } catch (error) {
+    unstable_rethrow(error); // archive actions redirect on success
+    console.error("[action-error]", error);
+  }
 };

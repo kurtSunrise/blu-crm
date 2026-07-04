@@ -1,6 +1,9 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { and, count, eq, gte } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { db } from "@/db";
+import { chatMessage, chatThread } from "@/db/schema";
 import { runAgentTurn } from "@/lib/ai/agent-loop";
 import type * as Anthropic from "@/lib/ai/anthropic";
 import { resolveAssistantUser } from "@/lib/ai/assistant-user";
@@ -28,6 +31,36 @@ import {
 import { executeToolCall } from "@/lib/ai/tools";
 
 const TITLE_MAX_LENGTH = 60;
+
+// Per-user daily spend guard. The per-turn caps (loop iterations, output
+// tokens) bound one turn; this bounds how many turns a single account can
+// drive in a day. Generous for real use, it exists to stop a runaway client
+// or a compromised account from burning unbounded model cost.
+const DEFAULT_DAILY_MESSAGE_LIMIT = 200;
+
+const dailyMessageLimit = (): number => {
+  const configured = Number(process.env.CHAT_DAILY_MESSAGE_LIMIT);
+  return Number.isFinite(configured) && configured > 0
+    ? configured
+    : DEFAULT_DAILY_MESSAGE_LIMIT;
+};
+
+const countMessagesToday = async (userId: string): Promise<number> => {
+  const startOfUtcDay = new Date();
+  startOfUtcDay.setUTCHours(0, 0, 0, 0);
+  const [row] = await db
+    .select({ value: count(chatMessage.id) })
+    .from(chatMessage)
+    .innerJoin(chatThread, eq(chatMessage.threadId, chatThread.id))
+    .where(
+      and(
+        eq(chatThread.userId, userId),
+        eq(chatMessage.role, "user"),
+        gte(chatMessage.createdAt, startOfUtcDay)
+      )
+    );
+  return row?.value ?? 0;
+};
 
 const MAX_CHAT_ATTACHMENTS = 5;
 
@@ -212,6 +245,19 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const userId = assistantUser.id;
+
+  // Checked before thread creation so an over-cap request never leaves an
+  // empty thread behind.
+  if ((await countMessagesToday(userId)) >= dailyMessageLimit()) {
+    return NextResponse.json(
+      {
+        error:
+          "Daily assistant limit reached. It resets at midnight UTC; contact an admin if you need more.",
+      },
+      { status: 429 }
+    );
+  }
+
   const thread = parsedBody.threadId
     ? await getThreadForUser(parsedBody.threadId, userId)
     : await createThread(

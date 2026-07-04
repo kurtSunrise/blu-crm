@@ -3,6 +3,8 @@ import { eq } from "drizzle-orm";
 import { db } from "./index";
 import { account, dealSubStatus, pipelineStage, user } from "./schema";
 
+const LOCAL_DATABASE_PATTERN = /@(localhost|127\.0\.0\.1)[:/]/;
+
 // Blu's eight default stages (FR-1.2); weightings are first-pass defaults,
 // admin-editable per FR-8.1 and open question Q2.
 const DEFAULT_STAGES = [
@@ -97,8 +99,21 @@ const seed = async () => {
   }
 
   // Attach Better Auth credential accounts so the team can sign in.
-  // SEED_USER_PASSWORD sets the initial password (local default is for
-  // dev/E2E only; use a real value when seeding production).
+  // SEED_USER_PASSWORD sets the initial password. The dev fallback is a
+  // publicly known string, so seeding any non-local database (or a
+  // production build) without an explicit password must fail hard: the
+  // three seeded emails are guessable and would otherwise ship with the
+  // password "blu-crm-dev".
+  const databaseUrl = process.env.DATABASE_URL ?? "";
+  const isLocalDatabase = LOCAL_DATABASE_PATTERN.test(databaseUrl);
+  if (
+    !process.env.SEED_USER_PASSWORD &&
+    (process.env.NODE_ENV === "production" || !isLocalDatabase)
+  ) {
+    throw new Error(
+      "SEED_USER_PASSWORD must be set when seeding a non-local database."
+    );
+  }
   const password = process.env.SEED_USER_PASSWORD ?? "blu-crm-dev";
   const passwordHash = await hashPassword(password);
 

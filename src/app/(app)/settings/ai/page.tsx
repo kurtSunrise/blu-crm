@@ -16,7 +16,25 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AiPreferencesPage() {
-  await requireSession();
+  const session = await requireSession();
+  const isAdmin = session.user.role === "admin";
+
+  if (!isAdmin) {
+    return (
+      <SettingsSection
+        description="How Blu CRM uses AI across your workspace."
+        icon={Cpu}
+        title="AI Preferences"
+      >
+        <SettingsPanel>
+          <p className="text-muted-foreground text-sm">
+            Admins only. Ask an admin to change the AI preferences.
+          </p>
+        </SettingsPanel>
+      </SettingsSection>
+    );
+  }
+
   const visionConfigured = Boolean(
     process.env.ANTHROPIC_API_KEY || process.env.ZAI_API_KEY
   );

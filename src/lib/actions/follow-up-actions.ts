@@ -4,8 +4,9 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { activity, followUp } from "@/db/schema";
+import { runAction } from "@/lib/actions/run-action";
 import { createFollowUpCore } from "@/lib/mutations/follow-up";
-import { getSessionUserId } from "@/lib/session";
+import { requireActionSession } from "@/lib/session";
 import {
   completeFollowUpSchema,
   createFollowUpSchema,
@@ -21,57 +22,67 @@ export interface FollowUpActionState {
 export const createFollowUp = async (
   _prevState: FollowUpActionState,
   formData: FormData
-): Promise<FollowUpActionState> => {
-  const parsed = createFollowUpSchema.safeParse({
-    dealId: formData.get("dealId"),
-    action: formData.get("action"),
-    ownerId: formData.get("ownerId"),
-    dueDate: formData.get("dueDate"),
-  });
+): Promise<FollowUpActionState> =>
+  runAction<FollowUpActionState>(async () => {
+    const auth = await requireActionSession();
+    if (!auth.ok) {
+      return { error: auth.error };
+    }
+    const parsed = createFollowUpSchema.safeParse({
+      dealId: formData.get("dealId"),
+      action: formData.get("action"),
+      ownerId: formData.get("ownerId"),
+      dueDate: formData.get("dueDate"),
+    });
 
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid follow-up" };
-  }
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Invalid follow-up" };
+    }
 
-  // Attribute the write to whoever is signed in; the follow-up's owner is
-  // the fallback (public/seeded paths legitimately have no session).
-  const result = await createFollowUpCore({
-    ...parsed.data,
-    createdBy: (await getSessionUserId()) ?? undefined,
+    // Attribute the write to whoever is signed in; the follow-up's owner is
+    // the fallback (public/seeded paths legitimately have no session).
+    const result = await createFollowUpCore({
+      ...parsed.data,
+      createdBy: auth.session.user.id,
+    });
+    return result.error ? result : { ok: true };
   });
-  return result.error ? result : { ok: true };
-};
 
 export const completeFollowUp = async (
   input: unknown
-): Promise<FollowUpActionState> => {
-  const parsed = completeFollowUpSchema.safeParse(input);
-  if (!parsed.success) {
-    return { error: "Invalid follow-up" };
-  }
+): Promise<FollowUpActionState> =>
+  runAction(async () => {
+    const auth = await requireActionSession();
+    if (!auth.ok) {
+      return { error: auth.error };
+    }
+    const parsed = completeFollowUpSchema.safeParse(input);
+    if (!parsed.success) {
+      return { error: "Invalid follow-up" };
+    }
 
-  const [completed] = await db
-    .update(followUp)
-    .set({ completedAt: new Date() })
-    .where(eq(followUp.id, parsed.data.followUpId))
-    .returning({ dealId: followUp.dealId, action: followUp.action });
+    const [completed] = await db
+      .update(followUp)
+      .set({ completedAt: new Date() })
+      .where(eq(followUp.id, parsed.data.followUpId))
+      .returning({ dealId: followUp.dealId, action: followUp.action });
 
-  if (!completed) {
-    return { error: "Unknown follow-up" };
-  }
+    if (!completed) {
+      return { error: "Unknown follow-up" };
+    }
 
-  // Leave a trace on the deal timeline so a completed follow-up isn't just
-  // silently dropped from the open list. No session on the AI path → null
-  // author, consistent with how stage changes are attributed.
-  await db.insert(activity).values({
-    dealId: completed.dealId,
-    type: "follow_up",
-    content: completed.action,
-    createdBy: await getSessionUserId(),
+    // Leave a trace on the deal timeline so a completed follow-up isn't just
+    // silently dropped from the open list. No session on the AI path → null
+    // author, consistent with how stage changes are attributed.
+    await db.insert(activity).values({
+      dealId: completed.dealId,
+      type: "follow_up",
+      content: completed.action,
+      createdBy: auth.session.user.id,
+    });
+
+    revalidatePath("/");
+    revalidatePath("/tasks");
+    revalidatePath(`/deals/${completed.dealId}`);
+    return {};
   });
-
-  revalidatePath("/");
-  revalidatePath("/tasks");
-  revalidatePath(`/deals/${completed.dealId}`);
-  return {};
-};

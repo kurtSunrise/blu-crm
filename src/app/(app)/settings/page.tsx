@@ -25,7 +25,39 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function GeneralSettingsPage() {
-  await requireSession();
+  const session = await requireSession();
+  const isAdmin = session.user.role === "admin";
+
+  if (!isAdmin) {
+    return (
+      <>
+        <SettingsSection
+          description="Pipeline stages, forecast weightings, alerts, and pipeline card details for the whole workspace."
+          icon={KanbanSquare}
+          title="Workspace settings"
+        >
+          <SettingsPanel>
+            <p className="text-muted-foreground text-sm">
+              Admins only. Ask an admin to change the workspace settings.
+            </p>
+          </SettingsPanel>
+        </SettingsSection>
+
+        <SettingsSection
+          description="Light suits the office, dark suits early starts and site visits. The theme follows this device until you pick one, and is remembered per device."
+          icon={SunMoon}
+          title="Appearance"
+        >
+          <SettingsPanel>
+            <div className="rounded-lg border p-1.5">
+              <ThemeToggle withLabel />
+            </div>
+          </SettingsPanel>
+        </SettingsSection>
+      </>
+    );
+  }
+
   const thresholds = await getAlertThresholds();
   const tooltip = await getPipelineTooltipSettings();
   // Deal counts include discarded deals: they still reference their stage,

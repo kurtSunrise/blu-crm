@@ -1,5 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { chatAttachment } from "@/db/schema";
@@ -27,7 +27,13 @@ export async function GET(
       fileName: chatAttachment.fileName,
     })
     .from(chatAttachment)
-    .where(eq(chatAttachment.id, id))
+    // Chat attachments belong to the composer's own thread flow, so unlike
+    // deal attachments (org-visible by design) they are scoped to their
+    // uploader. Rows predating uploadedBy will 404; they were transient
+    // composer thumbnails.
+    .where(
+      and(eq(chatAttachment.id, id), eq(chatAttachment.uploadedBy, userId))
+    )
     .limit(1);
 
   if (!record) {
@@ -48,6 +54,9 @@ export async function GET(
         record.contentType ??
         object.httpMetadata?.contentType ??
         "application/octet-stream",
+      // Client-supplied MIME is not trusted to execute in the app origin.
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "sandbox",
     },
   });
 }

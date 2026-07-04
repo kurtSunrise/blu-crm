@@ -1,9 +1,10 @@
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
-import Link from "next/link";
 import {
   type ClosedDeal,
   ClosedDealsList,
 } from "@/components/closed-deals-list";
+import { PageHeader } from "@/components/page-header";
+import { PipelineNav } from "@/components/pipeline-nav";
 import { db } from "@/db";
 import { company, deal, pipelineStage, user } from "@/db/schema";
 import { computeDealValue, getQuotesByDeal } from "@/lib/deal-values";
@@ -106,15 +107,10 @@ export default async function ClosedDealsPage({
 
 function ClosedDealsPageShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="flex h-full flex-col gap-4 py-4">
-      <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-2 px-4">
-        <h1 className="font-semibold text-2xl tracking-tight">Closed deals</h1>
-        <Link
-          className="text-muted-foreground text-sm transition-colors hover:text-foreground"
-          href="/pipeline"
-        >
-          Back to pipeline
-        </Link>
+    <main className="flex h-full flex-col gap-4 py-6">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4">
+        <PageHeader title="Closed deals" />
+        <PipelineNav active="/pipeline/closed" />
       </div>
       {children}
     </main>

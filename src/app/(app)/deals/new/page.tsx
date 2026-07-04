@@ -1,4 +1,5 @@
 import { eq, isNull } from "drizzle-orm";
+import { PageHeader } from "@/components/page-header";
 import { QuickAddForm } from "@/components/quick-add-form";
 import { db } from "@/db";
 import { company, contact, user } from "@/db/schema";
@@ -32,13 +33,10 @@ export default async function QuickAddPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-xl flex-col gap-4 px-4 py-6">
-      <header>
-        <h1 className="font-semibold text-2xl tracking-tight">Quick add</h1>
-        <p className="text-muted-foreground text-sm">
-          Capture a lead in under a minute. Client and one contact method are
-          all that&apos;s required.
-        </p>
-      </header>
+      <PageHeader
+        subtitle="Capture a lead in under a minute. Client and one contact method are all that's required."
+        title="Quick add"
+      />
       <QuickAddForm
         companies={companies.map((entry) => entry.name)}
         contacts={contacts}

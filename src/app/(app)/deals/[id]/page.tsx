@@ -10,6 +10,7 @@ import { DealSubStatusControl } from "@/components/deal-sub-status-control";
 import { DealTimeline } from "@/components/deal-timeline";
 import { FollowUpForm } from "@/components/follow-up-form";
 import { NoteComposer } from "@/components/note-composer";
+import { PageHeader } from "@/components/page-header";
 import { QuickLogButtons } from "@/components/quick-log-buttons";
 import { QuoteForm } from "@/components/quote-form";
 import { QuoteRowActions } from "@/components/quote-row-actions";
@@ -373,14 +374,17 @@ export default async function DealPage({
         dealId={record.id}
         label={`${record.leadId} · ${record.title}`}
       />
-      <header className="flex flex-col gap-1">
-        <p className="font-mono text-muted-foreground text-xs">
-          {record.leadId}
-        </p>
-        <h1 className="font-semibold text-2xl tracking-tight">
-          {record.title}
-        </h1>
-        <div className="mt-1 flex flex-wrap items-center gap-2">
+      <PageHeader
+        backHref="/pipeline"
+        backLabel="Back to pipeline"
+        eyebrow={
+          <p className="font-mono text-muted-foreground text-xs">
+            {record.leadId}
+          </p>
+        }
+        title={record.title}
+      >
+        <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary">{record.stageName}</Badge>
           {record.stageIsWon && record.handoverToDelivery && (
             <Badge>Handover to delivery</Badge>
@@ -398,7 +402,7 @@ export default async function DealPage({
             options={subStatusOptions}
           />
         </div>
-      </header>
+      </PageHeader>
 
       {keyDates.length > 0 && (
         <section aria-label="Key dates" className="flex flex-wrap gap-2">

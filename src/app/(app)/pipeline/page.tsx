@@ -10,8 +10,9 @@ import {
   type SQL,
   sql,
 } from "drizzle-orm";
-import Link from "next/link";
+import { PageHeader } from "@/components/page-header";
 import { PipelineBoard } from "@/components/pipeline-board";
+import { PipelineNav } from "@/components/pipeline-nav";
 import { db } from "@/db";
 import { company, deal, followUp, pipelineStage, user } from "@/db/schema";
 import { computeDealValue, getQuotesByDeal } from "@/lib/deal-values";
@@ -167,15 +168,10 @@ export default async function PipelinePage() {
   });
 
   return (
-    <main className="flex h-full flex-col gap-4 py-4">
-      <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4">
-        <h1 className="font-semibold text-2xl tracking-tight">Pipeline</h1>
-        <Link
-          className="text-muted-foreground text-sm transition-colors hover:text-foreground"
-          href="/pipeline/closed"
-        >
-          Closed deals
-        </Link>
+    <main className="flex h-full flex-col gap-4 py-6">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4">
+        <PageHeader title="Pipeline" />
+        <PipelineNav active="/pipeline" />
       </div>
       <PipelineBoard
         closedWindowDays={CLOSED_WINDOW_DAYS}

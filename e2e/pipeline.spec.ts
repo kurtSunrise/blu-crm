@@ -8,7 +8,10 @@ const ANCHOR_STAGE_NAMES = ["Lead Captured", "Won", "Lost / Dormant"];
 
 const RECENT_WINDOW_PATTERN = /last \d+ days/;
 const VIEW_ALL_PATTERN = /View all/;
-const WON_TOGGLE_PATTERN = /Won/;
+// Anchored to the toggle's "Won {count}" name: a bare /Won/ also matches the
+// per-card "Move {deal} to another stage" buttons once a test deal whose name
+// contains "Won" sits in the expanded column (strict-mode violation).
+const WON_TOGGLE_PATTERN = /^Won \d+$/;
 
 test("pipeline board renders its stage columns", async ({ page }) => {
   await page.goto("/pipeline");

@@ -429,8 +429,9 @@ const SECTIONS: HelpSection[] = [
         <p className={PARA_CLASSES}>
           The dashboard is the morning glance: the open pipeline total, deal
           count, and what needs attention today. Reports is the sit-down view
-          with the same numbers the weekly Monday report uses, split into four
+          with the same numbers the weekly Monday report uses, split into six
           views — <strong>Overview</strong>, <strong>Trends</strong>,{" "}
+          <strong>Funnel</strong>, <strong>Team</strong>,{" "}
           <strong>Weekly</strong>, and <strong>Daily</strong> — switched with
           the pills at the top.
         </p>
@@ -465,6 +466,22 @@ const SECTIONS: HelpSection[] = [
             lists <strong>slipped deals</strong> — open deals past their
             expected close date that need re-dating or a decision. Hover or tap
             a chart point for the exact figures, or open "View as table".
+          </li>
+          <li>
+            <strong>Funnel</strong> follows the deals created in the chosen
+            period through the stages: how many reached each stage, the
+            conversion rate between stages, the median time spent in each stage,
+            and a <strong>Bottleneck</strong> badge on the slowest one. Stage
+            history has been recorded precisely since early July 2026; older
+            history is reconstructed from timeline notes, so the funnel gets
+            more accurate over time.
+          </li>
+          <li>
+            <strong>Team</strong> covers the people side: the quote funnel
+            (sent, viewed, accepted, with the average days to open and to
+            decide), each person's logged activity for the period, and follow-up
+            completion — done rate, on-time rate, and anything still overdue.
+            Use the owner filter to zoom in on one person.
           </li>
           <li>
             <strong>Export CSV</strong> (on the Overview, Trends, and drill-down
@@ -745,6 +762,8 @@ const WHATS_NEW = [
   {
     date: "03/07/2026",
     items: [
+      "New Funnel report (Reports, Funnel): stage-by-stage conversion for deals created in the chosen period, median time in each stage, and a Bottleneck badge on the slowest stage.",
+      "New Team report (Reports, Team): quote funnel with average days to open and decide, per-person activity for the period, and follow-up completion with on-time and overdue counts.",
       "A refreshed assistant chat: clearer sense of when it's thinking versus replying, smoother open and close, and a settings shortcut in the header.",
       "On a deal or contact page, the assistant now shows a chip above the message box naming the record it's drawing on.",
       "Assistant history now shows which deal or contact each conversation was about, and a search box finds older chats by title, deal, or contact name.",

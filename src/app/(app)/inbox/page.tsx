@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import Link from "next/link";
 import { InboxTriage } from "@/components/inbox-triage";
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { db } from "@/db";
 import { contact, deal, user } from "@/db/schema";
@@ -38,13 +39,10 @@ export default async function InboxPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6 lg:max-w-3xl">
-      <header className="flex flex-col gap-1">
-        <h1 className="font-semibold text-2xl tracking-tight">Inbox</h1>
-        <p className="text-muted-foreground text-sm">
-          New and unassigned leads from every channel. Assign an owner, open to
-          qualify, or discard.
-        </p>
-      </header>
+      <PageHeader
+        subtitle="New and unassigned leads from every channel. Assign an owner, open to qualify, or discard."
+        title="Inbox"
+      />
 
       {leads.length === 0 ? (
         <p className="text-muted-foreground text-sm">

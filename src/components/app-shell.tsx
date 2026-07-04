@@ -71,8 +71,21 @@ const MOBILE_NAV = PRIMARY_NAV.filter((item) =>
   MOBILE_TAB_HREFS.includes(item.href)
 );
 
-const isActivePath = (pathname: string, href: string): boolean =>
-  href === "/" ? pathname === "/" : pathname.startsWith(href);
+const isActivePath = (pathname: string, href: string): boolean => {
+  if (href === "/") {
+    return pathname === "/";
+  }
+  // Deal detail pages belong to the pipeline conceptually; without this they
+  // would highlight nothing (Quick add owns /deals/new and keeps its own).
+  if (
+    href === "/pipeline" &&
+    pathname.startsWith("/deals/") &&
+    !pathname.startsWith("/deals/new")
+  ) {
+    return true;
+  }
+  return pathname.startsWith(href);
+};
 
 function SidebarLink({
   item,

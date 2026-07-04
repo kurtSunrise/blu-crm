@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { fillContactsSearch, resultsStatus } from "./contacts-helpers";
 
 // Companies are first-class records (FR-2.1): editable and archivable
 // from their own page, reached via the contact's company link.
@@ -133,14 +134,8 @@ test("archiving a company removes it from the directory", async ({
   await page.getByRole("button", { name: "Yes, archive" }).click();
   await page.waitForURL("**/contacts");
 
-  // Clear-then-fill retried until the client-side filter engages (the
-  // empty-companies message doubles as the "archived" assertion).
-  const search = page.getByLabel("Search contacts");
-  await expect(async () => {
-    await search.fill("");
-    await search.fill(companyName);
-    await expect(page.getByText("No companies match your search.")).toBeVisible(
-      { timeout: 1000 }
-    );
-  }).toPass();
+  // The archived company must drop out of the directory: the results status
+  // line reports zero company matches for its name.
+  await fillContactsSearch(page, companyName);
+  await expect(resultsStatus(page)).toContainText("· 0 companies match");
 });

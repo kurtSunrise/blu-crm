@@ -1,21 +1,9 @@
-import { expect, type Page, test } from "@playwright/test";
-
-// Filling before React hydrates leaves the client-side filter unapplied:
-// the DOM input holds the text, React's value tracker initialises to it on
-// hydration, and a repeat fill with the same text is deduped as no change.
-// Clearing first forces a real change event each attempt; retry until the
-// filter visibly engages. A unique person-name query never matches a
-// company, which makes the empty-companies message a reliable signal.
-const fillContactsSearch = async (page: Page, query: string) => {
-  const search = page.getByLabel("Search contacts");
-  await expect(async () => {
-    await search.fill("");
-    await search.fill(query);
-    await expect(page.getByText("No companies match your search.")).toBeVisible(
-      { timeout: 1000 }
-    );
-  }).toPass();
-};
+import { expect, test } from "@playwright/test";
+import {
+  COMPANIES_TOGGLE_NAME,
+  fillContactsSearch,
+  openCompaniesSection,
+} from "./contacts-helpers";
 
 test("duplicate contact warns before creating (US-04)", async ({
   page,
@@ -143,8 +131,17 @@ test("selecting an existing contact locks phone/email and auto-fills the company
   await page.waitForURL("**/pipeline");
 
   // Start a second deal and search for the same contact instead of retyping.
+  // Clear-then-fill retried until the suggestion appears: WebKit can swallow
+  // a fill that lands before hydration (same hardening as companies.spec).
   await page.goto("/deals/new");
-  await page.getByLabel("Contact name").fill(contactName);
+  const contactField = page.getByLabel("Contact name");
+  await expect(async () => {
+    await contactField.fill("");
+    await contactField.fill(contactName);
+    await expect(
+      page.getByRole("option", { name: new RegExp(contactName) })
+    ).toBeVisible({ timeout: 2000 });
+  }).toPass();
   await page.getByRole("option", { name: new RegExp(contactName) }).click();
 
   await expect(page.getByLabel("Client / brand *")).toHaveValue(companyName);
@@ -158,7 +155,13 @@ test("selecting an existing contact locks phone/email and auto-fills the company
 
   // Re-select, edit the auto-filled company (still editable per design), and
   // submit; the deal should link to the existing contact, not a duplicate.
-  await page.getByLabel("Contact name").fill(contactName);
+  await expect(async () => {
+    await contactField.fill("");
+    await contactField.fill(contactName);
+    await expect(
+      page.getByRole("option", { name: new RegExp(contactName) })
+    ).toBeVisible({ timeout: 2000 });
+  }).toPass();
   await page.getByRole("option", { name: new RegExp(contactName) }).click();
   await page.getByLabel("Client / brand *").fill(secondCompanyName);
   await page.getByRole("button", { name: "Add lead" }).click();
@@ -187,6 +190,7 @@ test("a company page rolls up its people and deals (FR-2.1)", async ({
   await page.waitForURL("**/pipeline");
 
   await page.goto("/contacts");
+  await openCompaniesSection(page);
   await page
     .locator('section[aria-label="Companies"]')
     .getByRole("link", { name: new RegExp(companyName) })
@@ -202,4 +206,170 @@ test("a company page rolls up its people and deals (FR-2.1)", async ({
   const dealsSection = page.locator('section[aria-label="Deals"]');
   await expect(dealsSection.getByText("Lead Captured")).toBeVisible();
   await expect(dealsSection.getByText("$12,000")).toBeVisible();
+});
+
+test("open-deals filter narrows to people in the pipeline", async ({
+  page,
+}, testInfo) => {
+  const stamp = `${testInfo.project.name}-${Date.now()}`;
+  const bareName = `Filter Bare ${stamp}`;
+  const dealName = `Filter Dealt ${stamp}`;
+
+  await page.goto("/contacts/new");
+  await page.getByLabel("Name *").fill(bareName);
+  await page.getByRole("button", { name: "Add contact" }).click();
+  await expect(page.getByRole("heading", { name: bareName })).toBeVisible();
+
+  await page.goto("/deals/new");
+  await page.getByLabel("Client / brand *").fill(`Filter Co ${stamp}`);
+  await page.getByLabel("Contact name").fill(dealName);
+  // Move focus off the contact combobox so its suggestion dropdown closes
+  // and stops overlaying the submit button.
+  await page.getByLabel("Email").fill(`filter-${stamp}@example.com`);
+  await page.getByRole("button", { name: "Add lead" }).click();
+  await page.waitForURL("**/pipeline");
+
+  await page.goto("/contacts");
+  // The search doubles as the hydration gate, so the pill click below lands
+  // on a live React tree.
+  await fillContactsSearch(page, stamp);
+  await expect(page.getByText(bareName, { exact: true })).toBeVisible();
+  await expect(page.getByText(dealName, { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Open deals" }).click();
+  await expect(page.getByText(bareName, { exact: true })).toBeHidden();
+  const dealCard = page.getByRole("listitem").filter({ hasText: dealName });
+  await expect(dealCard.getByText(dealName, { exact: true })).toBeVisible();
+  // The row carries the deal's stage as a chip.
+  await expect(dealCard.getByText("Lead Captured")).toBeVisible();
+});
+
+test("a contact row exposes call, text, and email quick actions", async ({
+  page,
+}, testInfo) => {
+  const stamp = `${testInfo.project.name}-${Date.now()}`;
+  const name = `Quick Actions ${stamp}`;
+  // Unique per project run: an exact phone match would trip the duplicate
+  // warning when the three browser projects run in parallel.
+  const phone = `04${testInfo.project.name.length}${Date.now()
+    .toString()
+    .slice(-7)}`;
+  const email = `quick-actions-${stamp}@example.com`;
+
+  await page.goto("/contacts/new");
+  await page.getByLabel("Name *").fill(name);
+  await page.getByLabel("Phone").fill(phone);
+  await page.getByLabel("Email").fill(email);
+  await page.getByRole("button", { name: "Add contact" }).click();
+  await expect(page.getByRole("heading", { name })).toBeVisible();
+
+  await page.goto("/contacts");
+  await fillContactsSearch(page, name);
+  await expect(page.getByLabel(`Call ${name}`)).toHaveAttribute(
+    "href",
+    `tel:${phone}`
+  );
+  await expect(page.getByLabel(`Text ${name}`)).toHaveAttribute(
+    "href",
+    `sms:${phone}`
+  );
+  await expect(page.getByLabel(`Email ${name}`)).toHaveAttribute(
+    "href",
+    `mailto:${email}`
+  );
+});
+
+test("recently-contacted sort floats the touched contact", async ({
+  page,
+}, testInfo) => {
+  const stamp = `${testInfo.project.name}-${Date.now()}`;
+  const quietName = `Sort Quiet ${stamp}`;
+  const touchedName = `Sort Touched ${stamp}`;
+  const seeds = [
+    {
+      company: `Sort Co A ${stamp}`,
+      email: `sort-a-${stamp}@example.com`,
+      name: quietName,
+    },
+    {
+      company: `Sort Co B ${stamp}`,
+      email: `sort-b-${stamp}@example.com`,
+      name: touchedName,
+    },
+  ];
+
+  for (const seed of seeds) {
+    await page.goto("/deals/new");
+    await page.getByLabel("Client / brand *").fill(seed.company);
+    await page.getByLabel("Contact name").fill(seed.name);
+    // Move focus off the contact combobox so its suggestion dropdown closes
+    // and stops overlaying the submit button.
+    await page.getByLabel("Email").fill(seed.email);
+    await page.getByRole("button", { name: "Add lead" }).click();
+    await page.waitForURL("**/pipeline");
+  }
+
+  // Quick-log a call on the touched contact's deal; that stamps their
+  // last-contacted date.
+  await page.goto("/contacts");
+  await fillContactsSearch(page, touchedName);
+  await page.getByText(touchedName, { exact: true }).click();
+  await page
+    .locator('section[aria-label="Deals"]')
+    .getByRole("link", { name: new RegExp(`Sort Co B ${stamp}`) })
+    .click();
+  await page.getByRole("button", { name: "Logged a call" }).click();
+  // The confirmation toast repeats the button label once the action lands.
+  await expect(page.getByText("Logged a call")).toHaveCount(2);
+
+  await page.goto("/contacts");
+  await fillContactsSearch(page, stamp);
+  const touchedCard = page
+    .getByRole("listitem")
+    .filter({ hasText: touchedName });
+  await expect(touchedCard.getByText("Contacted Today")).toBeVisible();
+
+  await page.getByLabel("Sort people").selectOption("recent");
+  const firstCard = page
+    .locator('section[aria-label="People"] ul > li')
+    .first();
+  await expect(firstCard).toContainText(touchedName);
+});
+
+test("small screens flip between people and companies sections", async ({
+  page,
+}, testInfo) => {
+  const stamp = `${testInfo.project.name}-${Date.now()}`;
+  const companyName = `Toggle Co ${stamp}`;
+  const contactName = `Toggle Person ${stamp}`;
+
+  await page.goto("/contacts/new");
+  await page.getByLabel("Name *").fill(contactName);
+  await page.getByLabel("Company").fill(companyName);
+  await page.getByRole("button", { name: "Add contact" }).click();
+  await expect(page.getByRole("heading", { name: contactName })).toBeVisible();
+
+  await page.goto("/contacts");
+  await fillContactsSearch(page, stamp);
+  const peopleSection = page.locator('section[aria-label="People"]');
+  const companiesSection = page.locator('section[aria-label="Companies"]');
+  const toggle = page.getByRole("button", { name: COMPANIES_TOGGLE_NAME });
+
+  if (await toggle.isVisible()) {
+    // Phone and tablet: one section at a time behind the toggle.
+    await expect(companiesSection).toBeHidden();
+    await openCompaniesSection(page);
+    await expect(
+      companiesSection.getByText(companyName, { exact: true })
+    ).toBeVisible();
+    await expect(peopleSection).toBeHidden();
+  } else {
+    // Desktop: both sections stay side by side.
+    await expect(
+      peopleSection.getByText(contactName, { exact: true })
+    ).toBeVisible();
+    await expect(
+      companiesSection.getByText(companyName, { exact: true })
+    ).toBeVisible();
+  }
 });

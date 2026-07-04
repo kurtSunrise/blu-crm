@@ -44,6 +44,16 @@ const buildAuth = (baseURL: string | undefined) => {
     emailAndPassword: {
       enabled: true,
     },
+    advanced: {
+      // Cloudflare hands Workers the client IP as cf-connecting-ip (set by
+      // the edge, not spoofable) and does NOT set x-forwarded-for, which is
+      // Better Auth's default lookup, so without this the rate limiter has
+      // no key and silently skips. x-forwarded-for stays as the fallback
+      // for local preview/tests.
+      ipAddress: {
+        ipAddressHeaders: ["cf-connecting-ip", "x-forwarded-for"],
+      },
+    },
     // Better Auth's own "enabled in production" default never fires on
     // workerd (NODE_ENV is not visible there), so the switch is an explicit
     // var set in wrangler.jsonc: on for the deployed Worker and `npm run

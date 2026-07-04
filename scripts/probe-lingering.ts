@@ -1,7 +1,7 @@
 import pg from "pg";
 import { readDatabaseUrl } from "../e2e/test-db";
 
-const TS = String.raw`[0-9]{13}`;
+const TS = "[0-9]{13}";
 const run = async () => {
   const client = new pg.Client({ connectionString: readDatabaseUrl() });
   await client.connect();
@@ -17,7 +17,14 @@ const run = async () => {
     await client.query(
       `delete from "chat_thread" where deal_id in (select id from "deal" where title ~ '${TS}')`
     );
-    for (const t of ["activity", "follow_up", "quote", "attachment"]) {
+    // deal_stage_event before activity: it FKs the activity rows it mirrors.
+    for (const t of [
+      "deal_stage_event",
+      "activity",
+      "follow_up",
+      "quote",
+      "attachment",
+    ]) {
       await client.query(
         `delete from "${t}" where deal_id in (select id from "deal" where title ~ '${TS}')`
       );
@@ -50,6 +57,6 @@ const run = async () => {
   }
 };
 run().catch((e: unknown) => {
-  process.stderr.write(String(e) + "\n");
+  process.stderr.write(`${String(e)}\n`);
   process.exit(1);
 });

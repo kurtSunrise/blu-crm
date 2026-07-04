@@ -248,6 +248,18 @@ Consequences (all confirmed the hard way):
 
 ### Known Runtime Issues (open, mitigated)
 
+- **Update 2026-07-04:** a probe-caught recurrence refined the diagnosis. The
+  hung request (GET /sign-in, network verified healthy by a same-cycle static
+  asset fetch) produced NO worker invocation at all: no request event, no
+  cancellation, no watchdog fire, no [auth-debug] logs, while requests seconds
+  either side ran normally. The stall therefore sits in front of the app
+  (Cloudflare edge dispatch, or a workerd invocation that never ends and never
+  logs, cf. workerd#6832). App code is exonerated for this manifestation and
+  the in-worker watchdog cannot intercept it. Observed frequency ~0.2% of
+  requests; a retry always succeeds. Escalation path: Cloudflare support with
+  the incident timestamps (2026-07-02 08:21-09:00 UTC in-worker cancels;
+  2026-07-04 08:58:21 UTC vanished request, cb=probe1783155501, SYD colo).
+
 - **Intermittent render stall on the Cloudflare (workerd) runtime.** Dynamic renders (full documents AND signed-in RSC navigations, any route) intermittently stall before the response starts: the request burns only ~20-100 ms CPU, no headers are ever sent, no error is thrown, and the invocation ends only when the client disconnects ("Canceled" outcome plus the `waitUntil() tasks did not complete...` warning). Identical requests seconds apart succeed, so it is per-request random, not cold-start, not auth, and not the database — instrumentation (2026-07-02) proved the cookieless path never touches Neon and still hung, while signed-in `/reports` and `/calendar` requests hung in the same incident (one for 38.7 minutes). Local `npm run preview` does NOT reproduce it; it is specific to the deployed runtime, consistent with mid-June 2026 workerd streaming changes (see workerd#6832, opennextjs-cloudflare#1282/#1287). This superseded an earlier incorrect theory that blamed cookieless `getSession`.
   - **Mitigation (live):** `worker-entry.mjs` (wrangler `main`) wraps the OpenNext worker with a first-response watchdog: GET/HEAD requests that produce no Response within 12 s are retried once (unraced, so genuinely slow responses are never cut off). Each catch logs `[hang-watchdog]` to Workers observability.
   - **Diagnosis instrumentation (live, temporary):** `[auth-debug]` timing marks in `src/lib/session.ts`, `src/lib/auth.ts`, `src/db/index.ts`, and the sign-in page localise exactly where a hung render stops. Query with Workers observability (`workers/observability/telemetry/query`, filter `$workers.outcome = canceled` or message contains `hang-watchdog`). Remove both once the upstream bug is fixed.

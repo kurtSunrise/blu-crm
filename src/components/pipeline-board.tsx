@@ -346,45 +346,53 @@ export function PipelineBoard({
       sensors={sensors}
     >
       {subStatuses.length > 0 && (
-        <fieldset className="flex flex-wrap items-center gap-2 px-4">
-          <legend className="sr-only">Filter by status</legend>
-          <span aria-hidden className="text-muted-foreground text-xs">
-            Status
-          </span>
-          {subStatuses.map((option) => {
-            const active = subStatusFilter.has(option.id);
-            const classes = subStatusClasses(option.color);
-            return (
+        // Sticky under the h-14 mobile app-shell header (desktop has a
+        // sidebar, so top-0 there); a wrapping div carries overflow-x-auto
+        // because the fieldset UA min-inline-size defeats shrinking.
+        <div className="sticky top-14 z-10 flex items-center overflow-x-auto bg-background/95 px-4 py-2 backdrop-blur md:top-0">
+          <fieldset className="flex items-center gap-2 md:flex-wrap">
+            <legend className="sr-only">Filter by status</legend>
+            <span
+              aria-hidden
+              className="shrink-0 text-muted-foreground text-xs"
+            >
+              Status
+            </span>
+            {subStatuses.map((option) => {
+              const active = subStatusFilter.has(option.id);
+              const classes = subStatusClasses(option.color);
+              return (
+                <button
+                  aria-pressed={active}
+                  className={cn(
+                    "flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-xs transition-colors",
+                    active
+                      ? cn("ring-1 ring-current", classes.badge)
+                      : "text-muted-foreground hover:border-foreground/30"
+                  )}
+                  key={option.id}
+                  onClick={() => toggleFilter(option.id)}
+                  type="button"
+                >
+                  <span
+                    aria-hidden
+                    className={cn("size-2 shrink-0 rounded-full", classes.dot)}
+                  />
+                  {option.label}
+                </button>
+              );
+            })}
+            {subStatusFilter.size > 0 && (
               <button
-                aria-pressed={active}
-                className={cn(
-                  "flex min-h-8 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors",
-                  active
-                    ? cn("ring-1 ring-current", classes.badge)
-                    : "text-muted-foreground hover:border-foreground/30"
-                )}
-                key={option.id}
-                onClick={() => toggleFilter(option.id)}
+                className="min-h-8 shrink-0 whitespace-nowrap text-muted-foreground text-xs underline-offset-2 hover:underline"
+                onClick={() => setSubStatusFilter(new Set())}
                 type="button"
               >
-                <span
-                  aria-hidden
-                  className={cn("size-2 shrink-0 rounded-full", classes.dot)}
-                />
-                {option.label}
+                Clear
               </button>
-            );
-          })}
-          {subStatusFilter.size > 0 && (
-            <button
-              className="min-h-8 text-muted-foreground text-xs underline-offset-2 hover:underline"
-              onClick={() => setSubStatusFilter(new Set())}
-              type="button"
-            >
-              Clear
-            </button>
-          )}
-        </fieldset>
+            )}
+          </fieldset>
+        </div>
       )}
       <TooltipProvider delay={TOOLTIP_DELAY_MS}>
         <section

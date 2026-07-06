@@ -107,10 +107,12 @@ export default async function ClosedDealsPage({
 
 function ClosedDealsPageShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="flex h-full flex-col gap-4 py-6">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4">
-        <PageHeader title="Closed deals" />
-        <PipelineNav active="/pipeline/closed" />
+    <main className="flex h-full flex-col gap-3 py-3 md:gap-4 md:py-6">
+      <div className="mx-auto w-full max-w-6xl px-4">
+        <PageHeader
+          actions={<PipelineNav active="/pipeline/closed" />}
+          title="Closed deals"
+        />
       </div>
       {children}
     </main>

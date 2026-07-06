@@ -760,6 +760,13 @@ const GLOSSARY = [
 
 const WHATS_NEW = [
   {
+    date: "06/07/2026",
+    items: [
+      "The pipeline is roomier on phones: the title and the Board / Closed switch now share one line, and the status filters sit in a single row you can swipe sideways. The filters also stay pinned below the header while you scroll, so you can filter a tall column without scrolling back to the top.",
+      "A new More tab on the phone bottom bar opens Dashboard, Contacts, and Reports.",
+    ],
+  },
+  {
     date: "03/07/2026",
     items: [
       "New Funnel report (Reports, Funnel): stage-by-stage conversion for deals created in the chosen period, median time in each stage, and a Bottleneck badge on the slowest stage.",

@@ -168,10 +168,12 @@ export default async function PipelinePage() {
   });
 
   return (
-    <main className="flex h-full flex-col gap-4 py-6">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4">
-        <PageHeader title="Pipeline" />
-        <PipelineNav active="/pipeline" />
+    <main className="flex h-full flex-col gap-3 py-3 md:gap-4 md:py-6">
+      <div className="mx-auto w-full max-w-6xl px-4">
+        <PageHeader
+          actions={<PipelineNav active="/pipeline" />}
+          title="Pipeline"
+        />
       </div>
       <PipelineBoard
         closedWindowDays={CLOSED_WINDOW_DAYS}

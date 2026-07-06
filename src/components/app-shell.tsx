@@ -4,6 +4,7 @@ import {
   BarChart3,
   Bell,
   CalendarDays,
+  Ellipsis,
   HelpCircle,
   Home,
   Inbox,
@@ -33,6 +34,12 @@ import {
 } from "@/components/notification-bell";
 import { SidebarUserMenu } from "@/components/sidebar-user-menu";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -57,9 +64,10 @@ const SECONDARY_NAV = [
   { href: "/help", label: "Help", icon: HelpCircle },
 ];
 
-// Bottom tabs are a phone pattern: the five core field destinations only.
-// Reports and Contacts are sit-down surfaces, reachable from the dashboard
-// on phones.
+// Bottom tabs are a phone pattern: the five core field destinations get
+// their own tab, and the rest of the primary nav (Dashboard, Contacts,
+// Reports) lives in the trailing "More" dropdown so every desktop sidebar
+// destination stays one tap away on phones.
 const MOBILE_TAB_HREFS = [
   "/pipeline",
   "/calendar",
@@ -69,6 +77,10 @@ const MOBILE_TAB_HREFS = [
 ];
 const MOBILE_NAV = PRIMARY_NAV.filter((item) =>
   MOBILE_TAB_HREFS.includes(item.href)
+);
+const MOBILE_MORE_HREFS = ["/", "/contacts", "/reports"];
+const MOBILE_MORE_NAV = PRIMARY_NAV.filter((item) =>
+  MOBILE_MORE_HREFS.includes(item.href)
 );
 
 const isActivePath = (pathname: string, href: string): boolean => {
@@ -370,6 +382,46 @@ function AppShellInner({
                 </li>
               );
             })}
+            <li className="flex-1">
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  className={cn(
+                    "flex min-h-14 w-full flex-col items-center justify-center gap-1 text-xs",
+                    MOBILE_MORE_NAV.some((item) =>
+                      isActivePath(pathname, item.href)
+                    )
+                      ? "text-blu"
+                      : "text-muted-foreground"
+                  )}
+                >
+                  <Ellipsis aria-hidden className="size-5" />
+                  More
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" side="top">
+                  {MOBILE_MORE_NAV.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <DropdownMenuItem
+                        key={item.href}
+                        render={
+                          <Link
+                            aria-current={
+                              isActivePath(pathname, item.href)
+                                ? "page"
+                                : undefined
+                            }
+                            href={item.href}
+                          />
+                        }
+                      >
+                        <Icon aria-hidden />
+                        {item.label}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </li>
           </ul>
         </nav>
 

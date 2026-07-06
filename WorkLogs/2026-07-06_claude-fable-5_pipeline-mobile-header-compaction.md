@@ -39,6 +39,15 @@ On phones, the Pipeline page header stack (the "Pipeline" title, the Board/Close
 
 - Added a 06/07/2026 entry to the help page's What's new list (`WHATS_NEW` in `src/app/(app)/help/page.tsx`) covering the compact pipeline header and, since it was also missing, the phone bottom-bar More tab shipped earlier today (commit df49bd2). Lint and build re-verified.
 
+## Deployment (same session)
+
+- Committed as 52fd70d and deployed to the live Worker (version 1b682bbb, Paid account, blu-crm.kurt-0f6.workers.dev). No schema changes, so no prod DB push.
+- `npm run deploy` failed twice on this network before succeeding:
+  1. Its inner `next build` could not fetch DM Sans / JetBrains Mono from Google Fonts (Node Happy Eyeballs vs the machine's broken IPv6 path; the deploy script's `rm -rf .next` wipes the font cache, so every deploy needs a live fetch).
+  2. Retrying the whole script with `NODE_OPTIONS="--no-network-family-autoselection"` fixed the fonts but broke the R2 cache-populate step (its localhost helper worker fetches fail under that flag). The Worker upload never ran, so prod was never in a partial state.
+  - Working recipe: `rm -rf .next .open-next`, then `NODE_OPTIONS="--no-network-family-autoselection" npx opennextjs-cloudflare build`, then a plain `npx opennextjs-cloudflare deploy`.
+- Verified live: 5 of 5 cookieless cache-busted loads of /sign-in returned full ~16KB bodies in ~1.6s, and the served HTML references the new BUILD_ID (skUZpSWLFV4XAZSqk_KUC).
+
 ## Related Files
 
 - src/components/page-header.tsx

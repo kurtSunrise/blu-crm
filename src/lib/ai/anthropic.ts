@@ -161,7 +161,9 @@ export interface Tool {
 export type ThinkingConfigParam =
   | { budget_tokens: number; type: "enabled" }
   | { type: "disabled" }
-  | { type: "adaptive" };
+  // display "summarized" streams readable thinking summaries; without it,
+  // adaptive thinking emits empty deltas on current models
+  | { display?: "summarized"; type: "adaptive" };
 
 export interface MessageCreateParams {
   max_tokens: number;

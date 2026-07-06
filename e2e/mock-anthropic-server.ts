@@ -55,13 +55,13 @@ const messageEnvelope = (events: SseEvent[], stopReason: string): string =>
     { data: { type: "message_stop" }, event: "message_stop" },
   ]);
 
-const textEvents = (text: string): SseEvent[] => {
+const textEvents = (text: string, index = 0): SseEvent[] => {
   const middle = Math.ceil(text.length / 2);
   return [
     {
       data: {
         content_block: { text: "", type: "text" },
-        index: 0,
+        index,
         type: "content_block_start",
       },
       event: "content_block_start",
@@ -69,7 +69,7 @@ const textEvents = (text: string): SseEvent[] => {
     {
       data: {
         delta: { text: text.slice(0, middle), type: "text_delta" },
-        index: 0,
+        index,
         type: "content_block_delta",
       },
       event: "content_block_delta",
@@ -77,45 +77,57 @@ const textEvents = (text: string): SseEvent[] => {
     {
       data: {
         delta: { text: text.slice(middle), type: "text_delta" },
-        index: 0,
+        index,
         type: "content_block_delta",
       },
       event: "content_block_delta",
     },
     {
-      data: { index: 0, type: "content_block_stop" },
+      data: { index, type: "content_block_stop" },
       event: "content_block_stop",
     },
   ];
 };
 
-const toolUseEvents = (name: string, input: unknown = {}): SseEvent[] => [
-  {
-    data: {
-      content_block: {
-        id: `toolu_mock_${Date.now()}`,
-        input: {},
-        name,
-        type: "tool_use",
+// A multi-write plan needs several tool_use blocks in ONE assistant message,
+// so callers can pin a distinct id and content-block index per call.
+const toolUseEvents = (
+  name: string,
+  input: unknown = {},
+  block: { id?: string; index?: number } = {}
+): SseEvent[] => {
+  const index = block.index ?? 0;
+  return [
+    {
+      data: {
+        content_block: {
+          id: block.id ?? `toolu_mock_${Date.now()}`,
+          input: {},
+          name,
+          type: "tool_use",
+        },
+        index,
+        type: "content_block_start",
       },
-      index: 0,
-      type: "content_block_start",
+      event: "content_block_start",
     },
-    event: "content_block_start",
-  },
-  {
-    data: {
-      delta: { partial_json: JSON.stringify(input), type: "input_json_delta" },
-      index: 0,
-      type: "content_block_delta",
+    {
+      data: {
+        delta: {
+          partial_json: JSON.stringify(input),
+          type: "input_json_delta",
+        },
+        index,
+        type: "content_block_delta",
+      },
+      event: "content_block_delta",
     },
-    event: "content_block_delta",
-  },
-  {
-    data: { index: 0, type: "content_block_stop" },
-    event: "content_block_stop",
-  },
-];
+    {
+      data: { index, type: "content_block_stop" },
+      event: "content_block_stop",
+    },
+  ];
+};
 
 interface AnthropicRequestBody {
   messages?: {
@@ -151,15 +163,36 @@ const INBOX_PATTERN = /inbox/i;
 const CAPTURE_PATTERN = /capture/i;
 const DRAFT_PATTERN = /draft/i;
 const CHASE_PATTERN = /chase|prioriti/i;
+// A two-item write plan: two create_lead tool_use blocks in one assistant
+// message, so the checklist confirmation card renders and the route executes
+// the plan sequentially.
+const TWO_STEP_PATTERN = /two-step plan/i;
+// Knowledge scenario: the loop runs search_knowledge_base against the real
+// DB, then the tool_result turn closes with text and the source chips render.
+const KNOWLEDGE_PATTERN = /deposit|policy/i;
 // Hardening scenarios: a turn that opens then goes silent (the app's idle
 // timeout must abort and surface a retryable error) and a turn that pings then
 // pauses before answering (the client's "Thinking…" indicator must show).
 const STALL_PATTERN = /trigger an assistant stall/i;
 const THINKING_PATTERN = /take a moment to think/i;
+// Extended-thinking scenario: a thinking block streams summary deltas, pauses
+// so the spec can observe the open Reasoning section, then answers with text.
+const REASONING_PATTERN = /reason through/i;
 const THINKING_DELAY_MS = 2000;
+// Gap between successive thinking-stream steps. Must stay comfortably under
+// the suite's AI_IDLE_TIMEOUT_MS (3000) so the idle watchdog never trips,
+// while keeping the Reasoning section open for ~3s in total.
+const REASONING_STEP_MS = 1000;
 // Specs embed a unique company token so accumulated data on the shared dev
 // DB never causes false positives.
 const COMPANY_TOKEN_PATTERN = /UNIQ-\d+/;
+const ALL_COMPANY_TOKENS_PATTERN = /UNIQ-\d+/g;
+
+// The stall scenario only stalls the FIRST request per unique message text;
+// a regenerate retry of the same turn then gets a normal greeting, so the
+// spec can prove "Try again" recovers. Specs make the stall message unique
+// per run (UNIQ token) so parallel projects never share an entry.
+const stalledOnce = new Set<string>();
 
 const respond = (body: AnthropicRequestBody): string => {
   if (hasToolResult(body)) {
@@ -192,6 +225,39 @@ const respond = (body: AnthropicRequestBody): string => {
         kind: "followup_email",
         subject: "Your Christmas display enquiry",
         title: "Follow-up to Westfield",
+      }),
+      "tool_use"
+    );
+  }
+  if (TWO_STEP_PATTERN.test(userText)) {
+    const tokens = userText.match(ALL_COMPANY_TOKENS_PATTERN) ?? [];
+    const stamp = Date.now();
+    const leadInput = (companyName: string) => ({
+      companyName,
+      scopeSummary: "Two-step plan fixture lead",
+      source: "web",
+    });
+    return messageEnvelope(
+      [
+        ...toolUseEvents(
+          "create_lead",
+          leadInput(tokens[0] ?? "Two Step Mock Co A"),
+          { id: `toolu_mock_plan_a_${stamp}`, index: 0 }
+        ),
+        ...toolUseEvents(
+          "create_lead",
+          leadInput(tokens[1] ?? "Two Step Mock Co B"),
+          { id: `toolu_mock_plan_b_${stamp}`, index: 1 }
+        ),
+      ],
+      "tool_use"
+    );
+  }
+  if (KNOWLEDGE_PATTERN.test(userText)) {
+    const token = userText.match(COMPANY_TOKEN_PATTERN)?.[0];
+    return messageEnvelope(
+      toolUseEvents("search_knowledge_base", {
+        query: token ? `deposit terms ${token}` : "deposit terms",
       }),
       "tool_use"
     );
@@ -272,6 +338,82 @@ const streamThinking = (res: ServerResponse): void => {
   res.on("close", () => clearTimeout(timer));
 };
 
+const thinkingDelta = (thinking: string): SseEvent => ({
+  data: {
+    delta: { thinking, type: "thinking_delta" },
+    index: 0,
+    type: "content_block_delta",
+  },
+  event: "content_block_delta",
+});
+
+// Streams an extended-thinking block: summary deltas trickle in one per step
+// (keeping the Reasoning section observably open, even on slow WebKit
+// renders, without ever exceeding the suite's shrunk idle timeout), then the
+// signature closes the block and a text answer follows. Mirrors the
+// Anthropic thinking event shapes the real client parses.
+const streamReasoning = (res: ServerResponse): void => {
+  res.write(startFrame());
+  res.write(
+    sse([
+      {
+        data: {
+          content_block: { signature: "", thinking: "", type: "thinking" },
+          index: 0,
+          type: "content_block_start",
+        },
+        event: "content_block_start",
+      },
+      thinkingDelta("Considering the pipeline "),
+    ])
+  );
+
+  const steps: (() => void)[] = [
+    () => res.write(sse([thinkingDelta("before answering ")])),
+    () => res.write(sse([thinkingDelta("with care.")])),
+    () => {
+      res.write(
+        sse([
+          {
+            data: {
+              delta: { signature: "mock-signature", type: "signature_delta" },
+              index: 0,
+              type: "content_block_delta",
+            },
+            event: "content_block_delta",
+          },
+          {
+            data: { index: 0, type: "content_block_stop" },
+            event: "content_block_stop",
+          },
+        ])
+      );
+      res.write(sse(textEvents("Here is the reasoned answer.", 1)));
+      res.write(endFrame("end_turn"));
+      res.end();
+    },
+  ];
+
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  steps.forEach((step, index) => {
+    timers.push(
+      setTimeout(
+        () => {
+          if (!res.writableEnded) {
+            step();
+          }
+        },
+        REASONING_STEP_MS * (index + 1)
+      )
+    );
+  });
+  res.on("close", () => {
+    for (const timer of timers) {
+      clearTimeout(timer);
+    }
+  });
+};
+
 const server = createServer((req, res) => {
   if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "content-type": "text/plain" });
@@ -296,12 +438,17 @@ const server = createServer((req, res) => {
         "content-type": "text/event-stream",
       });
       const userText = lastUserText(body);
-      if (STALL_PATTERN.test(userText)) {
+      if (STALL_PATTERN.test(userText) && !stalledOnce.has(userText)) {
+        stalledOnce.add(userText);
         streamStall(res);
         return;
       }
       if (THINKING_PATTERN.test(userText)) {
         streamThinking(res);
+        return;
+      }
+      if (REASONING_PATTERN.test(userText) && !hasToolResult(body)) {
+        streamReasoning(res);
         return;
       }
       res.end(respond(body));

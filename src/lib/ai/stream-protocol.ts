@@ -2,12 +2,21 @@
 // payload per line (NDJSON). Isomorphic — no server-only imports — so the
 // client parser and server encoder share these types.
 
-export type ArtifactType =
-  | "deal_card"
-  | "deal_list"
-  | "lead_intake_draft"
-  | "draft_message"
-  | "score_list";
+export type ArtifactType = "deal_card" | "deal_list" | "draft_message";
+
+// One knowledge-base passage attribution shown as a source chip
+export interface SourceRef {
+  docTitle: string;
+  heading: string | null;
+}
+
+// One gated write awaiting user review inside a confirmation request
+export interface ConfirmationItem {
+  input: unknown;
+  summary: string;
+  toolName: string;
+  toolUseId: string;
+}
 
 export interface ArtifactPayload {
   artifactType: ArtifactType;
@@ -23,15 +32,31 @@ export type StreamPayload =
   // and drives the transient "Thinking…" indicator; carries no transcript.
   | { type: "status"; state: "thinking" | "responding" }
   | { type: "text"; delta: string }
-  | { type: "tool_start"; toolUseId: string; toolName: string }
-  | { type: "tool_done"; toolUseId: string; toolName: string }
+  // Extended-thinking summary deltas, rendered as a collapsible section
+  | { type: "reasoning"; delta: string }
+  // label is the human-readable activity line ("Searching deals")
+  | { type: "tool_start"; toolUseId: string; toolName: string; label: string }
+  | {
+      type: "tool_done";
+      toolUseId: string;
+      toolName: string;
+      isError?: boolean;
+    }
+  // A multi-step write plan awaiting review. The legacy top-level fields
+  // mirror items[0] so a stale client bundle mid-deploy still renders a
+  // single-item card; remove them once this release is verified live.
   | {
       type: "confirmation_request";
+      items: ConfirmationItem[];
       toolUseId: string;
       toolName: string;
       input: unknown;
       summary: string;
     }
+  // Knowledge-base attributions for the current answer
+  | { type: "sources"; sources: SourceRef[] }
+  // Deterministic follow-up prompts offered as chips after the turn
+  | { type: "suggestions"; prompts: string[] }
   | { type: "data_changed"; paths: string[] }
   | { type: "error"; message: string; retryable: boolean }
   | { type: "done"; messageId: string | null };

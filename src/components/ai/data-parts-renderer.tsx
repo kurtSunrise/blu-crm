@@ -1,6 +1,7 @@
 "use client";
 
-import { useMessage } from "@assistant-ui/react";
+import { useMessage, useMessageRuntime } from "@assistant-ui/react";
+import { RefreshCwIcon } from "lucide-react";
 import {
   DealCardArtifact,
   type DealCardData,
@@ -14,9 +15,14 @@ import {
   type DraftMessageData,
 } from "@/components/ai/artifacts/draft-message-artifact";
 import {
+  SourceChips,
+  type SourceChipsData,
+} from "@/components/ai/artifacts/source-chips";
+import {
   ConfirmationCard,
   type ConfirmationRequestData,
 } from "@/components/ai/confirmation-card";
+import { Button } from "@/components/ui/button";
 
 interface DataPart {
   data: unknown;
@@ -26,6 +32,26 @@ interface DataPart {
 
 const isDataPart = (part: { type: string }): part is DataPart =>
   part.type === "data";
+
+// "Try again" affordance pushed after a retryable error or a client-side
+// stall. The failed turn left no assistant content worth keeping, so a
+// regenerate reload of this message is the right recovery.
+function RetryHintButton() {
+  const messageRuntime = useMessageRuntime();
+  return (
+    <Button
+      className="my-2 min-h-11"
+      onClick={() =>
+        messageRuntime.reload({ runConfig: { custom: { regenerate: true } } })
+      }
+      type="button"
+      variant="outline"
+    >
+      <RefreshCwIcon aria-hidden className="size-4" />
+      Try again
+    </Button>
+  );
+}
 
 // Artifact cards arrive as unstable data content parts on the assistant
 // message (Billify pattern); MessagePrimitive.Parts skips them, so this
@@ -63,6 +89,12 @@ export function DataPartsRenderer() {
                 key={key}
               />
             );
+          case "sources":
+            return (
+              <SourceChips data={part.data as SourceChipsData} key={key} />
+            );
+          case "retry_hint":
+            return <RetryHintButton key={key} />;
           default:
             return null;
         }

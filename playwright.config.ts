@@ -43,6 +43,15 @@ export default defineConfig({
         // Shrink the upstream idle window so the stall-hardening spec trips the
         // abort in seconds instead of the 30s production default.
         AI_IDLE_TIMEOUT_MS: "3000",
+        // The suite runs as one seeded user and sends hundreds of assistant
+        // messages per day across projects and repeat runs; the production
+        // default (200/day) starts answering 429 mid-suite. Effectively
+        // unlimited for E2E.
+        CHAT_DAILY_MESSAGE_LIMIT: "1000000",
+        // Parallel projects seed inbox fixtures through the public enquiry
+        // endpoint from one IP; the production default (5/min) 429s when two
+        // or more projects run together.
+        ENQUIRY_RATE_LIMIT: "1000",
       },
     },
   ],

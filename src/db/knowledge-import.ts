@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
+import { EMBEDDING_BATCH_LIMIT, embedTextsViaRest } from "../lib/ai/embeddings";
 import { db } from "./index";
 import { knowledgeChunk, knowledgeDoc } from "./schema";
 
@@ -8,6 +9,11 @@ import { knowledgeChunk, knowledgeDoc } from "./schema";
 // assistant's search_knowledge_base tool can retrieve it. Re-runnable: each doc
 // is upserted by slug and its chunks are replaced. Mirrors seed.ts (tsx +
 // dotenv, run via `npm run knowledge:import`).
+//
+// When CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are set (Workers AI run
+// permission), each chunk is embedded via the Workers AI REST API and stored
+// in knowledge_chunk.embedding for hybrid search. Without credentials the
+// import still works; embeddings stay null and retrieval is full-text only.
 
 const KNOWLEDGE_DIR = join(process.cwd(), "knowledge");
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n?/;
@@ -90,7 +96,32 @@ const splitChunks = (body: string): ParsedChunk[] => {
   return chunks;
 };
 
-const importDoc = async (parsed: ParsedDoc) => {
+type ChunkEmbedder = (texts: string[]) => Promise<number[][]>;
+
+// Embed every chunk of one doc, heading-prefixed so the vector carries the
+// section context. Batched defensively; the corpus is far below the limit.
+const embedChunks = async (
+  chunks: ParsedChunk[],
+  embed: ChunkEmbedder
+): Promise<number[][]> => {
+  const texts = chunks.map(
+    (chunk) => `${chunk.heading ? `${chunk.heading}\n` : ""}${chunk.content}`
+  );
+  const vectors: number[][] = [];
+  for (let start = 0; start < texts.length; start += EMBEDDING_BATCH_LIMIT) {
+    const batch = texts.slice(start, start + EMBEDDING_BATCH_LIMIT);
+    vectors.push(...(await embed(batch)));
+  }
+  return vectors;
+};
+
+const importDoc = async (parsed: ParsedDoc, embed: ChunkEmbedder | null) => {
+  const chunks = splitChunks(parsed.content);
+  // Embed before any DB write: a failed embedding call aborts this doc with
+  // the previous rows fully intact (recoverable prefix, no transactions).
+  const embeddings =
+    embed && chunks.length > 0 ? await embedChunks(chunks, embed) : null;
+
   const now = new Date();
   const [existing] = await db
     .select({ id: knowledgeDoc.id })
@@ -122,20 +153,32 @@ const importDoc = async (parsed: ParsedDoc) => {
     });
   }
 
-  const chunks = splitChunks(parsed.content);
   if (chunks.length > 0) {
     await db.insert(knowledgeChunk).values(
-      chunks.map((chunk) => ({
+      chunks.map((chunk, index) => ({
         content: chunk.content,
         docId,
+        embedding: embeddings?.[index] ?? null,
         heading: chunk.heading,
         position: chunk.position,
       }))
     );
   }
   process.stdout.write(
-    `Imported ${parsed.slug} (${chunks.length} chunk${chunks.length === 1 ? "" : "s"}).\n`
+    `Imported ${parsed.slug} (${chunks.length} chunk${chunks.length === 1 ? "" : "s"}${embeddings ? ", embedded" : ""}).\n`
   );
+};
+
+const resolveEmbedder = (): ChunkEmbedder | null => {
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+  if (!(accountId && apiToken)) {
+    process.stdout.write(
+      "Warning: CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN not set; importing without embeddings, hybrid search will use full-text only.\n"
+    );
+    return null;
+  }
+  return (texts) => embedTextsViaRest(texts, { accountId, apiToken });
 };
 
 const run = async () => {
@@ -146,9 +189,10 @@ const run = async () => {
     process.stdout.write("No knowledge docs found in knowledge/.\n");
     return;
   }
+  const embed = resolveEmbedder();
   for (const file of files) {
     const raw = readFileSync(join(KNOWLEDGE_DIR, file), "utf8");
-    await importDoc(parseDoc(file, raw));
+    await importDoc(parseDoc(file, raw), embed);
   }
   process.stdout.write(`Knowledge import complete: ${files.length} doc(s).\n`);
 };

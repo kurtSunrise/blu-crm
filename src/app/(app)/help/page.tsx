@@ -507,12 +507,14 @@ const SECTIONS: HelpSection[] = [
     body: (
       <>
         <p className={PARA_CLASSES}>
-          The assistant (the sparkles button in the sidebar, or in the header on
-          a phone) is a chat that works the CRM with you. It reads the live
-          pipeline, never stale snapshots, and it can prepare changes, but
-          nothing is ever applied without your say-so. On a deal or contact
-          page, a chip above the message box shows the record the assistant is
-          drawing on, so questions like "summarise this deal" just work.
+          The assistant (the sparkles button in the sidebar, the header or More
+          menu on a phone, or Cmd+J / Ctrl+J on a keyboard) is a chat that works
+          the CRM with you. It reads the live pipeline, never stale snapshots,
+          and it can prepare changes, but nothing is ever applied without your
+          say-so. On a deal or contact page, a chip above the message box shows
+          the record the assistant is drawing on, so questions like "summarise
+          this deal" just work, and an "Ask Blu AI" button starts a chat about
+          that record with the question already typed for you.
         </p>
         <ol className={STEP_CLASSES}>
           <li>
@@ -542,17 +544,34 @@ const SECTIONS: HelpSection[] = [
             size.
           </li>
           <li>
+            <strong>Talk instead of typing</strong>: tap the mic button on the
+            message box to dictate. The words land in the box for you to check
+            and edit before sending; nothing is sent automatically. Handy on
+            site.
+          </li>
+          <li>
             <strong>Confirmation gating</strong>: any change (new lead, stage
             move, follow-up, logged activity) pauses on a review card. Adjust
             the fields right on the card if needed, then Confirm or Cancel.
-            Cancel means nothing happened.
+            Cancel means nothing happened. If the assistant proposes several
+            changes at once, they arrive as one checklist: keep or skip each
+            item, tweak its fields, then confirm the lot; changes apply in order
+            and stop if one fails.
+          </li>
+          <li>
+            <strong>Suggestions</strong>: chips above the message box offer a
+            sensible next question after each answer, and a fresh chat opens
+            with starter prompts that match the page you are on. Tap one to send
+            it.
           </li>
           <li>
             <strong>History</strong>: the clock button lists your recent
             conversations, each showing the deal or contact it was about; pick
-            one to resume it. The search box finds older chats by title, deal,
-            or contact name. The pencil button starts a fresh conversation, and
-            the gear button jumps straight to AI Preferences.
+            one to resume it, and its deal cards and review cards come back with
+            it. Rename, pin, or delete a conversation from its row menu. The
+            search box finds older chats by title, deal, or contact name. The
+            pencil button starts a fresh conversation, and the gear button jumps
+            straight to AI Preferences.
           </li>
         </ol>
         <p className={PARA_CLASSES}>

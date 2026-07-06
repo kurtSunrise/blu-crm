@@ -56,6 +56,34 @@ const SUMMARY_LABELS: Record<string, string> = {
 export const summarizeToolCall = (name: string): string =>
   SUMMARY_LABELS[name] ?? `Run ${name}`;
 
+// Present-tense activity line streamed with tool_start and shown live in the
+// transcript while a tool runs ("Searching deals…").
+const ACTIVITY_LABELS: Record<string, string> = {
+  complete_follow_up: "Completing the follow-up",
+  create_follow_up: "Creating a follow-up",
+  create_lead: "Creating the lead",
+  create_quote: "Recording the quote",
+  get_company: "Loading company",
+  get_contact: "Loading contact",
+  get_deal: "Loading deal",
+  get_inbox_leads: "Checking the inbox",
+  list_pipeline_stages: "Loading pipeline stages",
+  list_team_members: "Loading the team",
+  log_activity: "Logging the activity",
+  move_deal_stage: "Moving the deal",
+  present_draft: "Preparing a draft",
+  query_deals: "Searching deals",
+  rank_open_deals: "Ranking open deals",
+  search_knowledge_base: "Searching the knowledge base",
+  triage_inbox_lead: "Triaging the lead",
+  update_contact: "Updating the contact",
+  update_deal: "Updating the deal",
+  view_deal_file: "Viewing a file",
+};
+
+export const summarizeToolActivity = (name: string): string =>
+  ACTIVITY_LABELS[name] ?? `Running ${name}`;
+
 export const executeToolCall = async (
   name: string,
   input: unknown,

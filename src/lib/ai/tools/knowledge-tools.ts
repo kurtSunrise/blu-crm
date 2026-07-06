@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { searchKnowledge } from "@/lib/ai/knowledge";
+import { type KnowledgePassage, searchKnowledge } from "@/lib/ai/knowledge";
+import type { SourceRef } from "@/lib/ai/stream-protocol";
 import { type AiTool, defineTool } from "@/lib/ai/tools/types";
 
 // FR-7 knowledge base: a read-only tool the model calls for "how we do things"
@@ -15,6 +16,27 @@ const searchKnowledgeBaseSchema = z.object({
     ),
 });
 
+const MAX_SOURCES = 5;
+
+// Citation chips for the answer: one per distinct doc/heading, in rank order
+// so the strongest match leads, capped to keep the chip row scannable.
+const sourcesFromPassages = (passages: KnowledgePassage[]): SourceRef[] => {
+  const sources: SourceRef[] = [];
+  const seen = new Set<string>();
+  for (const passage of passages) {
+    const key = `${passage.docTitle} ${passage.heading ?? ""}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    sources.push({ docTitle: passage.docTitle, heading: passage.heading });
+    if (sources.length >= MAX_SOURCES) {
+      break;
+    }
+  }
+  return sources;
+};
+
 const searchKnowledgeBase = defineTool({
   description:
     "Search Blu's internal knowledge base for company policy and how-we-work guidance: brand voice and tone, the sales process, qualifying rules, and quoting/pricing terms. Call this for 'how do we...', policy, voice, or pricing-rule questions instead of guessing. Returns relevant passages, not CRM records.",
@@ -26,7 +48,10 @@ const searchKnowledgeBase = defineTool({
           "No knowledge base entries matched that query. Tell the user you don't have a documented answer rather than guessing.",
       };
     }
-    return { resultText: JSON.stringify(passages) };
+    return {
+      resultText: JSON.stringify(passages),
+      sources: sourcesFromPassages(passages),
+    };
   },
   isWrite: false,
   name: "search_knowledge_base",

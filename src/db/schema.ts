@@ -11,6 +11,7 @@ import {
   text,
   timestamp,
   uniqueIndex,
+  vector,
 } from "drizzle-orm/pg-core";
 
 // ---------------------------------------------------------------------------
@@ -502,6 +503,9 @@ export const aiAuditStatus = pgEnum("ai_audit_status", [
   "denied",
   "executed",
   "failed",
+  // A later plan item never attempted because an earlier one failed
+  // (multi-step write plans execute in order, stop on first failure)
+  "skipped",
 ]);
 
 export const chatThread = pgTable("chat_thread", {
@@ -516,11 +520,14 @@ export const chatThread = pgTable("chat_thread", {
   dealId: text("deal_id").references(() => deal.id),
   contactId: text("contact_id").references(() => contact.id),
   status: chatThreadStatus("status").notNull().default("idle"),
-  // { toolUseId, toolName, input, heldToolResults? } while a write awaits
-  // user confirmation; cleared once resolved (FR-7.8)
+  // PendingPlan jsonb ({ version: 2, items[], heldToolResults }) while gated
+  // writes await user confirmation; legacy single-item shape still parses.
+  // Cleared once resolved (FR-7.8).
   pendingToolUse: jsonb("pending_tool_use"),
   lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
+  // Pinned threads sort first in history; null = unpinned
+  pinnedAt: timestamp("pinned_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -576,6 +583,10 @@ export const aiAuditLog = pgTable("ai_audit_log", {
     .references(() => chatThread.id),
   toolUseId: text("tool_use_id").notNull(),
   toolName: text("tool_name").notNull(),
+  // The chat_message the proposal belongs to; anchors resumed confirmation
+  // cards at the right transcript position. Null on rows predating this
+  // column (those threads simply stay text-only, no backfill).
+  messageId: text("message_id"),
   // Input as proposed by the model; finalInput captures user edits at confirm
   input: jsonb("input").notNull(),
   finalInput: jsonb("final_input"),
@@ -589,6 +600,35 @@ export const aiAuditLog = pgTable("ai_audit_log", {
     .defaultNow(),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
 });
+
+// Artifact data-parts (deal cards, deal lists, drafts) persisted per assistant
+// message so resumed threads re-render their cards. Kept OUT of
+// chat_message.content: replay must stay a byte-pure Anthropic block array,
+// and artifacts are never model-visible.
+export const chatArtifact = pgTable(
+  "chat_artifact",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    threadId: text("thread_id")
+      .notNull()
+      .references(() => chatThread.id, { onDelete: "cascade" }),
+    // Cascade so regenerate's message rollback cleans up cards with it
+    messageId: text("message_id")
+      .notNull()
+      .references(() => chatMessage.id, { onDelete: "cascade" }),
+    // Emission order within the message
+    position: integer("position").notNull(),
+    // Matches ArtifactType at write time; text (not enum) so types can evolve
+    artifactType: text("artifact_type").notNull(),
+    data: jsonb("data").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("chat_artifact_thread_idx").on(table.threadId)]
+);
 
 // ---------------------------------------------------------------------------
 // Knowledge base — a small corpus of company "how we work" docs (brand voice,
@@ -615,17 +655,32 @@ export const knowledgeDoc = pgTable("knowledge_doc", {
     .defaultNow(),
 });
 
-export const knowledgeChunk = pgTable("knowledge_chunk", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  docId: text("doc_id")
-    .notNull()
-    .references(() => knowledgeDoc.id, { onDelete: "cascade" }),
-  heading: text("heading"),
-  content: text("content").notNull(),
-  position: integer("position").notNull(),
-});
+export const knowledgeChunk = pgTable(
+  "knowledge_chunk",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    docId: text("doc_id")
+      .notNull()
+      .references(() => knowledgeDoc.id, { onDelete: "cascade" }),
+    heading: text("heading"),
+    content: text("content").notNull(),
+    position: integer("position").notNull(),
+    // @cf/baai/bge-m3 embedding (Workers AI). Nullable: rows imported without
+    // Cloudflare credentials fall back to pure full-text search. Requires the
+    // pgvector extension (npm run db:pgvector) BEFORE db:push.
+    embedding: vector("embedding", { dimensions: 1024 }),
+  },
+  (table) => [
+    // HNSW over IVFFlat: builds on an empty table and needs no list tuning,
+    // right for a corpus this small.
+    index("knowledge_chunk_embedding_idx").using(
+      "hnsw",
+      table.embedding.op("vector_cosine_ops")
+    ),
+  ]
+);
 
 // Named aggregate so consumers avoid namespace imports (Ultracite rule)
 export const schema = {
@@ -634,6 +689,7 @@ export const schema = {
   aiAuditLog,
   appSetting,
   attachment,
+  chatArtifact,
   chatMessage,
   chatThread,
   company,

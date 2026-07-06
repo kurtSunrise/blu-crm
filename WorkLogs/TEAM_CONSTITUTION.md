@@ -11,7 +11,7 @@ This document is the shared working agreement for contributors and AI agents in 
 - **Current backend direction**: Neon PostgreSQL with Drizzle ORM
 - **Current auth direction**: Better Auth with a Drizzle adapter. Route gating is layered: the `(app)` layout requires a session for every in-shell page, and every server action gates itself with `requireActionSession`/`requireActionAdmin` (`src/lib/session.ts`) because actions are POST-addressable endpoints the layout gate does not cover. Sign-in is rate limited on the Worker (Better Auth `rateLimit`, database storage, `rate_limit` table, switched on by the `AUTH_RATE_LIMIT_ENABLED` var in `wrangler.jsonc` because the NODE_ENV default never fires on workerd)
 - **Current UI direction**: touch-friendly, mobile-first, shadcn/ui-based interfaces
-- **AI chat**: shipped (M4). Agent loop and tools live in `src/lib/ai/`, the endpoint is `/api/chat` (per-user daily message cap, default 200), threads are user-scoped, and the eval harness in `evals/` runs via `npm run ai:eval` with an 80% pass gate
+- **AI chat**: shipped (M4) and upgraded 07/2026. Agent loop and tools live in `src/lib/ai/`, the endpoint is `/api/chat` (per-user daily message cap, default 200), threads are user-scoped with rename/pin/soft-delete via `/api/chat/threads/[id]`, and artifact and confirmation cards persist across thread resume (`chat_artifact` table). Multi-step writes queue as one confirmation-gated plan: per-item approve/skip/edit, sequential execution, stop on first failure, per-item audit. Knowledge search is hybrid (Postgres full-text fused with pgvector cosine over Workers AI bge-m3 embeddings, hard fallback to pure full-text when embedding is unavailable) and voice input transcribes through Workers AI Whisper at `/api/chat/transcribe`; the single `ai` binding `AI` in `wrangler.jsonc` serves both. The eval harness in `evals/` runs via `npm run ai:eval` with an 80% pass gate
 - **Deployment**: Cloudflare Workers (worker name `blu-crm`) via `@opennextjs/cloudflare` + `wrangler`;
 - **Scheduled work**: Cloudflare cron triggers (`wrangler.jsonc` `triggers.crons`) drive the notification sweeps. The OpenNext worker only exports `fetch`, so `worker-entry.mjs` exports `scheduled` and dispatches an in-memory authenticated request to `/api/cron/notifications` (never a network self-fetch: `global_fetch_strictly_public` is enabled).
 - **Photo storage**: Cloudflare R2 bucket `blu-crm-photos` bound as `PHOTO_BUCKET`; objects stay private and stream through `/api/attachments/[id]`. Local dev uses the simulated binding from `initOpenNextCloudflareForDev()` (persisted under `.wrangler/`)
@@ -30,7 +30,7 @@ This document is the shared working agreement for contributors and AI agents in 
 - **Styling**: Tailwind CSS 4
 - **UI Components**: shadcn/ui with Base UI primitives where needed
 - **State Management**: React state and App Router data flow; no dedicated global state library is part of the current stack
-- **Vision / AI SDK**: `@anthropic-ai/sdk` for the photo-search vision provider; Z.AI is also wired as an alternate provider
+- **Vision / AI**: all vision runs through the Anthropic Messages API via raw fetch (the SDK is deliberately kept out of the Worker bundle); `ZAI_API_KEY` only satisfies the settings vision-status badge, there is no alternate vision provider. Cloudflare Workers AI (the `AI` binding) serves Whisper voice transcription and bge-m3 knowledge embeddings
 
 ### Testing & Quality
 - **E2E Testing**: Playwright 1.59.1

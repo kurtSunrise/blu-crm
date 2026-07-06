@@ -46,10 +46,12 @@ const overallTimeoutMs = (): number =>
 
 // Stream callbacks: onText forwards visible text deltas; onActivity fires on
 // otherwise-silent upstream progress (ping / thinking deltas) so the route can
-// keep the client's connection demonstrably alive during the thinking phase.
+// keep the client's connection demonstrably alive during the thinking phase;
+// onThinking forwards readable thinking-summary deltas for the reasoning UI.
 export interface StreamHandlers {
   onActivity?: () => void;
   onText: (delta: string) => void;
+  onThinking?: (delta: string) => void;
 }
 
 // The org-wide model choice persisted in app_setting (Settings → AI
@@ -174,6 +176,7 @@ const applyDelta = (
     // Thinking emits no visible text; signal liveness so the client's
     // watchdog and "Thinking…" indicator track real upstream progress.
     handlers.onActivity?.();
+    handlers.onThinking?.(delta.thinking);
   } else if (delta.type === "signature_delta") {
     appendString(block, "signature", delta.signature);
   }

@@ -13,6 +13,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  Sparkles,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -191,7 +192,7 @@ function AppShellInner({
   defaultCollapsed: boolean;
 }) {
   const pathname = usePathname();
-  const { open: assistantOpen } = useAiAssistant();
+  const { open: assistantOpen, setOpen: setAssistantOpen } = useAiAssistant();
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   // One poller serves both the desktop sidebar and the mobile header badge.
   const unreadCount = useUnreadNotificationCount(pathname);
@@ -206,17 +207,26 @@ function AppShellInner({
     });
   }, [collapsed]);
 
-  // Cmd/Ctrl+B toggles the sidebar, matching the common editor shortcut.
+  // Cmd/Ctrl+B toggles the sidebar (the common editor shortcut) and
+  // Cmd/Ctrl+J toggles the assistant dock (Cmd+K stays reserved for a
+  // future command palette).
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "b" && (event.metaKey || event.ctrlKey)) {
+      if (!(event.metaKey || event.ctrlKey)) {
+        return;
+      }
+      if (event.key === "b") {
         event.preventDefault();
         toggleSidebar();
+      }
+      if (event.key === "j") {
+        event.preventDefault();
+        setAssistantOpen(!assistantOpen);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [toggleSidebar]);
+  }, [toggleSidebar, assistantOpen, setAssistantOpen]);
 
   return (
     <TooltipProvider>
@@ -280,7 +290,7 @@ function AppShellInner({
             {collapsed ? (
               <Tooltip>
                 <TooltipTrigger render={<AiLauncherButton />} />
-                <TooltipContent side="right">Assistant</TooltipContent>
+                <TooltipContent side="right">Assistant (⌘J)</TooltipContent>
               </Tooltip>
             ) : (
               <AiLauncherButton withLabel />
@@ -419,6 +429,10 @@ function AppShellInner({
                       </DropdownMenuItem>
                     );
                   })}
+                  <DropdownMenuItem onClick={() => setAssistantOpen(true)}>
+                    <Sparkles aria-hidden />
+                    Assistant
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </li>

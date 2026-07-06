@@ -3,6 +3,7 @@ import { Mail, MessageSquare, Pencil, Phone } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AiEntityBeacon } from "@/components/ai/ai-entity-beacon";
+import { AskAiButton } from "@/components/ai/ask-ai-button";
 import { ArchiveRecordButton } from "@/components/archive-record-button";
 import { DealTimeline } from "@/components/deal-timeline";
 import { Badge } from "@/components/ui/badge";
@@ -171,6 +172,9 @@ export default async function ContactPage({
             <Pencil aria-hidden className="size-4 text-blu" />
             Edit
           </Link>
+          <AskAiButton
+            prompt={`Summarise ${person.name} and our recent activity`}
+          />
         </div>
       </header>
 

@@ -10,6 +10,11 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  // Workers AI: bge-m3 embeddings for hybrid knowledge search and Whisper
+  // voice transcription. Account-authenticated, no secret needed.
+  "ai": {
+    "binding": "AI"
+  },
   "r2_buckets": [
     {
       "binding": "PHOTO_BUCKET",

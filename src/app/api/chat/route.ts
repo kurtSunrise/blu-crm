@@ -4,8 +4,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
 import { chatMessage, chatThread } from "@/db/schema";
-import { runAgentTurn } from "@/lib/ai/agent-loop";
+import { runAgentTurn, type TurnActivity } from "@/lib/ai/agent-loop";
 import type * as Anthropic from "@/lib/ai/anthropic";
+import { saveMessageArtifacts } from "@/lib/ai/artifact-store";
 import { resolveAssistantUser } from "@/lib/ai/assistant-user";
 import {
   type BluMediaBlock,
@@ -16,6 +17,7 @@ import { resolveAuditedToolCall } from "@/lib/ai/audit";
 import { isAiConfigured } from "@/lib/ai/client";
 import { buildPageContext } from "@/lib/ai/page-context";
 import {
+  type ArtifactPayload,
   encodeStreamPayload,
   type StreamPayload,
 } from "@/lib/ai/stream-protocol";
@@ -25,17 +27,21 @@ import {
   createThread,
   getThreadForUser,
   loadThreadMessages,
-  type PendingToolUse,
+  type PendingPlan,
+  type PendingPlanItem,
+  parsePendingPlan,
+  rollbackToLastPlainUserTurn,
   type ThreadRecord,
 } from "@/lib/ai/threads";
-import { executeToolCall } from "@/lib/ai/tools";
+import { executeToolCall, summarizeToolActivity } from "@/lib/ai/tools";
 
 const TITLE_MAX_LENGTH = 60;
 
 // Per-user daily spend guard. The per-turn caps (loop iterations, output
 // tokens) bound one turn; this bounds how many turns a single account can
 // drive in a day. Generous for real use, it exists to stop a runaway client
-// or a compromised account from burning unbounded model cost.
+// or a compromised account from burning unbounded model cost. Only user-role
+// inserts count, so a regenerate (which appends no user turn) never grows it.
 const DEFAULT_DAILY_MESSAGE_LIMIT = 200;
 
 const dailyMessageLimit = (): number => {
@@ -68,18 +74,30 @@ const MAX_CHAT_ATTACHMENTS = 5;
 // that would bloat the model input and stretch one turn toward a timeout.
 const MAX_MESSAGE_LENGTH = 16_000;
 
+// Matches the write-plan review card: one decision per plan item.
+const MAX_PLAN_DECISIONS = 10;
+
+const decisionSchema = z.object({
+  approved: z.boolean(),
+  // User-edited tool input from the confirmation checklist (two-way sync);
+  // re-validated by the tool's own zod schema at execution time
+  finalInput: z.unknown().optional(),
+  toolUseId: z.string(),
+});
+
 const chatRequestSchema = z
   .object({
     // Ids from /api/chat/attachments; rehydrated to base64 media blocks when
     // the thread history is sent to the model.
     attachmentIds: z.array(z.string()).max(MAX_CHAT_ATTACHMENTS).optional(),
+    // Either the per-item decisions array or the legacy single-decision
+    // fields (kept for a stale client bundle during the deploy window).
     confirmation: z
       .object({
-        approved: z.boolean(),
-        // User-edited tool input from the confirmation card (two-way sync);
-        // re-validated by the tool's own zod schema at execution time
+        approved: z.boolean().optional(),
+        decisions: z.array(decisionSchema).max(MAX_PLAN_DECISIONS).optional(),
         finalInput: z.unknown().optional(),
-        toolUseId: z.string(),
+        toolUseId: z.string().optional(),
       })
       .optional(),
     message: z.string().min(1).max(MAX_MESSAGE_LENGTH).optional(),
@@ -88,13 +106,49 @@ const chatRequestSchema = z
       dealId: z.string().optional(),
       pathname: z.string(),
     }),
+    // Re-answer the thread's last plain user turn instead of adding one
+    regenerate: z.boolean().optional(),
     threadId: z.string().optional(),
   })
-  .refine((value) => Boolean(value.message) || Boolean(value.confirmation), {
-    message: "Provide a message or a confirmation",
-  });
+  .refine(
+    (value) =>
+      Boolean(value.message) ||
+      Boolean(value.confirmation) ||
+      value.regenerate === true,
+    { message: "Provide a message, a confirmation, or a regenerate flag" }
+  )
+  .refine(
+    (value) => !(value.regenerate && (value.message || value.confirmation)),
+    { message: "Regenerate cannot be combined with a message or confirmation" }
+  );
 
 type ChatRequestBody = z.infer<typeof chatRequestSchema>;
+
+type ConfirmationDecision = z.infer<typeof decisionSchema>;
+
+// Accepts both request shapes: the decisions array, or the legacy top-level
+// single decision normalized to a one-item array. Null means neither was
+// well-formed.
+const normalizeDecisions = (
+  confirmation: NonNullable<ChatRequestBody["confirmation"]>
+): ConfirmationDecision[] | null => {
+  if (confirmation.decisions?.length) {
+    return confirmation.decisions;
+  }
+  if (
+    typeof confirmation.approved === "boolean" &&
+    typeof confirmation.toolUseId === "string"
+  ) {
+    return [
+      {
+        approved: confirmation.approved,
+        finalInput: confirmation.finalInput,
+        toolUseId: confirmation.toolUseId,
+      },
+    ];
+  }
+  return null;
+};
 
 const deriveTitle = (message: string): string => {
   const collapsed = message.replaceAll(/\s+/g, " ").trim();
@@ -103,66 +157,42 @@ const deriveTitle = (message: string): string => {
     : collapsed;
 };
 
-const getPending = (thread: ThreadRecord): PendingToolUse | null =>
-  thread.status === "awaiting_confirmation" && thread.pendingToolUse
-    ? (thread.pendingToolUse as PendingToolUse)
-    : null;
+const SKIPPED_AFTER_FAILURE = "Not attempted: an earlier step failed.";
 
-// Resolve the pending gated write: execute (approved) or decline (denied),
-// audit the lifecycle, and return the tool_result blocks that answer every
-// tool_use of the paused assistant turn.
-const resolvePendingToolUse = async (params: {
-  approved: boolean;
-  finalInput?: unknown;
-  pending: PendingToolUse;
+// One approved plan item: audit the confirm, run the tool between
+// tool_start/tool_done, and audit the executed/failed outcome.
+const executeApprovedItem = async (params: {
+  effectiveInput: unknown;
+  item: PendingPlanItem;
   send: (payload: StreamPayload) => void;
   threadId: string;
   userId: string;
-}): Promise<Anthropic.ToolResultBlockParam[]> => {
-  const { approved, pending, send, threadId, userId } = params;
-  const effectiveInput = params.finalInput ?? pending.input;
-
-  if (!approved) {
-    await resolveAuditedToolCall({
-      confirmedBy: userId,
-      status: "denied",
-      threadId,
-      toolUseId: pending.toolUseId,
-    });
-    return [
-      ...pending.heldToolResults,
-      {
-        content:
-          "The user declined this action. Nothing was changed. Acknowledge briefly and ask how they would like to proceed.",
-        tool_use_id: pending.toolUseId,
-        type: "tool_result",
-      },
-    ];
-  }
-
+}): Promise<Awaited<ReturnType<typeof executeToolCall>>> => {
+  const { effectiveInput, item, send, threadId, userId } = params;
   await resolveAuditedToolCall({
     confirmedBy: userId,
     finalInput: effectiveInput,
     status: "confirmed",
     threadId,
-    toolUseId: pending.toolUseId,
+    toolUseId: item.toolUseId,
   });
-
   send({
-    toolName: pending.toolName,
-    toolUseId: pending.toolUseId,
+    label: summarizeToolActivity(item.toolName),
+    toolName: item.toolName,
+    toolUseId: item.toolUseId,
     type: "tool_start",
   });
-  const outcome = await executeToolCall(pending.toolName, effectiveInput, {
+  // defineTool re-validates effectiveInput against the tool's zod schema.
+  const outcome = await executeToolCall(item.toolName, effectiveInput, {
     threadId,
     userId,
   });
   send({
-    toolName: pending.toolName,
-    toolUseId: pending.toolUseId,
+    isError: outcome.isError,
+    toolName: item.toolName,
+    toolUseId: item.toolUseId,
     type: "tool_done",
   });
-
   await resolveAuditedToolCall({
     confirmedBy: userId,
     error: outcome.isError ? outcome.resultText : undefined,
@@ -170,56 +200,243 @@ const resolvePendingToolUse = async (params: {
     result: outcome.isError ? undefined : { resultText: outcome.resultText },
     status: outcome.isError ? "failed" : "executed",
     threadId,
-    toolUseId: pending.toolUseId,
+    toolUseId: item.toolUseId,
   });
+  return outcome;
+};
 
-  for (const artifact of outcome.artifacts ?? []) {
-    send(artifact);
-  }
-  if (!outcome.isError && outcome.changedPaths) {
-    send({ paths: outcome.changedPaths, type: "data_changed" });
-  }
+interface PlanExecutionOutcome {
+  artifacts: ArtifactPayload[];
+  executedToolNames: string[];
+  toolResults: Anthropic.ToolResultBlockParam[];
+  wroteChanges: boolean;
+}
 
-  return [
-    ...pending.heldToolResults,
-    {
+// Resolve the pending write plan: apply approved items, decline skipped ones,
+// audit every lifecycle step, and return the tool_result blocks that answer
+// every tool_use of the paused assistant turn.
+const executePendingPlan = async (params: {
+  decisions: ConfirmationDecision[];
+  plan: PendingPlan;
+  send: (payload: StreamPayload) => void;
+  threadId: string;
+  userId: string;
+}): Promise<PlanExecutionOutcome> => {
+  const { decisions, plan, send, threadId, userId } = params;
+  const decisionFor = new Map(
+    decisions.map((decision) => [decision.toolUseId, decision])
+  );
+  const toolResults: Anthropic.ToolResultBlockParam[] = [
+    ...plan.heldToolResults,
+  ];
+  const artifacts: ArtifactPayload[] = [];
+  const executedToolNames: string[] = [];
+  const changedPaths = new Set<string>();
+  let failed = false;
+  let wroteChanges = false;
+
+  // Deliberately sequential, not Promise.all: plan items are order-dependent
+  // writes, applied in proposal order and stopped at the first failure so a
+  // partial prefix is always a coherent state.
+  for (const item of plan.items) {
+    const decision = decisionFor.get(item.toolUseId);
+    // No decision defaults to skip: nothing applies without an explicit
+    // approval (FR-7.8).
+    if (!decision?.approved) {
+      await resolveAuditedToolCall({
+        confirmedBy: userId,
+        status: "denied",
+        threadId,
+        toolUseId: item.toolUseId,
+      });
+      toolResults.push({
+        content: "The user declined this step; nothing was changed.",
+        tool_use_id: item.toolUseId,
+        type: "tool_result",
+      });
+      continue;
+    }
+    if (failed) {
+      await resolveAuditedToolCall({
+        confirmedBy: userId,
+        error: SKIPPED_AFTER_FAILURE,
+        status: "skipped",
+        threadId,
+        toolUseId: item.toolUseId,
+      });
+      toolResults.push({
+        content:
+          "This step was not attempted because an earlier step in the plan failed.",
+        is_error: true,
+        tool_use_id: item.toolUseId,
+        type: "tool_result",
+      });
+      continue;
+    }
+
+    const outcome = await executeApprovedItem({
+      effectiveInput: decision.finalInput ?? item.input,
+      item,
+      send,
+      threadId,
+      userId,
+    });
+    for (const artifact of outcome.artifacts ?? []) {
+      send(artifact);
+      artifacts.push(artifact);
+    }
+    toolResults.push({
       content: outcome.resultText,
       is_error: outcome.isError,
-      tool_use_id: pending.toolUseId,
+      tool_use_id: item.toolUseId,
       type: "tool_result",
-    },
+    });
+    if (outcome.isError) {
+      failed = true;
+      continue;
+    }
+    wroteChanges = true;
+    executedToolNames.push(item.toolName);
+    for (const path of outcome.changedPaths ?? []) {
+      changedPaths.add(path);
+    }
+  }
+
+  // One deduped refresh signal for everything the plan changed.
+  if (changedPaths.size > 0) {
+    send({ paths: [...changedPaths], type: "data_changed" });
+  }
+  return { artifacts, executedToolNames, toolResults, wroteChanges };
+};
+
+// A pending plan superseded by a fresh user message counts as a denial of
+// every item: nothing is ever applied without an explicit confirm (FR-7.8).
+const denySupersededPlan = async (
+  threadId: string,
+  userId: string,
+  plan: PendingPlan
+): Promise<Anthropic.ToolResultBlockParam[]> => {
+  // Independent single-row updates; denial order carries no meaning.
+  await Promise.all(
+    plan.items.map((item) =>
+      resolveAuditedToolCall({
+        confirmedBy: userId,
+        status: "denied",
+        threadId,
+        toolUseId: item.toolUseId,
+      })
+    )
+  );
+  await clearThreadPending(threadId);
+  return [
+    ...plan.heldToolResults,
+    ...plan.items.map(
+      (item): Anthropic.ToolResultBlockParam => ({
+        content:
+          "The user moved on without confirming; the action was not applied.",
+        tool_use_id: item.toolUseId,
+        type: "tool_result",
+      })
+    ),
   ];
 };
 
-// A pending write superseded by a fresh user message counts as a denial:
-// nothing is ever applied without an explicit confirm (FR-7.8).
-const denySupersededToolUse = async (
-  threadId: string,
-  userId: string,
-  pending: PendingToolUse
-): Promise<Anthropic.ToolResultBlockParam[]> => {
-  await resolveAuditedToolCall({
-    confirmedBy: userId,
-    status: "denied",
-    threadId,
-    toolUseId: pending.toolUseId,
-  });
-  await clearThreadPending(threadId);
-  return [
-    ...pending.heldToolResults,
-    {
-      content:
-        "The user moved on without confirming; the action was not applied.",
-      tool_use_id: pending.toolUseId,
-      type: "tool_result",
-    },
-  ];
+// A fresh user message: deny any superseded pending plan first, then
+// assemble the page context, message text, and attachment refs.
+const buildMessageContent = async (params: {
+  body: ChatRequestBody;
+  message: string;
+  plan: PendingPlan | null;
+  thread: ThreadRecord;
+  userId: string;
+  userName: string;
+}): Promise<(Anthropic.ContentBlockParam | BluMediaBlock)[]> => {
+  const { body, message, plan, thread, userId, userName } = params;
+  const content: (Anthropic.ContentBlockParam | BluMediaBlock)[] = [];
+  if (plan) {
+    content.push(...(await denySupersededPlan(thread.id, userId, plan)));
+  } else if (thread.status === "awaiting_confirmation") {
+    // Unparseable pending blob: release the thread rather than leaving it
+    // stuck awaiting a confirmation that can never resolve.
+    await clearThreadPending(thread.id);
+  }
+  const pageContext = await buildPageContext(body.pageContext, userName);
+  content.push(
+    { text: pageContext, type: "text" },
+    { text: message, type: "text" }
+  );
+  if (body.attachmentIds?.length) {
+    content.push(...(await buildMediaRefBlocks(body.attachmentIds)));
+    await linkAttachmentsToThread(body.attachmentIds, thread.id);
+  }
+  return content;
+};
+
+// A Response body is single-use, so each rejection builds a fresh one.
+const alreadyResolved = (): Response =>
+  NextResponse.json(
+    { error: "This action has already been resolved" },
+    { status: 409 }
+  );
+
+// Validates a confirmation body against the live plan. Returns the
+// normalized per-item decisions, or the rejection response to send.
+const resolveDecisions = (
+  confirmation: NonNullable<ChatRequestBody["confirmation"]>,
+  plan: PendingPlan | null
+): { decisions: ConfirmationDecision[] } | { response: Response } => {
+  const decisions = normalizeDecisions(confirmation);
+  if (!decisions) {
+    return {
+      response: NextResponse.json(
+        { error: "Invalid request" },
+        { status: 400 }
+      ),
+    };
+  }
+  if (!plan) {
+    return { response: alreadyResolved() };
+  }
+  const knownIds = new Set(plan.items.map((item) => item.toolUseId));
+  if (decisions.some((decision) => !knownIds.has(decision.toolUseId))) {
+    return { response: alreadyResolved() };
+  }
+  return { decisions };
+};
+
+// Regenerate pre-flight: rolls the thread back to its last plain user turn,
+// or returns the rejection response when that is not possible.
+const guardRegenerate = async (
+  thread: ThreadRecord
+): Promise<Response | null> => {
+  if (thread.status === "awaiting_confirmation") {
+    return NextResponse.json(
+      { error: "Resolve the pending confirmation before regenerating" },
+      { status: 409 }
+    );
+  }
+  // Executed writes must never become re-runnable via regenerate; the
+  // rollback refuses when the doomed turn changed data.
+  const rollback = await rollbackToLastPlainUserTurn(thread.id);
+  if (rollback === "conflict") {
+    return NextResponse.json(
+      { error: "This turn made changes and cannot be regenerated." },
+      { status: 409 }
+    );
+  }
+  if (rollback === "no_user_turn") {
+    return NextResponse.json(
+      { error: "Nothing to regenerate yet." },
+      { status: 409 }
+    );
+  }
+  return null;
 };
 
 // The AI assistant chat endpoint (M4 / FR-7). Streams NDJSON payloads; the
-// thread, messages, and tool outcomes are persisted server-side so the
-// conversation can resume across reloads. A POST carries either a new user
-// message or the resolution of a pending write confirmation.
+// thread, messages, tool outcomes, and artifacts are persisted server-side so
+// the conversation can resume across reloads. A POST carries a new user
+// message, the resolution of a pending write plan, or a regenerate request.
 export async function POST(request: Request): Promise<Response> {
   const assistantUser = await resolveAssistantUser(request);
   if (!assistantUser) {
@@ -245,6 +462,13 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const userId = assistantUser.id;
+
+  if (parsedBody.regenerate && !parsedBody.threadId) {
+    return NextResponse.json(
+      { error: "Regenerate requires a thread" },
+      { status: 400 }
+    );
+  }
 
   // Checked before thread creation so an over-cap request never leaves an
   // empty thread behind.
@@ -273,13 +497,25 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: "Unknown thread" }, { status: 404 });
   }
 
-  const pending = getPending(thread);
-  const confirmation = parsedBody.confirmation;
-  if (confirmation && pending?.toolUseId !== confirmation.toolUseId) {
-    return NextResponse.json(
-      { error: "This action has already been resolved" },
-      { status: 409 }
-    );
+  const plan =
+    thread.status === "awaiting_confirmation"
+      ? parsePendingPlan(thread.pendingToolUse)
+      : null;
+
+  let decisions: ConfirmationDecision[] | null = null;
+  if (parsedBody.confirmation) {
+    const resolved = resolveDecisions(parsedBody.confirmation, plan);
+    if ("response" in resolved) {
+      return resolved.response;
+    }
+    decisions = resolved.decisions;
+  }
+
+  if (parsedBody.regenerate) {
+    const rejection = await guardRegenerate(thread);
+    if (rejection) {
+      return rejection;
+    }
   }
 
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
@@ -298,49 +534,62 @@ export async function POST(request: Request): Promise<Response> {
       // Build the resume/user turn before invoking the loop. blu_media refs
       // are persisted alongside the text and rehydrated to base64 at replay.
       const userContent: (Anthropic.ContentBlockParam | BluMediaBlock)[] = [];
+      let planArtifacts: ArtifactPayload[] = [];
+      let turnActivity: TurnActivity | undefined;
 
-      if (confirmation && pending) {
-        const toolResults = await resolvePendingToolUse({
-          approved: confirmation.approved,
-          finalInput: confirmation.finalInput,
-          pending,
+      if (decisions && plan) {
+        const executed = await executePendingPlan({
+          decisions,
+          plan,
           send,
           threadId: thread.id,
           userId,
         });
+        // Cleared only after the whole plan loop: a crash mid-plan leaves the
+        // per-item audit state behind and the plan still resolvable.
         await clearThreadPending(thread.id);
-        userContent.push(...toolResults);
+        userContent.push(...executed.toolResults);
+        planArtifacts = executed.artifacts;
+        // Seeds the loop's end-of-turn suggestions with what just executed.
+        turnActivity = {
+          artifactTypes: planArtifacts.map((artifact) => artifact.artifactType),
+          toolsUsed: executed.executedToolNames,
+          wroteChanges: executed.wroteChanges,
+        };
       } else if (parsedBody.message) {
-        if (pending) {
-          userContent.push(
-            ...(await denySupersededToolUse(thread.id, userId, pending))
-          );
-        }
-        const pageContext = await buildPageContext(
-          parsedBody.pageContext,
-          assistantUser.name
-        );
         userContent.push(
-          { text: pageContext, type: "text" },
-          { text: parsedBody.message, type: "text" }
+          ...(await buildMessageContent({
+            body: parsedBody,
+            message: parsedBody.message,
+            plan,
+            thread,
+            userId,
+            userName: assistantUser.name,
+          }))
         );
-        if (parsedBody.attachmentIds?.length) {
-          userContent.push(
-            ...(await buildMediaRefBlocks(parsedBody.attachmentIds))
-          );
-          await linkAttachmentsToThread(parsedBody.attachmentIds, thread.id);
-        }
       }
 
-      await appendThreadMessage(thread.id, "user", userContent);
+      // Regenerate re-answers the surviving last user turn; it must not
+      // append a new one (and so never counts against the daily cap).
+      if (!parsedBody.regenerate) {
+        const userMessageId = await appendThreadMessage(
+          thread.id,
+          "user",
+          userContent
+        );
+        // Artifacts from executed plan writes anchor to this resume turn,
+        // the message carrying their tool_results.
+        await saveMessageArtifacts(thread.id, userMessageId, planArtifacts);
+      }
       const messages = await loadThreadMessages(thread.id);
 
-      await runAgentTurn({
+      const result = await runAgentTurn({
         ctx: { threadId: thread.id, userId },
         messages,
         send,
+        turnActivity,
       });
-      send({ messageId: null, type: "done" });
+      send({ messageId: result.lastAssistantMessageId, type: "done" });
     } catch (error) {
       const message =
         error instanceof Error

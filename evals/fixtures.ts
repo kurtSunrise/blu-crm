@@ -50,6 +50,43 @@ const WRITE_TOOLS = new Set([
 const proposedWrites = (response: GradedResponse) =>
   response.toolCalls.filter((tool) => WRITE_TOOLS.has(tool.name));
 
+// Draft requests that name a specific client legitimately start with a
+// grounding read (the prompt mandates looking a client up before writing
+// about them), so a first response that reads before drafting passes. The
+// brand-rule checks apply whenever the first call IS the draft itself.
+const DRAFT_GROUNDING_TOOLS = new Set([
+  "get_contact",
+  "get_company",
+  "get_deal",
+  "query_deals",
+  "search_knowledge_base",
+]);
+
+const gradeDraft =
+  (kind: string) =>
+  (response: GradedResponse): string | null => {
+    const tool = firstTool(response);
+    if (!tool) {
+      return `expected present_draft or a grounding read but got no tool (text: ${response.text.slice(0, 120)})`;
+    }
+    if (proposedWrites(response).length > 0) {
+      return `proposed a write (${proposedWrites(response)[0]?.name}) for a draft request`;
+    }
+    if (tool.name !== "present_draft") {
+      return DRAFT_GROUNDING_TOOLS.has(tool.name)
+        ? null
+        : `expected present_draft or a grounding read but got ${tool.name}`;
+    }
+    if (tool.input.kind !== kind) {
+      return `expected ${kind} but got ${tool.input.kind}`;
+    }
+    const body = String(tool.input.body ?? "");
+    if (body.includes(EM_DASH)) {
+      return "draft body contains an em dash (brand rule)";
+    }
+    return null;
+  };
+
 export const FIXTURES: EvalFixture[] = [
   {
     fr: "FR-7.1",
@@ -88,8 +125,11 @@ export const FIXTURES: EvalFixture[] = [
       }
       return null;
     },
+    // The install date must stay in the future: the page context carries the
+    // real current date, and a past date rightly makes the model query the
+    // typo instead of capturing (this fixture rotted once already in 07/2026).
     message:
-      "Capture this enquiry please:\n\nHi team, Mia Torres here from Karrinyup Centre Management (mia.torres@karrinyup.example). We need a winter wonderland activation for centre court, budget around $55,000, must be installed by 20/06/2026. Can you help?",
+      "Capture this enquiry please:\n\nHi team, Mia Torres here from Karrinyup Centre Management (mia.torres@karrinyup.example). We need a winter wonderland activation for centre court, budget around $55,000, must be installed by 20/06/2031. Can you help?",
     name: "lead-capture-complete",
     pathname: "/inbox",
   },
@@ -111,20 +151,7 @@ export const FIXTURES: EvalFixture[] = [
   },
   {
     fr: "FR-7.4",
-    grade: (response) => {
-      const tool = firstTool(response);
-      if (tool?.name !== "present_draft") {
-        return `expected present_draft but got ${tool?.name ?? "no tool"}`;
-      }
-      if (tool.input.kind !== "followup_email") {
-        return `expected followup_email but got ${tool.input.kind}`;
-      }
-      const body = String(tool.input.body ?? "");
-      if (body.includes(EM_DASH)) {
-        return "draft body contains an em dash (brand rule)";
-      }
-      return null;
-    },
+    grade: gradeDraft("followup_email"),
     message:
       "Draft a follow-up email to Sarah at Westfield about the Christmas display concept we sent last week. Sign it off from Kurt.",
     name: "followup-email-draft",
@@ -132,15 +159,7 @@ export const FIXTURES: EvalFixture[] = [
   },
   {
     fr: "FR-7.4",
-    grade: (response) => {
-      const tool = firstTool(response);
-      if (tool?.name !== "present_draft") {
-        return `expected present_draft but got ${tool?.name ?? "no tool"}`;
-      }
-      return tool.input.kind === "followup_sms"
-        ? null
-        : `expected followup_sms but got ${tool.input.kind}`;
-    },
+    grade: gradeDraft("followup_sms"),
     message:
       "Send me an SMS draft nudging Tom from Lakeside Joondalup about the quote we issued.",
     name: "followup-sms-draft",
@@ -148,15 +167,7 @@ export const FIXTURES: EvalFixture[] = [
   },
   {
     fr: "FR-7.9",
-    grade: (response) => {
-      const tool = firstTool(response);
-      if (tool?.name !== "present_draft") {
-        return `expected present_draft but got ${tool?.name ?? "no tool"}`;
-      }
-      return tool.input.kind === "qualification_questions"
-        ? null
-        : `expected qualification_questions but got ${tool.input.kind}`;
-    },
+    grade: gradeDraft("qualification_questions"),
     message:
       "Give me qualification questions for a pop-up activation enquiry at a shopping centre.",
     name: "qualification-questions",

@@ -397,7 +397,10 @@ can also edit directly.
 - **Streaming + reasoning** — responses stream; the assistant can show its
   plan for multi-step actions.
 - **Persisted threads** — conversations are saved as threads, with per-deal
-  and per-contact chat history so context carries across sessions.
+  and per-contact chat history so context carries across sessions. Artifact
+  cards and confirmation cards are stored alongside their messages, so a
+  resumed thread re-renders them in place (past confirmations show their
+  outcome; a still-pending confirmation stays actionable).
 
 **Capabilities:**
 
@@ -436,12 +439,21 @@ assistant states *why* a deal ranks where it does.
 note; the assistant transcribes it and files it as an activity artifact on the
 right deal, with the original audio attached.
 *AC: the user confirms the target deal before the activity saves.*
+*Delivered (07/2026) as composer voice input: a mic button on the chat
+composer records, Cloudflare Workers AI Whisper transcribes (see Q3), and the
+transcript lands in the message box for review, never auto-sent; filing it as
+an activity then goes through the normal FR-7.8 confirmation. The original
+audio is not stored (attachment of the audio itself remains open).*
 
 **FR-7.8 Confirmation gating (P0).** Actions that write or send (move a deal
 to Won, send a follow-up, create a quote) surface a confirmation step before
-they apply.
+they apply. When one request proposes several changes, they queue as a single
+review checklist: each item can be approved, skipped, or edited; approved
+items execute in order; execution stops at the first failure and nothing after
+it applies.
 *AC: no tool with side effects executes without an explicit user confirmation
-in the UI; read-only tools may run freely.*
+in the UI; read-only tools may run freely. Every checklist item is audited
+individually, including skipped items.*
 
 **FR-7.9 Qualification help (P1).** Draft qualification questions, especially
 around fixed event/install dates, venue/centre constraints, budget, and
@@ -670,7 +682,7 @@ patterns, infrastructure, and operating knowledge.
 | Auth | Better Auth with Drizzle adapter — email/magic-link + **Microsoft 365 (Entra ID) SSO** |
 | Email / Calendar | Microsoft 365 (Outlook / Exchange Online) for email-to-lead intake; Outlook calendar sync (V2) |
 | Accounting | **Xero** — Won-deal → invoice handoff (V2) |
-| AI Assistant | Anthropic Claude API (tool use + streaming) |
+| AI Assistant | Anthropic Claude API (tool use + streaming); knowledge-base retrieval is hybrid search (Postgres full-text fused with pgvector semantic search over `@cf/baai/bge-m3` embeddings, falling back to full-text alone); Cloudflare Workers AI (`AI` binding) serves the embeddings and Whisper voice transcription |
 | AI Chat UI | `@assistant-ui/react` with artifact cards (shadcn.io/ai patterns), two-way sync via React contexts — the Billify pattern |
 | File / Photo Storage | Cloudflare R2 (`PHOTO_BUCKET` binding) |
 | Hosting | Cloudflare Workers via `@opennextjs/cloudflare` + `wrangler` |
@@ -806,7 +818,7 @@ Lightweight, privacy-respecting product analytics to prove the success metrics:
 |---|----------|-------|-----------|
 | Q1 | Email-to-lead: simple forwarding rule vs Microsoft Graph subscription — which first? | Kurt | M3 |
 | Q2 | Stage weightings for the forecast — what defaults reflect Blu's actual conversion? | Andy | M5 |
-| Q3 | Voice-note transcription path — Claude-side vs device/browser speech API? | Kurt | M4 |
+| Q3 | ~~Voice-note transcription path: Claude-side vs device/browser speech API?~~ **Resolved (Kurt, 07/2026):** neither; Cloudflare Workers AI Whisper (`@cf/openai/whisper-large-v3-turbo`) via the Worker's existing `AI` binding, so no new vendor and no browser speech API. | Kurt | M4 |
 | Q4 | Does the public web form replace or duplicate the existing blu.builders contact form? | Jess | M3 |
 | Q5 | Retention/purge policy for lost-deal personal data under APPs — how long do we keep dormant contacts? | Andy | Launch |
 | Q6 | Brand blue exact token + display font — confirm from Blu brand assets | Andy | M1 |

@@ -1,13 +1,31 @@
 "use client";
 
 import {
+  EllipsisVerticalIcon,
   HandshakeIcon,
   MessageSquareTextIcon,
+  PencilIcon,
+  PinIcon,
+  PinOffIcon,
   SearchIcon,
+  Trash2Icon,
   UserIcon,
 } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -23,6 +41,7 @@ export interface ThreadListEntry {
   id: string;
   lastMessageAt: string | null;
   originPage: string | null;
+  pinned: boolean;
   preview: {
     firstMessage: string | null;
     lastMessage: string | null;
@@ -33,6 +52,10 @@ export interface ThreadListEntry {
 }
 
 const SEARCH_DEBOUNCE_MS = 250;
+const MAX_TITLE_LENGTH = 80;
+
+const displayTitle = (thread: ThreadListEntry): string =>
+  thread.title ?? "New conversation";
 
 // Matches the composer's context chip so a conversation's record reads the
 // same in both places.
@@ -50,6 +73,100 @@ function ContextChip({
   );
 }
 
+// Inline title editor swapped in place of the row: Enter or blur saves,
+// Escape cancels without saving.
+function ThreadRenameInput({
+  initial,
+  onCancel,
+  onSave,
+}: {
+  initial: string;
+  onCancel: () => void;
+  onSave: (title: string) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const cancelledRef = useRef(false);
+
+  const save = () => {
+    const trimmed = value.trim().slice(0, MAX_TITLE_LENGTH);
+    if (!trimmed || trimmed === initial) {
+      onCancel();
+      return;
+    }
+    onSave(trimmed);
+  };
+
+  return (
+    <div className="px-1 py-1.5">
+      <Input
+        aria-label="Conversation title"
+        autoFocus
+        className="min-h-11"
+        maxLength={MAX_TITLE_LENGTH}
+        onBlur={() => {
+          if (!cancelledRef.current) {
+            save();
+          }
+        }}
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            save();
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            cancelledRef.current = true;
+            onCancel();
+          }
+        }}
+        value={value}
+      />
+    </div>
+  );
+}
+
+function ThreadRowMenu({
+  onDelete,
+  onRename,
+  onTogglePin,
+  thread,
+}: {
+  onDelete: () => void;
+  onRename: () => void;
+  onTogglePin: () => void;
+  thread: ThreadListEntry;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={`Options for ${displayTitle(thread)}`}
+        className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+      >
+        <EllipsisVerticalIcon aria-hidden className="size-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem className="min-h-11" onClick={onRename}>
+          <PencilIcon aria-hidden />
+          Rename
+        </DropdownMenuItem>
+        <DropdownMenuItem className="min-h-11" onClick={onTogglePin}>
+          {thread.pinned ? <PinOffIcon aria-hidden /> : <PinIcon aria-hidden />}
+          {thread.pinned ? "Unpin" : "Pin"}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="min-h-11"
+          onClick={onDelete}
+          variant="destructive"
+        >
+          <Trash2Icon aria-hidden />
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 // A history row with a hover preview (same pattern as the pipeline card
 // tooltip): how the conversation opened, its latest exchange, and its size.
 function ThreadRow({
@@ -64,14 +181,17 @@ function ThreadRow({
   const row = (
     <button
       className={cn(
-        "flex min-h-11 w-full flex-col gap-1 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent/50",
+        "flex min-h-11 min-w-0 flex-1 flex-col gap-1 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent/50",
         active && "bg-accent"
       )}
       onClick={() => onSelect(thread.id)}
       type="button"
     >
-      <span className="line-clamp-1 font-medium text-sm">
-        {thread.title ?? "New conversation"}
+      <span className="line-clamp-1 flex items-center gap-1.5 font-medium text-sm">
+        {thread.pinned ? (
+          <PinIcon aria-hidden className="size-3 shrink-0 text-blu" />
+        ) : null}
+        {displayTitle(thread)}
       </span>
       {thread.context ? <ContextChip context={thread.context} /> : null}
       <span className="flex items-center gap-2 text-muted-foreground text-xs">
@@ -125,19 +245,49 @@ function ThreadRow({
   );
 }
 
+interface ThreadGroup {
+  heading: string | null;
+  threads: ThreadListEntry[];
+}
+
+// "Pinned" / "Recent" groups when anything is pinned; a flat list while
+// searching (matches are matches, wherever they live).
+const groupThreads = (
+  threads: ThreadListEntry[],
+  searching: boolean
+): ThreadGroup[] => {
+  const pinned = threads.filter((thread) => thread.pinned);
+  if (searching || pinned.length === 0) {
+    return [{ heading: null, threads }];
+  }
+  return [
+    { heading: "Pinned", threads: pinned },
+    {
+      heading: "Recent",
+      threads: threads.filter((thread) => !thread.pinned),
+    },
+  ];
+};
+
 // Recent conversations (M4 Phase 4): pick one to resume it in the panel.
 // The search box queries the server (title, linked deal title/lead id, or
-// contact name) across the whole history, not just the visible page.
+// contact name) across the whole history; each row's menu manages the
+// thread (rename, pin, delete).
 export function ThreadHistory({
   activeThreadId,
+  onDeleted,
   onSelect,
 }: {
   activeThreadId: string | null;
+  onDeleted?: (threadId: string) => void;
   onSelect: (threadId: string) => void;
 }) {
   const [threads, setThreads] = useState<ThreadListEntry[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState("");
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [deleteCandidate, setDeleteCandidate] =
+    useState<ThreadListEntry | null>(null);
   const searchId = useId();
 
   useEffect(() => {
@@ -174,7 +324,66 @@ export function ThreadHistory({
     };
   }, [query]);
 
+  // Optimistic mutation helper: apply immediately, restore the previous list
+  // if the request fails.
+  const mutateThreads = (
+    apply: (current: ThreadListEntry[]) => ThreadListEntry[],
+    request: () => Promise<Response>
+  ) => {
+    const previous = threads;
+    setThreads((current) => (current ? apply(current) : current));
+    request()
+      .then((response) => {
+        if (!response.ok) {
+          setThreads(previous);
+        }
+      })
+      .catch(() => setThreads(previous));
+  };
+
+  const renameThread = (threadId: string, title: string) => {
+    setRenamingId(null);
+    mutateThreads(
+      (current) =>
+        current.map((thread) =>
+          thread.id === threadId ? { ...thread, title } : thread
+        ),
+      () =>
+        fetch(`/api/chat/threads/${threadId}`, {
+          body: JSON.stringify({ title }),
+          headers: { "content-type": "application/json" },
+          method: "PATCH",
+        })
+    );
+  };
+
+  const togglePin = (thread: ThreadListEntry) => {
+    const pinned = !thread.pinned;
+    mutateThreads(
+      (current) =>
+        current.map((entry) =>
+          entry.id === thread.id ? { ...entry, pinned } : entry
+        ),
+      () =>
+        fetch(`/api/chat/threads/${thread.id}`, {
+          body: JSON.stringify({ pinned }),
+          headers: { "content-type": "application/json" },
+          method: "PATCH",
+        })
+    );
+  };
+
+  const deleteThread = (thread: ThreadListEntry) => {
+    setDeleteCandidate(null);
+    mutateThreads(
+      (current) => current.filter((entry) => entry.id !== thread.id),
+      () => fetch(`/api/chat/threads/${thread.id}`, { method: "DELETE" })
+    );
+    onDeleted?.(thread.id);
+  };
+
   const searching = query.trim().length > 0;
+  const groups = threads ? groupThreads(threads, searching) : [];
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -229,19 +438,86 @@ export function ThreadHistory({
           aria-label="Conversation history"
           className="min-h-0 flex-1 overflow-y-auto"
         >
-          <ul className="flex flex-col gap-1 p-3">
-            {threads.map((thread) => (
-              <li key={thread.id}>
-                <ThreadRow
-                  active={thread.id === activeThreadId}
-                  onSelect={onSelect}
-                  thread={thread}
-                />
-              </li>
-            ))}
-          </ul>
+          {groups.map((group) => (
+            <section key={group.heading ?? "all"}>
+              {group.heading ? (
+                <h3 className="px-4 pt-3 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+                  {group.heading}
+                </h3>
+              ) : null}
+              <ul className="flex flex-col gap-1 p-3">
+                {group.threads.map((thread) => (
+                  <li className="flex items-start gap-0.5" key={thread.id}>
+                    {renamingId === thread.id ? (
+                      <div className="min-w-0 flex-1">
+                        <ThreadRenameInput
+                          initial={displayTitle(thread)}
+                          onCancel={() => setRenamingId(null)}
+                          onSave={(title) => renameThread(thread.id, title)}
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <ThreadRow
+                          active={thread.id === activeThreadId}
+                          onSelect={onSelect}
+                          thread={thread}
+                        />
+                        <ThreadRowMenu
+                          onDelete={() => setDeleteCandidate(thread)}
+                          onRename={() => setRenamingId(thread.id)}
+                          onTogglePin={() => togglePin(thread)}
+                          thread={thread}
+                        />
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
         </nav>
       ) : null}
+
+      <Dialog
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setDeleteCandidate(null);
+          }
+        }}
+        open={deleteCandidate !== null}
+      >
+        <DialogContent>
+          <DialogTitle>Delete conversation?</DialogTitle>
+          <DialogDescription>
+            {deleteCandidate
+              ? `"${displayTitle(deleteCandidate)}" will be removed from your history.`
+              : null}
+          </DialogDescription>
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <Button
+              className="min-h-11"
+              onClick={() => setDeleteCandidate(null)}
+              type="button"
+              variant="outline"
+            >
+              Cancel
+            </Button>
+            <Button
+              className="min-h-11"
+              onClick={() => {
+                if (deleteCandidate) {
+                  deleteThread(deleteCandidate);
+                }
+              }}
+              type="button"
+              variant="destructive"
+            >
+              Delete
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

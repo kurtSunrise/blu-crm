@@ -17,6 +17,9 @@ export interface AiToolOutcome {
   // result keeps just resultText so history stays lean and replay-cheap.
   media?: Anthropic.ImageBlockParam[];
   resultText: string;
+  // Knowledge-base attributions behind the answer, streamed to the client as
+  // a `sources` payload and rendered as source chips
+  sources?: { docTitle: string; heading: string | null }[];
 }
 
 export interface AiTool {

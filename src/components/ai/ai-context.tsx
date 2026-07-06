@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { ConfirmationItem } from "@/lib/ai/stream-protocol";
 
 // Shared assistant state (Billify's *-context pattern): panel visibility,
 // the active persisted thread, the on-screen entity registered by detail
@@ -22,19 +23,23 @@ export interface AiEntityRef {
   label?: string;
 }
 
+// The write plan currently awaiting review: one or more gated tool calls in
+// proposal order. A single-item plan is the common case.
 export interface PendingConfirmation {
-  input: unknown;
-  summary: string;
-  toolName: string;
+  items: ConfirmationItem[];
+}
+
+// One reviewed item of the plan; skipped items travel as approved: false.
+export interface ConfirmationDecisionItem {
+  approved: boolean;
+  finalInput?: unknown;
   toolUseId: string;
 }
 
 // Set by the confirmation card; picked up by the runtime adapter, which
 // sends it to /api/chat as a confirmation instead of a chat message.
 export interface ConfirmationDecision {
-  approved: boolean;
-  finalInput?: unknown;
-  toolUseId: string;
+  decisions: ConfirmationDecisionItem[];
 }
 
 interface AiAssistantContextValue {
@@ -43,7 +48,11 @@ interface AiAssistantContextValue {
   // one piece of attachment state it cannot surface, since the runtime adapter
   // does not await add().
   attachmentError: string | null;
+  clearComposerPrefill: () => void;
   clearEntity: () => void;
+  // Text staged by an "Ask AI" entry point; the composer consumes it into the
+  // input (never auto-sent) and then clears it.
+  composerPrefill: string | null;
   // A ref, not state: the card writes the decision and appends the
   // "Approve"/"Cancel" bubble in the same tick, and the adapter must see it
   // when that run starts. A state setter only lands after a re-render, so
@@ -53,6 +62,7 @@ interface AiAssistantContextValue {
   entity: AiEntityRef | null;
   offline: boolean;
   open: boolean;
+  openWithPrompt: (prompt: string) => void;
   pendingConfirmation: PendingConfirmation | null;
   registerEntity: (entity: AiEntityRef) => void;
   setAttachmentError: (message: string | null) => void;
@@ -73,6 +83,7 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
   const [pendingConfirmation, setPendingConfirmation] =
     useState<PendingConfirmation | null>(null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [composerPrefill, setComposerPrefill] = useState<string | null>(null);
   const decisionRef = useRef<ConfirmationDecision | null>(null);
 
   const registerEntity = useCallback((next: AiEntityRef) => {
@@ -81,15 +92,25 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
   const clearEntity = useCallback(() => {
     setEntity(null);
   }, []);
+  const openWithPrompt = useCallback((prompt: string) => {
+    setComposerPrefill(prompt);
+    setOpen(true);
+  }, []);
+  const clearComposerPrefill = useCallback(() => {
+    setComposerPrefill(null);
+  }, []);
 
   const value = useMemo(
     () => ({
       attachmentError,
+      clearComposerPrefill,
       clearEntity,
+      composerPrefill,
       decisionRef,
       entity,
       offline,
       open,
+      openWithPrompt,
       pendingConfirmation,
       registerEntity,
       setAttachmentError,
@@ -101,10 +122,13 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
     }),
     [
       attachmentError,
+      clearComposerPrefill,
       clearEntity,
+      composerPrefill,
       entity,
       offline,
       open,
+      openWithPrompt,
       pendingConfirmation,
       registerEntity,
       threadId,

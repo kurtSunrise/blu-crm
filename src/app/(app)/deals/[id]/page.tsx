@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AiEntityBeacon } from "@/components/ai/ai-entity-beacon";
+import { AskAiButton } from "@/components/ai/ask-ai-button";
 import { AttachmentDeleteButton } from "@/components/attachment-delete-button";
 import { AttachmentUpload } from "@/components/attachment-upload";
 import { CompleteFollowUpButton } from "@/components/complete-follow-up-button";
@@ -400,6 +401,9 @@ export default async function DealPage({
             editable={subStatusPlacement.showOnDealPage}
             note={record.subStatusNote}
             options={subStatusOptions}
+          />
+          <AskAiButton
+            prompt={`Summarise deal ${record.leadId} and suggest the next action`}
           />
         </div>
       </PageHeader>

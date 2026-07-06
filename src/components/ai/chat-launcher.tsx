@@ -14,8 +14,10 @@ import { useState } from "react";
 import { useAiAssistant } from "@/components/ai/ai-context";
 import { AiRuntimeProvider } from "@/components/ai/ai-runtime-provider";
 import { ChatPanel } from "@/components/ai/chat-panel";
+import type { ResumedConfirmationStatus } from "@/components/ai/confirmation-card";
 import { ThreadHistory } from "@/components/ai/thread-history";
 import { TooltipIconButton } from "@/components/ai/tooltip-icon-button";
+import type { ConfirmationItem } from "@/lib/ai/stream-protocol";
 import { cn } from "@/lib/utils";
 
 // Launcher button used in the desktop sidebar and the mobile header. Forwards
@@ -45,6 +47,9 @@ export function AiLauncherButton({
       >
         <SparklesIcon aria-hidden className="size-4.5" />
         Assistant
+        <kbd className="ml-auto font-sans text-muted-foreground text-xs">
+          ⌘J
+        </kbd>
       </button>
     );
   }
@@ -78,31 +83,128 @@ interface ResumedAttachment {
   id: string;
 }
 
+type ResumedPart =
+  | { type: "artifact"; artifactType: string; data: unknown }
+  | {
+      type: "confirmation";
+      input: unknown;
+      status:
+        | "pending"
+        | "approved"
+        | "denied"
+        | "failed"
+        | "skipped"
+        | "unresolved";
+      summary: string;
+      toolName: string;
+      toolUseId: string;
+    };
+
 interface ResumedMessage {
   attachments?: ResumedAttachment[];
   id: string;
+  parts?: ResumedPart[];
   role: "user" | "assistant";
   text: string;
 }
 
-const toThreadMessages = (messages: ResumedMessage[]): ThreadMessageLike[] =>
-  messages.map((message) => ({
-    // The server attachment id rides on `id`, matching the live composer path,
-    // so the bubble's chip can fetch its thumbnail from the same R2 route.
-    attachments: (message.attachments ?? []).map((attachment) => ({
-      content: [],
-      contentType: attachment.contentType,
-      id: attachment.id,
-      name: attachment.fileName,
-      status: { type: "complete" as const },
-      type: attachment.contentType.startsWith("image/")
-        ? ("image" as const)
-        : ("document" as const),
-    })),
-    content: [{ text: message.text, type: "text" as const }],
-    id: message.id,
-    role: message.role,
+interface ResumedThread {
+  id: string;
+  pendingToolUses?: ConfirmationItem[];
+  status: string;
+  title: string | null;
+}
+
+interface ResumedDataPart {
+  data: unknown;
+  name: string;
+  type: "data";
+}
+
+// Persisted transcript parts become the same data content parts the live
+// stream produces, so DataPartsRenderer re-renders cards on resume. A
+// message's confirmation parts merge into ONE checklist card, exactly like
+// the live confirmation_request: the card sends decisions for every item it
+// shows, and the server treats missing decisions as skips, so splitting a
+// plan across cards would silently skip the items the user never saw.
+const toDataParts = (parts: ResumedPart[]): ResumedDataPart[] => {
+  const dataParts: ResumedDataPart[] = [];
+  const confirmations: Extract<ResumedPart, { type: "confirmation" }>[] = [];
+  for (const part of parts) {
+    if (part.type === "artifact") {
+      dataParts.push({
+        data: part.data,
+        name: part.artifactType,
+        type: "data",
+      });
+    } else {
+      confirmations.push(part);
+    }
+  }
+  if (confirmations.length === 0) {
+    return dataParts;
+  }
+  const items: ConfirmationItem[] = confirmations.map((part) => ({
+    input: part.input,
+    summary: part.summary,
+    toolName: part.toolName,
+    toolUseId: part.toolUseId,
   }));
+  // Fully pending plans resume actionable (pendingConfirmation is re-seeded
+  // from thread.pendingToolUses); anything else renders inert with each
+  // item's audited outcome. A pending item inside a partly resolved group is
+  // a crash orphan and displays as expired.
+  const allPending = confirmations.every((part) => part.status === "pending");
+  const itemStatuses: Record<string, ResumedConfirmationStatus> = {};
+  if (!allPending) {
+    for (const part of confirmations) {
+      itemStatuses[part.toolUseId] =
+        part.status === "pending" ? "unresolved" : part.status;
+    }
+  }
+  dataParts.push({
+    data: allPending ? { items } : { items, itemStatuses },
+    name: "confirmation_request",
+    type: "data",
+  });
+  return dataParts;
+};
+
+const toThreadMessages = (messages: ResumedMessage[]): ThreadMessageLike[] =>
+  messages.map((message) => {
+    const dataParts = toDataParts(message.parts ?? []);
+    const content: ({ type: "text"; text: string } | ResumedDataPart)[] =
+      message.text
+        ? [{ text: message.text, type: "text" }, ...dataParts]
+        : dataParts;
+    // Part-only user rows (a confirmed write's artifacts ride the resume
+    // message) render as assistant so cards never sit in the blue bubble.
+    const role =
+      message.role === "user" && !message.text && dataParts.length > 0
+        ? "assistant"
+        : message.role;
+    return {
+      // The server attachment id rides on `id`, matching the live composer
+      // path, so the bubble's chip can fetch its thumbnail from the same R2
+      // route.
+      attachments: (message.attachments ?? []).map((attachment) => ({
+        content: [],
+        contentType: attachment.contentType,
+        id: attachment.id,
+        name: attachment.fileName,
+        status: { type: "complete" as const },
+        type: attachment.contentType.startsWith("image/")
+          ? ("image" as const)
+          : ("document" as const),
+      })),
+      content:
+        content.length > 0
+          ? content
+          : [{ text: message.text, type: "text" as const }],
+      id: message.id,
+      role,
+    };
+  });
 
 // The assistant surface itself. Stays mounted while closed (hidden via CSS)
 // so the conversation survives open/close. Mobile: full-screen overlay.
@@ -147,8 +249,23 @@ export function AiAssistantDock() {
     if (!response.ok) {
       return;
     }
-    const payload = (await response.json()) as { messages: ResumedMessage[] };
+    const payload = (await response.json()) as {
+      messages: ResumedMessage[];
+      thread?: ResumedThread;
+    };
     switchSession(resumeId, toThreadMessages(payload.messages));
+    // A thread paused on a write plan resumes actionable: re-seed the pending
+    // confirmation so its card's buttons work again.
+    const pendingToolUses = payload.thread?.pendingToolUses;
+    if (pendingToolUses && pendingToolUses.length > 0) {
+      setPendingConfirmation({ items: pendingToolUses });
+    }
+  };
+
+  const handleThreadDeleted = (deletedThreadId: string) => {
+    if (deletedThreadId === threadId) {
+      startNewChat();
+    }
   };
 
   return (
@@ -203,7 +320,11 @@ export function AiAssistantDock() {
           </AiRuntimeProvider>
         </div>
         {view === "history" ? (
-          <ThreadHistory activeThreadId={threadId} onSelect={resumeThread} />
+          <ThreadHistory
+            activeThreadId={threadId}
+            onDeleted={handleThreadDeleted}
+            onSelect={resumeThread}
+          />
         ) : null}
       </div>
     </aside>

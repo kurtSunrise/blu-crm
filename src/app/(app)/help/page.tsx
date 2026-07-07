@@ -779,6 +779,19 @@ const GLOSSARY = [
 
 const WHATS_NEW = [
   {
+    date: "07/07/2026",
+    items: [
+      "Talk instead of typing: tap the mic in the assistant chat, speak, and review the transcript before sending. Nothing sends until you hit send.",
+      "The assistant now shows what it is doing while it works (Searching deals, Creating the lead) and you can expand a Reasoning section to see how it thought through an answer.",
+      "Ask for several changes at once: the assistant proposes them as one checklist where you can edit fields, untick any step, and confirm the rest together. Steps apply in order and stop if one fails.",
+      "Conversations now reopen with everything in them: deal cards, drafts, and confirmation cards come back when you resume a chat from history, and an unanswered confirmation is still there waiting for your decision.",
+      "Answers about how we work now cite their sources, with chips naming the policy document and section they came from, and the knowledge search understands meaning, not just matching words.",
+      "After each answer the assistant suggests a next step as a tappable chip, and the starter prompts now match the page you are on.",
+      "Rename, pin, or delete conversations from the history list, and regenerate the assistant's last reply if you want a second take.",
+      "Open the assistant from anywhere with Cmd+J (or Ctrl+J), from the More menu on your phone, or with the new Ask Blu AI button on a deal or contact page.",
+    ],
+  },
+  {
     date: "06/07/2026",
     items: [
       "The pipeline is roomier on phones: the title and the Board / Closed switch now share one line, and the status filters sit in a single row you can swipe sideways. The filters also stay pinned below the header while you scroll, so you can filter a tall column without scrolling back to the top.",

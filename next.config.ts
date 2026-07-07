@@ -19,7 +19,10 @@ const securityHeaders = [
   },
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=()",
+    // microphone=(self): the assistant's voice-input feature needs
+    // getUserMedia on our own origin; an empty allowlist blocks it for every
+    // origin, including this page. Camera/geolocation stay fully disabled.
+    value: "camera=(), microphone=(self), geolocation=()",
   },
 ];
 

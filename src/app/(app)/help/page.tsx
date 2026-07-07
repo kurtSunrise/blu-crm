@@ -781,6 +781,10 @@ const WHATS_NEW = [
   {
     date: "07/07/2026",
     items: [
+      "Ask the assistant for the weekly pipeline report and it renders the full Monday snapshot as a card: summary, closing soon, needs attention, the pipeline by stage, won and lost, and the actions due. The Weekly report page also has an Ask AI button.",
+      "Rate any assistant answer with a thumbs up or down; on a thumbs down you can say what was wrong (inaccurate, not relevant, incomplete) and add a comment. Your ratings help us tune the assistant.",
+      "Reopened conversations now bring back the Reasoning section and the source chips too, not just the cards, and each source chip shows when its document was last updated.",
+      "Admins get a new Assistant activity section under Settings, AI Preferences: messages per day, turns per person, write actions, outcomes, and feedback totals.",
       "Talk instead of typing: tap the mic in the assistant chat, speak, and review the transcript before sending. Nothing sends until you hit send.",
       "The assistant now shows what it is doing while it works (Searching deals, Creating the lead) and you can expand a Reasoning section to see how it thought through an answer.",
       "Ask for several changes at once: the assistant proposes them as one checklist where you can edit fields, untick any step, and confirm the rest together. Steps apply in order and stop if one fails.",

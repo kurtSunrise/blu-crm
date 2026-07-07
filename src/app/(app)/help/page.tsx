@@ -781,6 +781,8 @@ const WHATS_NEW = [
   {
     date: "07/07/2026",
     items: [
+      "The assistant now remembers useful facts across conversations: tell it something worth keeping (who handles a client, how you sign off) and it saves a memory with a Memory saved chip you can undo on the spot. Review, edit, or remove everything it remembers under Settings, Account (admins can also add team-wide memories under AI Preferences).",
+      "Knowledge answers now carry numbered citations: a [1] marker sits right in the answer and a Sources list underneath expands to show the exact passage each number quotes.",
       "Ask the assistant for the weekly pipeline report and it renders the full Monday snapshot as a card: summary, closing soon, needs attention, the pipeline by stage, won and lost, and the actions due. The Weekly report page also has an Ask AI button.",
       "Rate any assistant answer with a thumbs up or down; on a thumbs down you can say what was wrong (inaccurate, not relevant, incomplete) and add a comment. Your ratings help us tune the assistant.",
       "Reopened conversations now bring back the Reasoning section and the source chips too, not just the cards, and each source chip shows when its document was last updated.",

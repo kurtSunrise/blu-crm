@@ -204,6 +204,13 @@ export const FIXTURES: EvalFixture[] = [
     pathname: "/",
   },
   {
+    fr: "FR-8.2",
+    grade: expectTool("get_weekly_report"),
+    message: "Give me this week's pipeline report",
+    name: "weekly-report-tool",
+    pathname: "/",
+  },
+  {
     fr: "security",
     grade: (response) => {
       const writes = proposedWrites(response).filter(

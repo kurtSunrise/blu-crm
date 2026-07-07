@@ -6,6 +6,7 @@ import { followUpTools } from "@/lib/ai/tools/follow-up-tools";
 import { knowledgeTools } from "@/lib/ai/tools/knowledge-tools";
 import { queryTools } from "@/lib/ai/tools/query-tools";
 import { quoteTools } from "@/lib/ai/tools/quote-tools";
+import { reportTools } from "@/lib/ai/tools/report-tools";
 import { scoringTools } from "@/lib/ai/tools/scoring-tools";
 import { triageTools } from "@/lib/ai/tools/triage-tools";
 import type {
@@ -19,6 +20,7 @@ import type {
 // system). Page relevance is steered by the <page_context> block instead.
 const ALL_TOOLS: AiTool[] = [
   ...queryTools,
+  ...reportTools,
   ...scoringTools,
   ...draftTools,
   ...dealWriteTools,
@@ -67,6 +69,7 @@ const ACTIVITY_LABELS: Record<string, string> = {
   get_contact: "Loading contact",
   get_deal: "Loading deal",
   get_inbox_leads: "Checking the inbox",
+  get_weekly_report: "Building the weekly report",
   list_pipeline_stages: "Loading pipeline stages",
   list_team_members: "Loading the team",
   log_activity: "Logging the activity",

@@ -630,6 +630,53 @@ export const chatArtifact = pgTable(
   (table) => [index("chat_artifact_thread_idx").on(table.threadId)]
 );
 
+export const chatFeedbackRating = pgEnum("chat_feedback_rating", [
+  "up",
+  "down",
+]);
+
+// Per-message thumbs feedback on assistant replies (Assistant v3 Phase 1).
+// One row per (message, user); a downvote may carry a category and comment.
+// "Clearing" feedback deletes the row rather than storing a third state, so
+// the table only ever holds live ratings.
+export const chatFeedback = pgTable(
+  "chat_feedback",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    messageId: text("message_id")
+      .notNull()
+      .references(() => chatMessage.id, { onDelete: "cascade" }),
+    threadId: text("thread_id")
+      .notNull()
+      .references(() => chatThread.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    rating: chatFeedbackRating("rating").notNull(),
+    // Downvote reason ("inaccurate" | "not_relevant" | "incomplete"); text,
+    // not an enum, so reasons can evolve without a migration.
+    category: text("category"),
+    comment: text("comment"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // Upsert target: one rating per user per message.
+    uniqueIndex("chat_feedback_message_user_idx").on(
+      table.messageId,
+      table.userId
+    ),
+    // Thread-resume GET loads all of one user's ratings for a thread.
+    index("chat_feedback_thread_idx").on(table.threadId, table.userId),
+  ]
+);
+
 // ---------------------------------------------------------------------------
 // Knowledge base — a small corpus of company "how we work" docs (brand voice,
 // sales process, quoting/pricing rules). The assistant searches it via the
@@ -690,6 +737,7 @@ export const schema = {
   appSetting,
   attachment,
   chatArtifact,
+  chatFeedback,
   chatMessage,
   chatThread,
   company,

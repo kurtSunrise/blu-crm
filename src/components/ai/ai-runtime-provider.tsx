@@ -281,7 +281,7 @@ const markToolDone = (
 };
 
 const sourceKey = (source: SourceRef): string =>
-  `${source.docTitle} ${source.heading ?? ""}`;
+  JSON.stringify([source.docTitle, source.heading ?? ""]);
 
 // Keeps exactly one trailing "sources" data part per message, merging and
 // deduplicating attributions across repeated knowledge searches.
@@ -407,6 +407,20 @@ const applyPayload = (
         state.parts.push({ data: {}, name: "retry_hint", type: "data" });
       }
       return snapshotOf(state);
+    case "done":
+      // The persisted assistant message id rides the content as an invisible
+      // message_meta data part (DataPartsRenderer skips it); the feedback
+      // buttons read it to rate this turn. Resume paints the same part from
+      // the transcript row id (chat-launcher.tsx).
+      if (payload.messageId) {
+        state.parts.push({
+          data: { messageId: payload.messageId },
+          name: "message_meta",
+          type: "data",
+        });
+        return snapshotOf(state);
+      }
+      return null;
     default:
       return null;
   }

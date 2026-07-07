@@ -19,6 +19,10 @@ import {
   type SourceChipsData,
 } from "@/components/ai/artifacts/source-chips";
 import {
+  WeeklyReportArtifact,
+  type WeeklyReportArtifactData,
+} from "@/components/ai/artifacts/weekly-report-artifact";
+import {
   ConfirmationCard,
   type ConfirmationRequestData,
 } from "@/components/ai/confirmation-card";
@@ -86,6 +90,13 @@ export function DataPartsRenderer() {
             return (
               <ConfirmationCard
                 data={part.data as ConfirmationRequestData}
+                key={key}
+              />
+            );
+          case "weekly_report":
+            return (
+              <WeeklyReportArtifact
+                data={part.data as WeeklyReportArtifactData}
                 key={key}
               />
             );

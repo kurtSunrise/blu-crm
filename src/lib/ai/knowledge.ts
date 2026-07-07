@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { knowledgeChunk, knowledgeDoc } from "@/db/schema";
 import { embedQuery } from "@/lib/ai/embeddings";
+import { toIsoOrNull } from "@/lib/format";
 
 // Hybrid retrieval over the knowledge corpus: Postgres full-text search fused
 // with pgvector cosine similarity over @cf/baai/bge-m3 embeddings (reciprocal
@@ -23,6 +24,9 @@ export interface KnowledgePassage {
   content: string;
   docTitle: string;
   heading: string | null;
+  // The source document's last update as an ISO string; null when the driver
+  // returns something unparseable. Feeds the freshness hint on source chips.
+  updatedAt: string | null;
 }
 
 const tsQueryFor = (query: string) => sql`plainto_tsquery('english', ${query})`;
@@ -40,6 +44,7 @@ const searchKnowledgeFts = async (
       content: knowledgeChunk.content,
       docTitle: knowledgeDoc.title,
       heading: knowledgeChunk.heading,
+      updatedAt: knowledgeDoc.updatedAt,
     })
     .from(knowledgeChunk)
     .innerJoin(knowledgeDoc, sql`${knowledgeChunk.docId} = ${knowledgeDoc.id}`)
@@ -47,7 +52,10 @@ const searchKnowledgeFts = async (
     .orderBy(sql`ts_rank(${chunkDocument}, ${tsQuery}) desc`)
     .limit(Math.min(limit, MAX_LIMIT));
 
-  return rows;
+  return rows.map((row) => ({
+    ...row,
+    updatedAt: toIsoOrNull(row.updatedAt),
+  }));
 };
 
 // One statement fuses both retrievers, so the Neon HTTP driver pays a single
@@ -92,7 +100,8 @@ const searchKnowledgeHybrid = async (
       from fts
       full outer join vec on vec.id = fts.id
     )
-    select c.content as content, d.title as doc_title, c.heading as heading
+    select c.content as content, d.title as doc_title, c.heading as heading,
+      d.updated_at as updated_at
     from fused
     join ${knowledgeChunk} c on c.id = fused.id
     join ${knowledgeDoc} d on d.id = c.doc_id
@@ -104,12 +113,14 @@ const searchKnowledgeHybrid = async (
     content: string;
     doc_title: string;
     heading: string | null;
+    updated_at: unknown;
   }[];
 
   return rows.map((row) => ({
     content: row.content,
     docTitle: row.doc_title,
     heading: row.heading,
+    updatedAt: toIsoOrNull(row.updated_at),
   }));
 };
 

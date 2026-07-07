@@ -1,9 +1,11 @@
-import { Bot, Cpu, Image as ImageIcon, Sparkles } from "lucide-react";
+import { Activity, Bot, Cpu, Image as ImageIcon, Sparkles } from "lucide-react";
 import { AiModelForm } from "@/components/ai-model-form";
 import { AssistantInstructionsForm } from "@/components/assistant-instructions-form";
+import { AssistantUsagePanel } from "@/components/assistant-usage-panel";
 import { AttachmentDescriptionModeForm } from "@/components/attachment-description-mode-form";
 import { SettingsPanel, SettingsSection } from "@/components/settings-section";
 import { Badge } from "@/components/ui/badge";
+import { getAssistantUsageSummary } from "@/lib/ai/analytics";
 import { getAssistantInstructions } from "@/lib/ai/assistant-instructions";
 import { getAttachmentDescriptionMode } from "@/lib/ai/attachment-describe";
 import { getStoredAiModel } from "@/lib/ai/client";
@@ -38,9 +40,15 @@ export default async function AiPreferencesPage() {
   const visionConfigured = Boolean(
     process.env.ANTHROPIC_API_KEY || process.env.ZAI_API_KEY
   );
-  const descriptionMode = await getAttachmentDescriptionMode();
-  const assistantInstructions = await getAssistantInstructions();
-  const aiModel = await getStoredAiModel();
+  // Independent reads fan out together (sequential Neon awaits in one render
+  // have caused 503s on workerd).
+  const [descriptionMode, assistantInstructions, aiModel, usageSummary] =
+    await Promise.all([
+      getAttachmentDescriptionMode(),
+      getAssistantInstructions(),
+      getStoredAiModel(),
+      getAssistantUsageSummary(),
+    ]);
   const aiModelEnvOverride = Boolean(process.env.AI_MODEL);
 
   return (
@@ -93,6 +101,16 @@ export default async function AiPreferencesPage() {
       >
         <SettingsPanel>
           <AssistantInstructionsForm instructions={assistantInstructions} />
+        </SettingsPanel>
+      </SettingsSection>
+
+      <SettingsSection
+        description="How the team is using the assistant: message volume, tools, write outcomes, and feedback."
+        icon={Activity}
+        title="Assistant activity"
+      >
+        <SettingsPanel>
+          <AssistantUsagePanel summary={usageSummary} />
         </SettingsPanel>
       </SettingsSection>
     </>

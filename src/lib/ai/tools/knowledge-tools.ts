@@ -29,7 +29,11 @@ const sourcesFromPassages = (passages: KnowledgePassage[]): SourceRef[] => {
       continue;
     }
     seen.add(key);
-    sources.push({ docTitle: passage.docTitle, heading: passage.heading });
+    sources.push({
+      docTitle: passage.docTitle,
+      heading: passage.heading,
+      updatedAt: passage.updatedAt,
+    });
     if (sources.length >= MAX_SOURCES) {
       break;
     }

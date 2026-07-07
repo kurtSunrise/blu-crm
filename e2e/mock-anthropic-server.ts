@@ -170,6 +170,11 @@ const TWO_STEP_PATTERN = /two-step plan/i;
 // Knowledge scenario: the loop runs search_knowledge_base against the real
 // DB, then the tool_result turn closes with text and the source chips render.
 const KNOWLEDGE_PATTERN = /deposit|policy/i;
+// Weekly-report scenario (Assistant v3): the loop runs the real
+// get_weekly_report read tool against the DB, which emits the weekly_report
+// artifact card; the tool_result turn then closes with text. Matches both
+// the typed ask and the /reports/weekly Ask-AI prefill wording.
+const WEEKLY_REPORT_PATTERN = /weekly report|pipeline report/i;
 // Hardening scenarios: a turn that opens then goes silent (the app's idle
 // timeout must abort and surface a retryable error) and a turn that pings then
 // pauses before answering (the client's "Thinking…" indicator must show).
@@ -261,6 +266,9 @@ const respond = (body: AnthropicRequestBody): string => {
       }),
       "tool_use"
     );
+  }
+  if (WEEKLY_REPORT_PATTERN.test(userText)) {
+    return messageEnvelope(toolUseEvents("get_weekly_report"), "tool_use");
   }
   if (CHASE_PATTERN.test(userText)) {
     return messageEnvelope(toolUseEvents("rank_open_deals"), "tool_use");

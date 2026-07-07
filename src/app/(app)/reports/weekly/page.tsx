@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AskAiButton } from "@/components/ai/ask-ai-button";
 import { CopyReportButton } from "@/components/copy-report-button";
 import { PageHeader } from "@/components/page-header";
 import { ReportsNav } from "@/components/reports/reports-nav";
@@ -117,7 +118,12 @@ export default async function WeeklyReportPage() {
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6">
       <PageHeader
-        actions={<CopyReportButton text={reportText} />}
+        actions={
+          <>
+            <AskAiButton prompt="Give me this week's pipeline report" />
+            <CopyReportButton text={reportText} />
+          </>
+        }
         subtitle={
           <p>
             {formatDateAwst(report.weekStart)} to{" "}
@@ -181,7 +187,7 @@ export default async function WeeklyReportPage() {
           {report.openByStage.map(({ stage, deals }) => (
             <div className="flex flex-col gap-2" key={stage.stageId}>
               <p className="text-muted-foreground text-xs">
-                {stage.stageName} — {stage.dealCount} deal
+                {stage.stageName} · {stage.dealCount} deal
                 {stage.dealCount === 1 ? "" : "s"},{" "}
                 {formatAudFromCents(stage.totalCents)}
               </p>

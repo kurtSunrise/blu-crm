@@ -21,9 +21,14 @@ const ASSISTANT_BUTTON_NAME = /assistant/i;
 const LEAD_ID_PATTERN = /BLU-/;
 const THINKING_INDICATOR_PATTERN = /Thinking/;
 const TIMEOUT_MESSAGE_PATTERN = /took too long to respond/i;
-const ALREADY_RESOLVED_PATTERN = /already resolved/i;
+// The regenerate-conflict refusal copy from guardRegenerate in
+// src/app/api/chat/route.ts (the confirmation path has its own separate
+// "already resolved" copy).
+const REGENERATE_REFUSED_PATTERN = /cannot be regenerated/i;
 const ASK_AI_PREFILL_PATTERN = /Summarise deal BLU-/;
 const STOP_RECORDING_PATTERN = /Stop recording/;
+const CLOSING_SOON_HEADING_PATTERN = /Closing soon/;
+const NEEDS_ATTENTION_HEADING_PATTERN = /Needs attention/;
 const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 
 const openAssistant = async (page: Page): Promise<void> => {
@@ -712,7 +717,7 @@ test("regenerate is withheld while a write awaits confirmation and refused after
   if (await regenerate.isVisible()) {
     await page.getByText("Mock summary: all done here.").hover();
     await regenerate.click();
-    await expect(page.getByText(ALREADY_RESOLVED_PATTERN)).toBeVisible({
+    await expect(page.getByText(REGENERATE_REFUSED_PATTERN)).toBeVisible({
       timeout: RESPONSE_TIMEOUT_MS,
     });
   }
@@ -721,7 +726,7 @@ test("regenerate is withheld while a write awaits confirmation and refused after
   await expect(page.getByText(token).first()).toBeVisible();
 });
 
-test("a knowledge answer cites its sources with From chips", async ({
+test("a knowledge answer cites its sources with From chips that survive resume", async ({
   page,
 }) => {
   const token = uniqueCompanyToken();
@@ -758,6 +763,24 @@ test("a knowledge answer cites its sources with From chips", async ({
     // Source attribution chips name the doc the passage came from.
     await expect(page.getByText("From:")).toBeVisible();
     await expect(page.getByText(docTitle, { exact: false })).toBeVisible();
+
+    // Assistant v3: the sources persist as a chat_artifact row, so a reload
+    // plus thread resume re-renders the chips (they used to vanish because
+    // sources only existed in the live stream).
+    await page.reload();
+    await openAssistant(page);
+    await page.getByRole("button", { name: "Conversation history" }).click();
+    await page
+      .getByRole("button", { name: new RegExp(token) })
+      .first()
+      .click();
+    await expect(page.getByText("Mock summary: all done here.")).toBeVisible({
+      timeout: RESPONSE_TIMEOUT_MS,
+    });
+    await expect(page.getByText("From:")).toBeVisible();
+    await expect(
+      page.getByText(docTitle, { exact: false }).first()
+    ).toBeVisible();
   } finally {
     await queryRows("delete from knowledge_doc where id = $1", [docId]);
   }
@@ -967,7 +990,10 @@ test("the deal page Ask AI button prefills the composer without sending", async 
   expect(dealId).toBeTruthy();
 
   await page.goto(`/deals/${dealId}`);
-  await page.getByRole("button", { name: "Ask AI" }).click();
+  // exact: the deal-context welcome suggestions inside the (closed) dock
+  // carry the deal title, and this fixture's company name contains "Ask AI",
+  // so a substring match would collide with them.
+  await page.getByRole("button", { exact: true, name: "Ask AI" }).click();
 
   // The dock opens with a prepared prompt staged in the composer; nothing is
   // sent until the user reviews it.
@@ -1107,6 +1133,227 @@ test("a voice note lands its transcript in the composer without sending", async 
   await expect(
     page.getByRole("textbox", { name: "Message the assistant" })
   ).toHaveValue(new RegExp(transcript), { timeout: RESPONSE_TIMEOUT_MS });
+  await expect(
+    page.getByText("Ask about the pipeline", { exact: false })
+  ).toBeVisible();
+  await expect(page.getByText("Mock summary: all done here.")).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------------------
+// Assistant v3 Phase 1: message feedback (thumbs + detail form + persistence),
+// the get_weekly_report artifact card, the admin Assistant activity section,
+// and the weekly report page's Ask AI entry point.
+// ---------------------------------------------------------------------------
+
+// Resumes the one thread whose title carries the marker, from a fresh page
+// load, and waits for the transcript to land.
+const resumeThreadByMarker = async (
+  page: Page,
+  marker: string
+): Promise<void> => {
+  await openAssistant(page);
+  await page.getByRole("button", { name: "Conversation history" }).click();
+  await page
+    .getByRole("button", { name: new RegExp(marker) })
+    .first()
+    .click();
+  await expect(page.getByText("Hello from the mock assistant.")).toBeVisible({
+    timeout: RESPONSE_TIMEOUT_MS,
+  });
+};
+
+// Latest saved rating for the thread carrying this marker in its title.
+const feedbackRowForMarker = async (
+  marker: string
+): Promise<{ category: string | null; rating: string } | null> => {
+  const rows = await queryRows<{ category: string | null; rating: string }>(
+    `select f.category, f.rating from chat_feedback f
+     join chat_thread t on f.thread_id = t.id
+     where t.title like $1
+     order by f.updated_at desc limit 1`,
+    [`%${marker}%`]
+  );
+  return rows[0] ?? null;
+};
+
+test("a good-response thumb saves the rating and it survives thread resume", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await skipUnlessAssistantConfigured(page, test);
+
+  const marker = `FB-${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  await openAssistant(page);
+  await askAssistant(page, `${marker} hello`);
+  await expect(page.getByText("Hello from the mock assistant.")).toBeVisible({
+    timeout: RESPONSE_TIMEOUT_MS,
+  });
+
+  // The action bar fades in on hover devices; touch keeps it visible.
+  await page.getByText("Hello from the mock assistant.").hover();
+  const thumbUp = page.getByRole("button", { name: "Good response" });
+  await expect(thumbUp).toHaveAttribute("aria-pressed", "false");
+  await thumbUp.click();
+  await expect(thumbUp).toHaveAttribute("aria-pressed", "true");
+
+  // The rating is a real row, not client state.
+  await expect
+    .poll(async () => (await feedbackRowForMarker(marker))?.rating ?? "none", {
+      timeout: RESPONSE_TIMEOUT_MS,
+    })
+    .toBe("up");
+
+  // Reload wipes the client runtime; the thread GET returns the saved
+  // feedback and the thumb re-paints as pressed on resume.
+  await page.reload();
+  await resumeThreadByMarker(page, marker);
+  await page.getByText("Hello from the mock assistant.").hover();
+  await expect(
+    page.getByRole("button", { name: "Good response" })
+  ).toHaveAttribute("aria-pressed", "true");
+});
+
+test("a poor-response thumb opens the detail form and records the category", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await skipUnlessAssistantConfigured(page, test);
+
+  const marker = `FB-${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  await openAssistant(page);
+  await askAssistant(page, `${marker} hello`);
+  await expect(page.getByText("Hello from the mock assistant.")).toBeVisible({
+    timeout: RESPONSE_TIMEOUT_MS,
+  });
+
+  await page.getByText("Hello from the mock assistant.").hover();
+  const thumbDown = page.getByRole("button", { name: "Poor response" });
+  // Let the initial down-rating POST land before the detail form is used:
+  // the details ride a second upsert of the same row, and the upserts are
+  // last-write-wins, so a straggling first POST can null the category
+  // (known product race, reported; real users pause here to read the form).
+  const ratingSaved = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === "/api/chat/feedback" &&
+      response.request().method() === "POST"
+  );
+  await thumbDown.click();
+  await expect(thumbDown).toHaveAttribute("aria-pressed", "true");
+  expect((await ratingSaved).ok()).toBeTruthy();
+
+  // The down-rating is already saved; the inline form asks what was wrong.
+  await expect(page.getByText("What was wrong?")).toBeVisible();
+  const categoryChip = page.getByRole("button", { name: "Inaccurate" });
+  await categoryChip.click();
+  await expect(categoryChip).toHaveAttribute("aria-pressed", "true");
+  await page
+    .getByRole("textbox", { name: "Feedback comment" })
+    .fill("Numbers did not match the pipeline.");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+
+  // Sending closes the form; the row now carries rating and category.
+  await expect(page.getByText("What was wrong?")).toBeHidden();
+  await expect
+    .poll(
+      async () => {
+        const row = await feedbackRowForMarker(marker);
+        return row ? `${row.rating}:${row.category ?? ""}` : "none";
+      },
+      { timeout: RESPONSE_TIMEOUT_MS }
+    )
+    .toBe("down:inaccurate");
+});
+
+test("a weekly report question renders the report card and a follow-up chip", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await skipUnlessAssistantConfigured(page, test);
+
+  await openAssistant(page);
+  await askAssistant(page, "Give me this week's pipeline report");
+
+  // The tool call renders as a live activity chip with its human label.
+  const activityChip = page
+    .getByRole("status")
+    .filter({ hasText: "Building the weekly report" });
+  await expect(activityChip).toBeVisible({ timeout: RESPONSE_TIMEOUT_MS });
+
+  // The mock returns a get_weekly_report tool_use; the real tool builds the
+  // report from the DB and the seven-section card renders.
+  const artifact = page.locator('section[aria-label="Weekly pipeline report"]');
+  await expect(artifact).toBeVisible({ timeout: RESPONSE_TIMEOUT_MS });
+  await expect(
+    artifact.getByRole("heading", { name: "Summary" })
+  ).toBeVisible();
+  await expect(
+    artifact.getByRole("heading", { name: CLOSING_SOON_HEADING_PATTERN })
+  ).toBeVisible();
+  await expect(
+    artifact.getByRole("heading", { name: NEEDS_ATTENTION_HEADING_PATTERN })
+  ).toBeVisible();
+  await expect(
+    artifact.getByRole("heading", { name: "Full pipeline by stage" })
+  ).toBeVisible();
+  await expect(
+    artifact.getByRole("heading", { name: "Won this week" })
+  ).toBeVisible();
+  await expect(
+    artifact.getByRole("heading", { name: "Lost / dormant this week" })
+  ).toBeVisible();
+  await expect(
+    artifact.getByRole("heading", { name: "Actions for the week" })
+  ).toBeVisible();
+  await expect(
+    artifact.getByRole("link", { name: "Open full report" })
+  ).toHaveAttribute("href", "/reports/weekly");
+
+  await expect(page.getByText("Mock summary: all done here.")).toBeVisible({
+    timeout: RESPONSE_TIMEOUT_MS,
+  });
+  await expect(activityChip).not.toContainText("in progress");
+
+  // The deterministic follow-up chip for get_weekly_report is offered.
+  await expect(
+    page.getByRole("button", { name: "What needs attention first?" })
+  ).toBeVisible({ timeout: RESPONSE_TIMEOUT_MS });
+});
+
+test("the AI settings page shows the Assistant activity section to an admin", async ({
+  page,
+}) => {
+  // The suite signs in as a seeded admin, so the admin-only analytics
+  // section must render alongside the other AI preference panels.
+  await page.goto("/settings/ai");
+
+  await expect(
+    page.getByRole("heading", { name: "Assistant activity" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Messages per day" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Write actions by tool" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Write outcomes" })
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Feedback" })).toBeVisible();
+});
+
+test("the weekly report page Ask AI button prefills the composer without sending", async ({
+  page,
+}) => {
+  await page.goto("/reports/weekly");
+  await page.getByRole("button", { exact: true, name: "Ask AI" }).click();
+
+  // The dock opens with the prepared prompt staged in the composer; nothing
+  // is sent until the user reviews it.
+  const panel = page.locator(ASSISTANT_PANEL);
+  await expect(panel).not.toHaveAttribute("inert");
+  await expect(
+    page.getByRole("textbox", { name: "Message the assistant" })
+  ).toHaveValue("Give me this week's pipeline report");
   await expect(
     page.getByText("Ask about the pipeline", { exact: false })
   ).toBeVisible();

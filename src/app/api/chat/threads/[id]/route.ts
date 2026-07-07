@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { resolveAssistantUser } from "@/lib/ai/assistant-user";
+import { listThreadFeedback } from "@/lib/ai/feedback";
 import {
   archiveThread,
   getThreadForUser,
@@ -58,8 +59,14 @@ export async function GET(
     thread.status === "awaiting_confirmation"
       ? parsePendingPlan(thread.pendingToolUse)
       : null;
-  const messages = await loadThreadDisplayMessages(thread.id, pendingPlan);
+  // Independent reads fan out together (no sequential Neon awaits): the
+  // transcript and the user's own thumbs ratings for it.
+  const [messages, feedback] = await Promise.all([
+    loadThreadDisplayMessages(thread.id, pendingPlan),
+    listThreadFeedback(thread.userId, thread.id),
+  ]);
   return NextResponse.json({
+    feedback,
     messages,
     thread: {
       id: thread.id,

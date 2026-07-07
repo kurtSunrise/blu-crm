@@ -1,12 +1,19 @@
 import type * as Anthropic from "@/lib/ai/anthropic";
-import { saveMessageArtifacts } from "@/lib/ai/artifact-store";
+import {
+  type PersistableArtifact,
+  saveMessageArtifacts,
+} from "@/lib/ai/artifact-store";
 import {
   buildInstructionsBlock,
   getAssistantInstructions,
 } from "@/lib/ai/assistant-instructions";
 import { recordProposedToolCall } from "@/lib/ai/audit";
 import { getAiModel, streamMessage } from "@/lib/ai/client";
-import type { ArtifactPayload, StreamPayload } from "@/lib/ai/stream-protocol";
+import type {
+  ArtifactPayload,
+  SourceRef,
+  StreamPayload,
+} from "@/lib/ai/stream-protocol";
 import { deriveFollowUpSuggestions } from "@/lib/ai/suggestions";
 import { SYSTEM_PROMPT } from "@/lib/ai/system-prompt";
 import { appendThreadMessage, setThreadPending } from "@/lib/ai/threads";
@@ -55,6 +62,7 @@ interface ToolCallResults {
   artifacts: ArtifactPayload[];
   live: Anthropic.ToolResultBlockParam[];
   persisted: Anthropic.ToolResultBlockParam[];
+  sources: SourceRef[];
 }
 
 const runReadToolCalls = async (
@@ -65,6 +73,7 @@ const runReadToolCalls = async (
   const artifacts: ArtifactPayload[] = [];
   const live: Anthropic.ToolResultBlockParam[] = [];
   const persisted: Anthropic.ToolResultBlockParam[] = [];
+  const sources: SourceRef[] = [];
   for (const block of toolUses) {
     params.send({
       label: summarizeToolActivity(block.name),
@@ -81,6 +90,7 @@ const runReadToolCalls = async (
     }
     if (outcome.sources?.length) {
       params.send({ sources: outcome.sources, type: "sources" });
+      sources.push(...outcome.sources);
     }
     params.send({
       isError: outcome.isError,
@@ -110,7 +120,27 @@ const runReadToolCalls = async (
       type: "tool_result",
     });
   }
-  return { artifacts, live, persisted };
+  return { artifacts, live, persisted, sources };
+};
+
+// Turn sections persisted alongside the final assistant message so thread
+// resume rebuilds them: the reasoning summary first (it reads before the
+// answer text) and the deduped source chips last. Live streaming already sent
+// both; these rows are additive persistence only.
+const turnSectionArtifacts = (
+  reasoningText: string,
+  sources: SourceRef[]
+): PersistableArtifact[] => {
+  const rows: PersistableArtifact[] = [];
+  if (reasoningText.length > 0) {
+    rows.push({ artifactType: "reasoning", data: { text: reasoningText } });
+  }
+  if (sources.length > 0) {
+    // Same shape as the live stream payload so consumers of chat_artifact
+    // rows and wire payloads read one format.
+    rows.push({ artifactType: "sources", data: { sources } });
+  }
+  return rows;
 };
 
 // Write tools pause the turn for user confirmation (FR-7.8). All write
@@ -119,33 +149,11 @@ const runReadToolCalls = async (
 // from the same assistant turn run now; their results are held with the plan
 // so the resume message can answer every tool_use at once.
 const pauseForConfirmation = async (
-  toolUses: Anthropic.ToolUseBlock[],
+  writes: Anthropic.ToolUseBlock[],
   params: AgentTurnParams,
   assistantMessageId: string,
-  activity: TurnActivity,
-  artifactPosition: number
+  heldToolResults: Anthropic.ToolResultBlockParam[]
 ): Promise<void> => {
-  const reads = toolUses.filter((block) => !isWriteTool(block.name));
-  const writes = toolUses.filter((block) => isWriteTool(block.name));
-  if (writes.length === 0) {
-    return;
-  }
-
-  // Held reads resume after the plan is resolved, so they go through the
-  // persisted (text) path; any image media is captured by the cached
-  // description instead.
-  const { artifacts, persisted: heldToolResults } = await runReadToolCalls(
-    reads,
-    params,
-    activity
-  );
-  await saveMessageArtifacts(
-    params.ctx.threadId,
-    assistantMessageId,
-    artifacts,
-    artifactPosition
-  );
-
   const items = writes.map((block) => ({
     input: block.input,
     summary: summarizeToolCall(block.name),
@@ -227,12 +235,27 @@ export const runAgentTurn = async (
   // keep their emission order within each message.
   let artifactPosition = 0;
 
+  // Accumulated across every loop iteration for end-of-turn persistence:
+  // reasoning summaries (one part per iteration that produced any) and the
+  // knowledge sources deduped by doc and heading, in first-seen order.
+  const reasoningParts: string[] = [];
+  const turnSources = new Map<string, SourceRef>();
+  const collectSources = (sources: SourceRef[]): void => {
+    for (const source of sources) {
+      const key = `${source.docTitle}\n${source.heading ?? ""}`;
+      if (!turnSources.has(key)) {
+        turnSources.set(key, source);
+      }
+    }
+  };
+
   for (let iteration = 0; iteration < MAX_LOOP_ITERATIONS; iteration++) {
     // Per-iteration latches so each status is emitted once: "thinking" the
     // first time the model makes silent progress, "responding" the first time
     // visible text arrives. Both keep the client's stall watchdog fed.
     let sentThinking = false;
     let sentResponding = false;
+    let iterationReasoning = "";
     const markThinking = (): void => {
       if (!sentThinking) {
         sentThinking = true;
@@ -261,10 +284,14 @@ export const runAgentTurn = async (
         },
         onThinking: (delta) => {
           markThinking();
+          iterationReasoning += delta;
           send({ delta, type: "reasoning" });
         },
       }
     );
+    if (iterationReasoning.trim().length > 0) {
+      reasoningParts.push(iterationReasoning.trim());
+    }
     const assistantMessageId = await appendThreadMessage(
       ctx.threadId,
       "assistant",
@@ -281,8 +308,18 @@ export const runAgentTurn = async (
       (block): block is Anthropic.ToolUseBlock => block.type === "tool_use"
     );
     if (finalMessage.stop_reason !== "tool_use" || toolUses.length === 0) {
-      // Normal end of turn (final text response): offer follow-up chips.
-      // The confirmation pause and error paths deliberately send none.
+      // Normal end of turn (final text response): persist the turn sections
+      // against this final message so resume rebuilds the reasoning block and
+      // source chips, then offer follow-up chips. The confirmation pause and
+      // error paths deliberately send none.
+      await saveMessageArtifacts(
+        ctx.threadId,
+        assistantMessageId,
+        turnSectionArtifacts(reasoningParts.join("\n\n"), [
+          ...turnSources.values(),
+        ]),
+        artifactPosition
+      );
       send({
         prompts: deriveFollowUpSuggestions(activity),
         type: "suggestions",
@@ -291,21 +328,45 @@ export const runAgentTurn = async (
     }
 
     if (toolUses.some((block) => isWriteTool(block.name))) {
+      // Held reads resume after the plan is resolved, so they go through the
+      // persisted (text) path; any image media is captured by the cached
+      // description instead.
+      const reads = toolUses.filter((block) => !isWriteTool(block.name));
+      const held = await runReadToolCalls(reads, params, activity);
+      collectSources(held.sources);
+      await saveMessageArtifacts(
+        ctx.threadId,
+        assistantMessageId,
+        held.artifacts,
+        artifactPosition
+      );
+      artifactPosition += held.artifacts.length;
+      // A confirmation pause ends this request, and the post-approval
+      // continuation starts a fresh turn with empty accumulators, so the
+      // reasoning and sources gathered so far persist here or never.
+      await saveMessageArtifacts(
+        ctx.threadId,
+        assistantMessageId,
+        turnSectionArtifacts(reasoningParts.join("\n\n"), [
+          ...turnSources.values(),
+        ]),
+        artifactPosition
+      );
       await pauseForConfirmation(
-        toolUses,
+        toolUses.filter((block) => isWriteTool(block.name)),
         params,
         assistantMessageId,
-        activity,
-        artifactPosition
+        held.persisted
       );
       return { lastAssistantMessageId };
     }
 
-    const { artifacts, live, persisted } = await runReadToolCalls(
+    const { artifacts, live, persisted, sources } = await runReadToolCalls(
       toolUses,
       params,
       activity
     );
+    collectSources(sources);
     await saveMessageArtifacts(
       ctx.threadId,
       assistantMessageId,

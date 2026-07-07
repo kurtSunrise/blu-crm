@@ -29,12 +29,22 @@ import {
   RefreshCwIcon,
   SparklesIcon,
   SquareIcon,
+  ThumbsDownIcon,
+  ThumbsUpIcon,
   TriangleAlertIcon,
   UserIcon,
   XIcon,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { useAiAssistant } from "@/components/ai/ai-context";
 import { DataPartsRenderer } from "@/components/ai/data-parts-renderer";
 import { MarkdownText } from "@/components/ai/markdown-text";
@@ -57,6 +67,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 // One chip serves both the composer (with a remove control) and the sent
@@ -321,10 +333,289 @@ function RegenerateButton() {
   );
 }
 
+type FeedbackRating = "up" | "down";
+type FeedbackCategory = "inaccurate" | "not_relevant" | "incomplete";
+
+const FEEDBACK_CATEGORIES: { label: string; value: FeedbackCategory }[] = [
+  { label: "Inaccurate", value: "inaccurate" },
+  { label: "Not relevant", value: "not_relevant" },
+  { label: "Incomplete", value: "incomplete" },
+];
+
+// The current user's saved ratings by server message id, loaded with the
+// transcript on thread resume (chat-launcher.tsx) so thumbs re-paint.
+const EMPTY_THREAD_FEEDBACK: Record<string, FeedbackRating> = {};
+const ThreadFeedbackContext = createContext<Record<string, FeedbackRating>>(
+  EMPTY_THREAD_FEEDBACK
+);
+
+// A repeat POST with a new rating updates in place server-side; "clear"
+// deletes the row. Returns success so callers can revert optimistic state.
+const postFeedback = async (body: {
+  category?: FeedbackCategory;
+  comment?: string;
+  messageId: string;
+  rating: FeedbackRating | "clear";
+}): Promise<boolean> => {
+  try {
+    const response = await fetch("/api/chat/feedback", {
+      body: JSON.stringify(body),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+};
+
+// The persisted assistant message id, carried as an invisible message_meta
+// data part: pushed by the runtime adapter from the stream's `done` payload
+// on live turns, and by chat-launcher's resume mapping from the row id.
+const selectServerMessageId = (message: {
+  content: readonly { type: string }[];
+}): string | null => {
+  for (const part of message.content) {
+    if (part.type === "data") {
+      const dataPart = part as { data?: unknown; name?: string };
+      if (dataPart.name === "message_meta") {
+        const messageId = (dataPart.data as { messageId?: unknown } | null)
+          ?.messageId;
+        return typeof messageId === "string" ? messageId : null;
+      }
+    }
+  }
+  return null;
+};
+
+// Follow-up detail form shown after a thumbs-down. The down-rating itself is
+// already saved; category and comment ride a second POST and are optional.
+// `send` goes through the parent's per-message queue so this POST can never
+// overtake (and be overwritten by) the initial bare down-rating POST.
+function FeedbackDetails({
+  onClose,
+  send,
+}: {
+  onClose: () => void;
+  send: (details: {
+    category?: FeedbackCategory;
+    comment?: string;
+  }) => Promise<boolean>;
+}) {
+  const [category, setCategory] = useState<FeedbackCategory | null>(null);
+  const [comment, setComment] = useState("");
+  const [failed, setFailed] = useState(false);
+  const [sending, setSending] = useState(false);
+  const commentFieldId = useId();
+
+  const sendDetails = async () => {
+    setSending(true);
+    setFailed(false);
+    const ok = await send({
+      category: category ?? undefined,
+      comment: comment.trim() || undefined,
+    });
+    setSending(false);
+    if (ok) {
+      onClose();
+      return;
+    }
+    setFailed(true);
+  };
+
+  return (
+    <div
+      className="my-1 w-full rounded-lg border bg-muted/30 p-3"
+      data-feedback-panel
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-medium text-xs">
+          What was wrong? Both fields are optional.
+        </p>
+        <Button
+          aria-label="Close feedback form"
+          className="-my-1.5 -mr-1.5 size-11 rounded-md text-muted-foreground"
+          onClick={onClose}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <XIcon aria-hidden className="size-4" />
+        </Button>
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        {FEEDBACK_CATEGORIES.map((option) => {
+          const active = category === option.value;
+          return (
+            <Button
+              aria-pressed={active}
+              className={cn(
+                "min-h-11 rounded-full px-4",
+                active && "border-blu bg-blu/10"
+              )}
+              key={option.value}
+              onClick={() => setCategory(active ? null : option.value)}
+              type="button"
+              variant="outline"
+            >
+              {active ? <CheckIcon aria-hidden className="size-3.5" /> : null}
+              {option.label}
+            </Button>
+          );
+        })}
+      </div>
+      <Label className="sr-only" htmlFor={commentFieldId}>
+        Feedback comment
+      </Label>
+      <Textarea
+        className="mt-2 bg-background"
+        id={commentFieldId}
+        onChange={(event) => setComment(event.target.value)}
+        placeholder="Add a comment (optional)"
+        rows={2}
+        value={comment}
+      />
+      {failed ? (
+        <p className="mt-1.5 text-destructive text-xs" role="alert">
+          Could not send the details. Please try again.
+        </p>
+      ) : null}
+      <div className="mt-2 flex justify-end">
+        <Button
+          className="min-h-11 px-4"
+          disabled={sending || (!category && comment.trim().length === 0)}
+          onClick={sendDetails}
+          type="button"
+          variant="secondary"
+        >
+          {sending ? (
+            <Loader2Icon aria-hidden className="size-4 animate-spin" />
+          ) : null}
+          Send
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Thumbs up/down for a completed assistant message. Optimistic: the rating
+// paints immediately and reverts if the POST fails. Tapping the active thumb
+// clears it; thumbs-down also opens the inline detail form.
+function MessageFeedback() {
+  const initialFeedback = useContext(ThreadFeedbackContext);
+  const messageId = useMessage(selectServerMessageId);
+  const [rating, setRating] = useState<FeedbackRating | null>(() =>
+    messageId ? (initialFeedback[messageId] ?? null) : null
+  );
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  // POSTs for this message run strictly in order (a details POST must never
+  // overtake the bare rating POST it follows), and only the newest request
+  // may revert optimistic state after a failure.
+  const postQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const requestSeq = useRef(0);
+
+  if (!messageId) {
+    return null;
+  }
+
+  const enqueuePost = (body: {
+    category?: FeedbackCategory;
+    comment?: string;
+    rating: FeedbackRating | "clear";
+  }): Promise<boolean> => {
+    const request = postQueue.current.then(() =>
+      postFeedback({ messageId, ...body })
+    );
+    postQueue.current = request.then(
+      () => undefined,
+      () => undefined
+    );
+    return request;
+  };
+
+  const applyRating = async (
+    next: FeedbackRating | null,
+    request: FeedbackRating | "clear"
+  ) => {
+    const previous = rating;
+    const seq = ++requestSeq.current;
+    setRating(next);
+    const ok = await enqueuePost({ rating: request });
+    if (!ok && requestSeq.current === seq) {
+      setRating(previous);
+    }
+  };
+
+  const toggleUp = async () => {
+    setDetailsOpen(false);
+    await (rating === "up"
+      ? applyRating(null, "clear")
+      : applyRating("up", "up"));
+  };
+
+  const toggleDown = async () => {
+    if (rating === "down") {
+      setDetailsOpen(false);
+      await applyRating(null, "clear");
+      return;
+    }
+    setDetailsOpen(true);
+    await applyRating("down", "down");
+  };
+
+  return (
+    <>
+      <Button
+        aria-label="Good response"
+        aria-pressed={rating === "up"}
+        className={cn(
+          "size-11 rounded-md text-muted-foreground",
+          rating === "up" && "bg-muted text-blu"
+        )}
+        onClick={toggleUp}
+        size="icon"
+        type="button"
+        variant="ghost"
+      >
+        <ThumbsUpIcon
+          aria-hidden
+          className={cn("size-3.5", rating === "up" && "fill-current")}
+        />
+      </Button>
+      <Button
+        aria-label="Poor response"
+        aria-pressed={rating === "down"}
+        className={cn(
+          "size-11 rounded-md text-muted-foreground",
+          rating === "down" && "bg-muted text-blu"
+        )}
+        onClick={toggleDown}
+        size="icon"
+        type="button"
+        variant="ghost"
+      >
+        <ThumbsDownIcon
+          aria-hidden
+          className={cn("size-3.5", rating === "down" && "fill-current")}
+        />
+      </Button>
+      {detailsOpen && rating === "down" ? (
+        <FeedbackDetails
+          onClose={() => setDetailsOpen(false)}
+          send={(details) => enqueuePost({ ...details, rating: "down" })}
+        />
+      ) : null}
+    </>
+  );
+}
+
+// Hover devices get the tidy fade-in bar; touch devices (no hover) keep it
+// always visible, since there is nothing to hover with a work glove. The
+// has-[] guard pins it visible while the feedback detail form is open.
 function AssistantActionBar() {
   return (
     <ActionBarPrimitive.Root
-      className="-mb-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+      className="-mb-1 flex flex-wrap items-center transition-opacity group-focus-within:opacity-100 has-[[data-feedback-panel]]:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
       hideWhenRunning
     >
       <ActionBarPrimitive.Copy asChild>
@@ -344,13 +635,14 @@ function AssistantActionBar() {
         </Button>
       </ActionBarPrimitive.Copy>
       <RegenerateButton />
+      <MessageFeedback />
     </ActionBarPrimitive.Root>
   );
 }
 
 // Shown only while the run is "running" with nothing streamed yet (derived
 // from assistant-ui's own message status, not a placeholder string standing
-// in for content — see ai-runtime-provider.tsx's snapshotOf).
+// in for content; see ai-runtime-provider.tsx's snapshotOf).
 function ThinkingIndicator() {
   const isThinking = useMessage(
     (message) =>
@@ -457,7 +749,7 @@ function AddAttachmentButton({
 
 // Copilot-style context chip: shows which deal or contact the assistant is
 // drawing on (registered by the page via AiEntityBeacon and already sent to
-// /api/chat as pageContext — this makes that invisible context visible).
+// /api/chat as pageContext; this makes that invisible context visible).
 function ContextChip() {
   const { entity } = useAiAssistant();
   if (!entity?.label) {
@@ -589,43 +881,50 @@ function Composer() {
   );
 }
 
-export function ChatPanel() {
+export function ChatPanel({
+  initialFeedback = EMPTY_THREAD_FEEDBACK,
+}: {
+  // Saved thumbs ratings by server message id, from the thread GET on resume.
+  initialFeedback?: Record<string, FeedbackRating>;
+}) {
   const { offline } = useAiAssistant();
 
   return (
-    <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col">
-      <div className="relative min-h-0 flex-1">
-        <ThreadPrimitive.Viewport className="h-full overflow-y-auto px-3 pt-3">
-          <ThreadWelcome />
-          <ThreadPrimitive.Messages
-            components={{ AssistantMessage, UserMessage }}
-          />
-          <div aria-hidden className="h-3" />
-        </ThreadPrimitive.Viewport>
-        <ThreadPrimitive.ScrollToBottom asChild>
-          <Button
-            aria-label="Scroll to latest message"
-            className="absolute right-3 bottom-3 size-9 rounded-full shadow-md disabled:hidden"
-            size="icon"
-            type="button"
-            variant="secondary"
-          >
-            <ArrowDownIcon aria-hidden className="size-4" />
-          </Button>
-        </ThreadPrimitive.ScrollToBottom>
-      </div>
-      <div className="border-t p-3">
-        {offline ? (
-          <p
-            className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-700 text-sm dark:text-amber-300"
-            role="status"
-          >
-            The assistant is offline. The rest of Blu CRM keeps working.
-          </p>
-        ) : null}
-        <FollowUpSuggestions />
-        <Composer />
-      </div>
-    </ThreadPrimitive.Root>
+    <ThreadFeedbackContext.Provider value={initialFeedback}>
+      <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col">
+        <div className="relative min-h-0 flex-1">
+          <ThreadPrimitive.Viewport className="h-full overflow-y-auto px-3 pt-3">
+            <ThreadWelcome />
+            <ThreadPrimitive.Messages
+              components={{ AssistantMessage, UserMessage }}
+            />
+            <div aria-hidden className="h-3" />
+          </ThreadPrimitive.Viewport>
+          <ThreadPrimitive.ScrollToBottom asChild>
+            <Button
+              aria-label="Scroll to latest message"
+              className="absolute right-3 bottom-3 size-9 rounded-full shadow-md disabled:hidden"
+              size="icon"
+              type="button"
+              variant="secondary"
+            >
+              <ArrowDownIcon aria-hidden className="size-4" />
+            </Button>
+          </ThreadPrimitive.ScrollToBottom>
+        </div>
+        <div className="border-t p-3">
+          {offline ? (
+            <p
+              className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-700 text-sm dark:text-amber-300"
+              role="status"
+            >
+              The assistant is offline. The rest of Blu CRM keeps working.
+            </p>
+          ) : null}
+          <FollowUpSuggestions />
+          <Composer />
+        </div>
+      </ThreadPrimitive.Root>
+    </ThreadFeedbackContext.Provider>
   );
 }

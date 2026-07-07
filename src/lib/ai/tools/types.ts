@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type * as Anthropic from "@/lib/ai/anthropic";
-import type { ArtifactPayload } from "@/lib/ai/stream-protocol";
+import type { ArtifactPayload, SourceRef } from "@/lib/ai/stream-protocol";
 
 export interface AiToolContext {
   threadId: string;
@@ -19,7 +19,7 @@ export interface AiToolOutcome {
   resultText: string;
   // Knowledge-base attributions behind the answer, streamed to the client as
   // a `sources` payload and rendered as source chips
-  sources?: { docTitle: string; heading: string | null }[];
+  sources?: SourceRef[];
 }
 
 export interface AiTool {

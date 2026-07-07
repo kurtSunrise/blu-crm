@@ -23,6 +23,15 @@ const SUGGESTION_RULES: {
   },
   {
     prompts: [
+      "What needs attention first?",
+      "Draft follow-ups for the stale deals",
+    ],
+    when: (input) =>
+      input.toolsUsed.includes("get_weekly_report") ||
+      input.artifactTypes.includes("weekly_report"),
+  },
+  {
+    prompts: [
       "Draft a follow-up email for this deal",
       "Log an activity on this deal",
     ],

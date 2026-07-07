@@ -72,8 +72,12 @@ export function AiLauncherButton({
   );
 }
 
+type ThreadFeedbackMap = Record<string, "up" | "down">;
+
 interface ChatSession {
   epoch: number;
+  // The user's saved thumbs ratings by message id, from the thread GET.
+  initialFeedback: ThreadFeedbackMap;
   initialMessages: ThreadMessageLike[];
 }
 
@@ -127,11 +131,24 @@ interface ResumedDataPart {
 // the live confirmation_request: the card sends decisions for every item it
 // shows, and the server treats missing decisions as skips, so splitting a
 // plan across cards would silently skip the items the user never saw.
-const toDataParts = (parts: ResumedPart[]): ResumedDataPart[] => {
+const toDataParts = (
+  parts: ResumedPart[]
+): { dataParts: ResumedDataPart[]; reasoningText: string | null } => {
   const dataParts: ResumedDataPart[] = [];
   const confirmations: Extract<ResumedPart, { type: "confirmation" }>[] = [];
+  let reasoningText: string | null = null;
   for (const part of parts) {
     if (part.type === "artifact") {
+      // A persisted "reasoning" artifact becomes a real reasoning content
+      // part (not a data part) so it renders through the same collapsible
+      // ReasoningSection as live turns, above the answer text.
+      if (part.artifactType === "reasoning") {
+        const text = (part.data as { text?: unknown } | null)?.text;
+        if (typeof text === "string" && text.length > 0) {
+          reasoningText = text;
+        }
+        continue;
+      }
       dataParts.push({
         data: part.data,
         name: part.artifactType,
@@ -142,7 +159,7 @@ const toDataParts = (parts: ResumedPart[]): ResumedDataPart[] => {
     }
   }
   if (confirmations.length === 0) {
-    return dataParts;
+    return { dataParts, reasoningText };
   }
   const items: ConfirmationItem[] = confirmations.map((part) => ({
     input: part.input,
@@ -167,16 +184,33 @@ const toDataParts = (parts: ResumedPart[]): ResumedDataPart[] => {
     name: "confirmation_request",
     type: "data",
   });
-  return dataParts;
+  return { dataParts, reasoningText };
 };
+
+type ResumedContentPart =
+  | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
+  | ResumedDataPart;
 
 const toThreadMessages = (messages: ResumedMessage[]): ThreadMessageLike[] =>
   messages.map((message) => {
-    const dataParts = toDataParts(message.parts ?? []);
-    const content: ({ type: "text"; text: string } | ResumedDataPart)[] =
-      message.text
-        ? [{ text: message.text, type: "text" }, ...dataParts]
-        : dataParts;
+    const { dataParts, reasoningText } = toDataParts(message.parts ?? []);
+    if (message.role === "assistant") {
+      // The persisted message id, in the same invisible message_meta data
+      // part the live stream's `done` payload produces, so the feedback
+      // thumbs work on resumed turns too.
+      dataParts.push({
+        data: { messageId: message.id },
+        name: "message_meta",
+        type: "data",
+      });
+    }
+    const reasoningParts: ResumedContentPart[] = reasoningText
+      ? [{ text: reasoningText, type: "reasoning" }]
+      : [];
+    const content: ResumedContentPart[] = message.text
+      ? [...reasoningParts, { text: message.text, type: "text" }, ...dataParts]
+      : [...reasoningParts, ...dataParts];
     // Part-only user rows (a confirmed write's artifacts ride the resume
     // message) render as assistant so cards never sit in the blue bubble.
     const role =
@@ -224,17 +258,23 @@ export function AiAssistantDock() {
   const [view, setView] = useState<"chat" | "history">("chat");
   const [session, setSession] = useState<ChatSession>({
     epoch: 0,
+    initialFeedback: {},
     initialMessages: [],
   });
 
   const switchSession = (
     nextThreadId: string | null,
-    initialMessages: ThreadMessageLike[]
+    initialMessages: ThreadMessageLike[],
+    initialFeedback: ThreadFeedbackMap = {}
   ) => {
     setThreadId(nextThreadId);
     setPendingConfirmation(null);
     decisionRef.current = null;
-    setSession((current) => ({ epoch: current.epoch + 1, initialMessages }));
+    setSession((current) => ({
+      epoch: current.epoch + 1,
+      initialFeedback,
+      initialMessages,
+    }));
     setView("chat");
   };
 
@@ -250,10 +290,19 @@ export function AiAssistantDock() {
       return;
     }
     const payload = (await response.json()) as {
+      feedback?: { messageId: string; rating: "up" | "down" }[];
       messages: ResumedMessage[];
       thread?: ResumedThread;
     };
-    switchSession(resumeId, toThreadMessages(payload.messages));
+    const initialFeedback: ThreadFeedbackMap = {};
+    for (const entry of payload.feedback ?? []) {
+      initialFeedback[entry.messageId] = entry.rating;
+    }
+    switchSession(
+      resumeId,
+      toThreadMessages(payload.messages),
+      initialFeedback
+    );
     // A thread paused on a write plan resumes actionable: re-seed the pending
     // confirmation so its card's buttons work again.
     const pendingToolUses = payload.thread?.pendingToolUses;
@@ -316,7 +365,7 @@ export function AiAssistantDock() {
             initialMessages={session.initialMessages}
             key={session.epoch}
           >
-            <ChatPanel />
+            <ChatPanel initialFeedback={session.initialFeedback} />
           </AiRuntimeProvider>
         </div>
         {view === "history" ? (

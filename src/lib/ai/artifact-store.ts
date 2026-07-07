@@ -1,7 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { chatArtifact } from "@/db/schema";
-import type { ArtifactPayload } from "@/lib/ai/stream-protocol";
 
 // Persistence for streamed artifact payloads (deal cards, deal lists,
 // drafts) so resumed threads re-render their cards. Rows anchor to the
@@ -9,6 +8,14 @@ import type { ArtifactPayload } from "@/lib/ai/stream-protocol";
 // so a failure here just leaves a card-less transcript, never an orphan.
 
 const THREAD_ARTIFACT_LIMIT = 200;
+
+// What a row needs to persist. Streamed ArtifactPayloads satisfy this, and so
+// do the persist-only turn sections ("reasoning", "sources") that never flow
+// through the artifact stream payload but must survive thread resume.
+export interface PersistableArtifact {
+  artifactType: string;
+  data: unknown;
+}
 
 export interface StoredArtifact {
   artifactType: string;
@@ -21,7 +28,7 @@ export interface StoredArtifact {
 export const saveMessageArtifacts = async (
   threadId: string,
   messageId: string,
-  artifacts: ArtifactPayload[],
+  artifacts: PersistableArtifact[],
   startPosition = 0
 ): Promise<void> => {
   if (artifacts.length === 0) {

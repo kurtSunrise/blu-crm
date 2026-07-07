@@ -44,6 +44,27 @@ export const dollarsToCents = (dollars: number): number =>
 export const formatDateAwst = (date: Date): string =>
   AWST_DATE_FORMATTER.format(date);
 
+const AWST_DAY_MONTH_FORMATTER = new Intl.DateTimeFormat("en-AU", {
+  timeZone: "Australia/Perth",
+  day: "2-digit",
+  month: "2-digit",
+});
+
+// "07/07" — for dense rows where the year is obvious from context.
+export const formatDayMonthAwst = (date: Date): string =>
+  AWST_DAY_MONTH_FORMATTER.format(date);
+
+// Coerces a Date, ISO string, or anything date-like to a valid ISO string,
+// or null when absent/unparseable. Shared by artifact serializers and the
+// knowledge source chips.
+export const toIsoOrNull = (value: unknown): string | null => {
+  if (value == null) {
+    return null;
+  }
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
 export const MS_PER_DAY = 86_400_000;
 
 // Perth is UTC+8 year-round (no DST), so AWST day boundaries are a fixed

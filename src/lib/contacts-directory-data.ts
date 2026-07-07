@@ -13,6 +13,10 @@ import {
   pipelineStage,
   user,
 } from "@/db/schema";
+// The Neon HTTP driver returns raw timestamptz aggregates as ISO strings while
+// the local pg driver parses them into Dates; the shared helper normalises
+// both for the client.
+import { toIsoOrNull } from "@/lib/format";
 
 const openDealFilter = sql`not (${pipelineStage.isWon} or ${pipelineStage.isLost})`;
 
@@ -33,15 +37,6 @@ const TOUCH_ACTIVITY_TYPES = [
   "site_visit",
   "meeting",
 ] as const;
-
-// The Neon HTTP driver returns raw timestamptz aggregates as ISO strings while
-// the local pg driver parses them into Dates; normalise both for the client.
-const toIsoOrNull = (value: unknown): string | null => {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  return new Date(value as string | Date).toISOString();
-};
 
 const laterIso = (a: string | null, b: string | null): string | null => {
   if (a === null) {

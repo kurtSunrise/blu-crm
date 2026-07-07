@@ -1,13 +1,72 @@
 // Wire protocol between /api/chat and the chat runtime adapter: one JSON
-// payload per line (NDJSON). Isomorphic — no server-only imports — so the
-// client parser and server encoder share these types.
+// payload per line (NDJSON). Isomorphic: type-only imports are fine (they are
+// erased at compile time), but no runtime server imports.
 
-export type ArtifactType = "deal_card" | "deal_list" | "draft_message";
+import type { AlertDeal } from "@/lib/alerts";
+import type {
+  PipelineTotals,
+  ReportActionRow,
+  ReportDealRow,
+  StageBreakdownRow,
+} from "@/lib/reports";
 
-// One knowledge-base passage attribution shown as a source chip
+export type ArtifactType =
+  | "deal_card"
+  | "deal_list"
+  | "draft_message"
+  | "weekly_report";
+
+// One knowledge-base passage attribution shown as a source chip.
+// updatedAt is the source document's last update as an ISO string (null when
+// unknown) so the chip can flag stale guidance.
 export interface SourceRef {
   docTitle: string;
   heading: string | null;
+  updatedAt: string | null;
+}
+
+// The weekly_report artifact payload. Derived from WeeklyReport in
+// src/lib/reports.ts with every Date field remapped to an ISO string, so the
+// compiler flags any drift when the report shape changes.
+export type WeeklyReportDealRow = ReportDealRow;
+
+export type WeeklyReportActionRow = Omit<ReportActionRow, "dueDate"> & {
+  // ISO string
+  dueDate: string;
+};
+
+export type WeeklyReportAlertDeal = Omit<
+  AlertDeal,
+  "createdAt" | "expectedCloseDate" | "fixedDate" | "lastContactAt"
+> & {
+  createdAt: string;
+  expectedCloseDate: string | null;
+  fixedDate: string | null;
+  lastContactAt: string | null;
+};
+
+export type WeeklyReportStageBreakdown = StageBreakdownRow;
+
+export type WeeklyReportTotals = PipelineTotals;
+
+export interface WeeklyReportArtifactData {
+  actions: WeeklyReportActionRow[];
+  closingSoon: WeeklyReportAlertDeal[];
+  closingSoonDays: number;
+  // ISO string
+  generatedAt: string;
+  lostThisWeek: WeeklyReportDealRow[];
+  needsAttention: WeeklyReportAlertDeal[];
+  newThisWeek: number;
+  openByStage: {
+    deals: WeeklyReportDealRow[];
+    stage: WeeklyReportStageBreakdown;
+  }[];
+  staleDays: number;
+  totals: WeeklyReportTotals;
+  // ISO string
+  weekStart: string;
+  wonThisWeek: WeeklyReportDealRow[];
 }
 
 // One gated write awaiting user review inside a confirmation request

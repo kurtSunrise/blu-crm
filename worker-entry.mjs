@@ -45,31 +45,46 @@ const raceDeadline = (promise, ms) => {
 // consistent; the route itself never reads Host.
 const CRON_ROUTE =
   "https://blu-crm.kurt-0f6.workers.dev/api/cron/notifications";
+// Proactive assistant threads (weekly report / morning briefings) share the
+// daily cron; the route itself decides what runs from the AWST weekday.
+const ASSISTANT_CRON_ROUTE =
+  "https://blu-crm.kurt-0f6.workers.dev/api/cron/assistant";
+const DAILY_CRON = "0 23 * * *";
 
 export default {
   scheduled(controller, env, ctx) {
-    const url = new URL(CRON_ROUTE);
-    url.searchParams.set("cron", controller.cron);
-    ctx.waitUntil(
-      worker
-        .fetch(
-          new Request(url, {
-            method: "POST",
-            headers: { authorization: `Bearer ${env.CRON_SECRET}` },
-          }),
-          env,
-          ctx
-        )
-        .then(async (response) => {
-          const body = await response.text();
-          console.log(
-            `[cron] ${controller.cron} -> ${response.status} ${body}`
-          );
-        })
-        .catch((error) => {
-          console.error(`[cron] ${controller.cron} failed`, error);
-        })
-    );
+    const dispatch = (route) => {
+      const url = new URL(route);
+      url.searchParams.set("cron", controller.cron);
+      ctx.waitUntil(
+        worker
+          .fetch(
+            new Request(url, {
+              method: "POST",
+              headers: { authorization: `Bearer ${env.CRON_SECRET}` },
+            }),
+            env,
+            ctx
+          )
+          .then(async (response) => {
+            const body = await response.text();
+            console.log(
+              `[cron] ${controller.cron} ${url.pathname} -> ${response.status} ${body}`
+            );
+          })
+          .catch((error) => {
+            console.error(
+              `[cron] ${controller.cron} ${url.pathname} failed`,
+              error
+            );
+          })
+      );
+    };
+
+    dispatch(CRON_ROUTE);
+    if (controller.cron === DAILY_CRON) {
+      dispatch(ASSISTANT_CRON_ROUTE);
+    }
   },
 
   async fetch(request, env, ctx) {

@@ -34,6 +34,17 @@ interface FeedSection {
   rows: NotificationRow[];
 }
 
+// payload.threadId arrives with the proactive assistant notification types
+// (weekly_report, daily_briefing); read it defensively so rows written
+// before that field existed, or by older code, never break the feed.
+const readThreadId = (payload: unknown): string | null => {
+  if (payload && typeof payload === "object" && "threadId" in payload) {
+    const value = (payload as { threadId?: unknown }).threadId;
+    return typeof value === "string" ? value : null;
+  }
+  return null;
+};
+
 // Group the page's rows into Today / Yesterday / Earlier as the team
 // experiences days in Perth.
 const groupByDay = (rows: NotificationRow[], now: Date): FeedSection[] => {
@@ -134,12 +145,16 @@ export default async function NotificationsPage({
                   return (
                     <li key={row.id}>
                       <NotificationItem
+                        dealId={payload.dealId ?? null}
+                        dealTitle={payload.dealTitle ?? null}
                         detail={detail}
                         href={notificationHref(row.type, payload)}
                         id={row.id}
                         isUnread={row.readAt === null}
+                        threadId={readThreadId(row.payload)}
                         timestampLabel={formatDateTimeAwst(row.createdAt)}
                         title={title}
+                        type={row.type}
                       />
                     </li>
                   );

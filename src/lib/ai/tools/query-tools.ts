@@ -107,7 +107,9 @@ export const toDealSummary = (row: DealSummaryRow): DealSummary => ({
   value: row.valueCents === null ? null : formatAudFromCents(row.valueCents),
 });
 
-const dealListArtifact = (
+// Exported for the proactive generators (src/lib/ai/proactive.ts) so their
+// briefing threads reuse the exact deal_list artifact shape.
+export const dealListArtifact = (
   title: string,
   deals: DealSummary[]
 ): ArtifactPayload => ({

@@ -23,6 +23,14 @@ export interface AiEntityRef {
   label?: string;
 }
 
+// A request from outside the dock (notification cards) to open a specific
+// persisted thread. The nonce makes re-tapping the same notification
+// re-trigger the dock's effect even when the threadId is unchanged.
+export interface AssistantThreadRequest {
+  nonce: number;
+  threadId: string;
+}
+
 // The write plan currently awaiting review: one or more gated tool calls in
 // proposal order. A single-item plan is the common case.
 export interface PendingConfirmation {
@@ -62,6 +70,8 @@ interface AiAssistantContextValue {
   attachmentError: string | null;
   clearComposerPrefill: () => void;
   clearEntity: () => void;
+  // Called by the dock once it has picked up a thread-open request.
+  clearRequestedThread: () => void;
   // Called by the runtime adapter once a send has consumed the voice notes.
   clearVoiceAttachments: () => void;
   // Text staged by an "Ask AI" entry point; the composer consumes it into the
@@ -79,10 +89,18 @@ interface AiAssistantContextValue {
   mentionsRef: MutableRefObject<ComposerMention[]>;
   offline: boolean;
   open: boolean;
+  // Opens the dock and asks it to resume the given persisted thread through
+  // the same path as picking it from history.
+  openAssistantOnThread: (threadId: string) => void;
+  // Opens the dock with the composer prefilled (never auto-sent).
+  openAssistantWithPrompt: (prompt: string) => void;
+  // Legacy alias for openAssistantWithPrompt, kept for the existing Ask AI
+  // buttons.
   openWithPrompt: (prompt: string) => void;
   pendingConfirmation: PendingConfirmation | null;
   registerEntity: (entity: AiEntityRef) => void;
   removeVoiceAttachment: (attachmentId: string) => void;
+  requestedThread: AssistantThreadRequest | null;
   setAttachmentError: (message: string | null) => void;
   setOffline: (offline: boolean) => void;
   setOpen: (open: boolean) => void;
@@ -105,8 +123,11 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [composerPrefill, setComposerPrefill] = useState<string | null>(null);
   const [voiceAttachmentIds, setVoiceAttachmentIds] = useState<string[]>([]);
+  const [requestedThread, setRequestedThread] =
+    useState<AssistantThreadRequest | null>(null);
   const decisionRef = useRef<ConfirmationDecision | null>(null);
   const mentionsRef = useRef<ComposerMention[]>([]);
+  const threadRequestNonceRef = useRef(0);
 
   const registerEntity = useCallback((next: AiEntityRef) => {
     setEntity(next);
@@ -114,7 +135,7 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
   const clearEntity = useCallback(() => {
     setEntity(null);
   }, []);
-  const openWithPrompt = useCallback((prompt: string) => {
+  const openAssistantWithPrompt = useCallback((prompt: string) => {
     setComposerPrefill(prompt);
     setOpen(true);
   }, []);
@@ -132,6 +153,17 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
   const clearVoiceAttachments = useCallback(() => {
     setVoiceAttachmentIds([]);
   }, []);
+  const openAssistantOnThread = useCallback((nextThreadId: string) => {
+    threadRequestNonceRef.current += 1;
+    setRequestedThread({
+      nonce: threadRequestNonceRef.current,
+      threadId: nextThreadId,
+    });
+    setOpen(true);
+  }, []);
+  const clearRequestedThread = useCallback(() => {
+    setRequestedThread(null);
+  }, []);
 
   const value = useMemo(
     () => ({
@@ -139,6 +171,7 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
       attachmentError,
       clearComposerPrefill,
       clearEntity,
+      clearRequestedThread,
       clearVoiceAttachments,
       composerPrefill,
       decisionRef,
@@ -146,10 +179,13 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
       mentionsRef,
       offline,
       open,
-      openWithPrompt,
+      openAssistantOnThread,
+      openAssistantWithPrompt,
+      openWithPrompt: openAssistantWithPrompt,
       pendingConfirmation,
       registerEntity,
       removeVoiceAttachment,
+      requestedThread,
       setAttachmentError,
       setOffline,
       setOpen,
@@ -163,15 +199,18 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
       attachmentError,
       clearComposerPrefill,
       clearEntity,
+      clearRequestedThread,
       clearVoiceAttachments,
       composerPrefill,
       entity,
       offline,
       open,
-      openWithPrompt,
+      openAssistantOnThread,
+      openAssistantWithPrompt,
       pendingConfirmation,
       registerEntity,
       removeVoiceAttachment,
+      requestedThread,
       threadId,
       voiceAttachmentIds,
     ]

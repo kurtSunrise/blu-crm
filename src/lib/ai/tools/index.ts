@@ -4,6 +4,7 @@ import { draftTools } from "@/lib/ai/tools/draft-tools";
 import { fileTools } from "@/lib/ai/tools/file-tools";
 import { followUpTools } from "@/lib/ai/tools/follow-up-tools";
 import { knowledgeTools } from "@/lib/ai/tools/knowledge-tools";
+import { memoryTools } from "@/lib/ai/tools/memory-tools";
 import { queryTools } from "@/lib/ai/tools/query-tools";
 import { quoteTools } from "@/lib/ai/tools/quote-tools";
 import { reportTools } from "@/lib/ai/tools/report-tools";
@@ -29,6 +30,7 @@ const ALL_TOOLS: AiTool[] = [
   ...triageTools,
   ...knowledgeTools,
   ...fileTools,
+  ...memoryTools,
 ];
 
 const TOOLS_BY_NAME = new Map(
@@ -77,6 +79,7 @@ const ACTIVITY_LABELS: Record<string, string> = {
   present_draft: "Preparing a draft",
   query_deals: "Searching deals",
   rank_open_deals: "Ranking open deals",
+  save_memory: "Saving a memory",
   search_knowledge_base: "Searching the knowledge base",
   triage_inbox_lead: "Triaging the lead",
   update_contact: "Updating the contact",

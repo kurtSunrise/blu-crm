@@ -34,6 +34,16 @@ export const SWEEP_STEPS: SweepStep[] = [
     sql: `delete from "ai_audit_log" where thread_id in (${TEST_THREADS})`,
   },
   {
+    // Assistant memories written by the AI specs carry the run's UNIQ token
+    // (a 13-digit timestamp) in their content — the mock echoes it into
+    // save_memory's input, and the settings spec stamps its composer text the
+    // same way. Soft-disabled rows match too. Real memories never carry a
+    // bare millisecond timestamp. Before chat_thread only for tidiness:
+    // source_thread_id is ON DELETE SET NULL, so order is not load-bearing.
+    label: "assistant_memory",
+    sql: `delete from "assistant_memory" where content ~ '${TS}'`,
+  },
+  {
     label: "chat_thread",
     sql: `delete from "chat_thread" where id in (${TEST_THREADS})`,
   },

@@ -114,6 +114,15 @@ export type StreamPayload =
     }
   // Knowledge-base attributions for the current answer
   | { type: "sources"; sources: SourceRef[] }
+  // One numbered citation for the current answer. The marker number also
+  // appears inline in the streamed text (" [N]") right after the cited span;
+  // this payload carries the numbered source card the marker points at.
+  // Markers are assigned per assistant message in order of first appearance,
+  // deduped by title.
+  | { type: "citation"; marker: number; title: string; snippet: string }
+  // The assistant auto-saved a memory (save_memory runs inline, not gated);
+  // the client renders an inline chip with a one-tap Undo that disables it.
+  | { type: "memory_saved"; memoryId: string; content: string }
   // Deterministic follow-up prompts offered as chips after the turn
   | { type: "suggestions"; prompts: string[] }
   | { type: "data_changed"; paths: string[] }

@@ -13,6 +13,11 @@ import type * as React from "react";
 import { useState } from "react";
 import { useAiAssistant } from "@/components/ai/ai-context";
 import { AiRuntimeProvider } from "@/components/ai/ai-runtime-provider";
+import {
+  type CitationRef,
+  insertBeforeSourcesPart,
+  normalizeCitations,
+} from "@/components/ai/artifacts/citation-list";
 import { ChatPanel } from "@/components/ai/chat-panel";
 import type { ResumedConfirmationStatus } from "@/components/ai/confirmation-card";
 import { ThreadHistory } from "@/components/ai/thread-history";
@@ -106,6 +111,9 @@ type ResumedPart =
 
 interface ResumedMessage {
   attachments?: ResumedAttachment[];
+  // Numbered citations for an assistant message; the resumed text already
+  // contains the matching inline " [N]" markers.
+  citations?: CitationRef[];
   id: string;
   parts?: ResumedPart[];
   role: "user" | "assistant";
@@ -196,6 +204,17 @@ const toThreadMessages = (messages: ResumedMessage[]): ThreadMessageLike[] =>
   messages.map((message) => {
     const { dataParts, reasoningText } = toDataParts(message.parts ?? []);
     if (message.role === "assistant") {
+      // Resumed citations become the same single "citations" data part the
+      // live stream folds (normalized: deduped by marker, marker order), and
+      // sit before any persisted "sources" artifact to match the live order.
+      const citations = normalizeCitations(message.citations ?? []);
+      if (citations.length > 0) {
+        insertBeforeSourcesPart(dataParts, {
+          data: { citations },
+          name: "citations",
+          type: "data",
+        });
+      }
       // The persisted message id, in the same invisible message_meta data
       // part the live stream's `done` payload produces, so the feedback
       // thumbs work on resumed turns too.

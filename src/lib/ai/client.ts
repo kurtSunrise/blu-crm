@@ -47,9 +47,12 @@ const overallTimeoutMs = (): number =>
 // Stream callbacks: onText forwards visible text deltas; onActivity fires on
 // otherwise-silent upstream progress (ping / thinking deltas) so the route can
 // keep the client's connection demonstrably alive during the thinking phase;
-// onThinking forwards readable thinking-summary deltas for the reasoning UI.
+// onThinking forwards readable thinking-summary deltas for the reasoning UI;
+// onCitation fires per citations_delta event so the agent loop can number and
+// stream inline citation markers as the cited text arrives.
 export interface StreamHandlers {
   onActivity?: () => void;
+  onCitation?: (citation: Anthropic.TextCitation) => void;
   onText: (delta: string) => void;
   onThinking?: (delta: string) => void;
 }
@@ -179,6 +182,16 @@ const applyDelta = (
     handlers.onThinking?.(delta.thinking);
   } else if (delta.type === "signature_delta") {
     appendString(block, "signature", delta.signature);
+  } else if (delta.type === "citations_delta") {
+    // Citations accumulate onto the owning text block so the assembled
+    // finalMessage preserves them, exactly as a non-streaming response would
+    // (persisted history then replays and re-renders them on resume).
+    const citations: Anthropic.TextCitation[] = Array.isArray(block.citations)
+      ? (block.citations as Anthropic.TextCitation[])
+      : [];
+    citations.push(delta.citation);
+    block.citations = citations;
+    handlers.onCitation?.(delta.citation);
   }
 };
 

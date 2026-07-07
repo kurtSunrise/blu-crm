@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type * as Anthropic from "@/lib/ai/anthropic";
 import { type KnowledgePassage, searchKnowledge } from "@/lib/ai/knowledge";
 import type { SourceRef } from "@/lib/ai/stream-protocol";
 import { type AiTool, defineTool } from "@/lib/ai/tools/types";
@@ -41,6 +42,37 @@ const sourcesFromPassages = (passages: KnowledgePassage[]): SourceRef[] => {
   return sources;
 };
 
+// Native citations (Assistant v3 Phase 3): the passages rendered as
+// search_result content blocks with citations enabled. The agent loop puts
+// these in the LIVE tool_result only, so the model's answer carries typed
+// search_result_location citations this turn; the persisted result keeps the
+// plain resultText JSON, so replayed turns lose citability by design (the
+// same tradeoff as image descriptions). `source` is the doc title
+// (KnowledgePassage has no slug); `title` is "docTitle § heading", or the
+// doc title alone when the chunk has no heading.
+export const buildKnowledgeSearchResults = (
+  passages: KnowledgePassage[]
+): Anthropic.SearchResultBlockParam[] => {
+  // Citations dedupe by title, so two chunks of the same long section must
+  // not share one: a shared title would collapse them onto one marker whose
+  // snippet quotes the wrong chunk. Suffix repeats with a part number.
+  const titleCounts = new Map<string, number>();
+  return passages.map((passage) => {
+    const baseTitle = passage.heading
+      ? `${passage.docTitle} § ${passage.heading}`
+      : passage.docTitle;
+    const seen = titleCounts.get(baseTitle) ?? 0;
+    titleCounts.set(baseTitle, seen + 1);
+    return {
+      citations: { enabled: true },
+      content: [{ text: passage.content, type: "text" }],
+      source: passage.docTitle,
+      title: seen === 0 ? baseTitle : `${baseTitle} (part ${seen + 1})`,
+      type: "search_result",
+    };
+  });
+};
+
 const searchKnowledgeBase = defineTool({
   description:
     "Search Blu's internal knowledge base for company policy and how-we-work guidance: brand voice and tone, the sales process, qualifying rules, and quoting/pricing terms. Call this for 'how do we...', policy, voice, or pricing-rule questions instead of guessing. Returns relevant passages, not CRM records.",
@@ -54,6 +86,9 @@ const searchKnowledgeBase = defineTool({
     }
     return {
       resultText: JSON.stringify(passages),
+      // Live-only citable variant of this result; the loop sends it to the
+      // model this turn while resultText is what history keeps.
+      searchResults: buildKnowledgeSearchResults(passages),
       sources: sourcesFromPassages(passages),
     };
   },

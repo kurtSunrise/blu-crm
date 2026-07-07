@@ -143,6 +143,22 @@ const hasToolResult = (body: AnthropicRequestBody): boolean =>
       message.content.some((block) => block.type === "tool_result")
   );
 
+// Every user text block in the transcript, oldest first. Scenario triggers
+// that must still match on the tool_result turn use this: that turn's LAST
+// user message carries only tool_result blocks, so lastUserText returns "".
+const allUserText = (body: AnthropicRequestBody): string =>
+  (body.messages ?? [])
+    .filter((message) => message.role === "user")
+    .map((message) =>
+      typeof message.content === "string"
+        ? message.content
+        : (message.content ?? [])
+            .filter((block) => block.type === "text")
+            .map((block) => block.text ?? "")
+            .join("\n")
+    )
+    .join("\n");
+
 const lastUserText = (body: AnthropicRequestBody): string => {
   const lastUser = [...(body.messages ?? [])]
     .reverse()
@@ -175,6 +191,18 @@ const KNOWLEDGE_PATTERN = /deposit|policy/i;
 // artifact card; the tool_result turn then closes with text. Matches both
 // the typed ask and the /reports/weekly Ask-AI prefill wording.
 const WEEKLY_REPORT_PATTERN = /weekly report|pipeline report/i;
+// Memory scenario (Assistant v3 Phase 3): save_memory executes inline (no
+// confirmation card), writing a real assistant_memory row; the loop streams
+// a memory_saved payload and the chip renders. The spec's UNIQ token rides
+// into the memory content so assertions can find the row and its 13-digit
+// timestamp keeps it sweepable on the shared DB (see test-data-sweep).
+const MEMORY_PATTERN = /remember|save.*memory/i;
+// Citations scenario (Assistant v3 Phase 3): the first call returns a
+// search_knowledge_base tool_use (so the real tool runs and a flat sources
+// artifact exists for the suppression assertion); the tool_result turn is
+// then answered by streamCitations, whose citations_delta makes the agent
+// loop inject an inline " [1]" marker and emit the numbered citation payload.
+const CITATION_PATTERN = /cite|policy question/i;
 // Hardening scenarios: a turn that opens then goes silent (the app's idle
 // timeout must abort and surface a retryable error) and a turn that pings then
 // pauses before answering (the client's "Thinking…" indicator must show).
@@ -255,6 +283,28 @@ const respond = (body: AnthropicRequestBody): string => {
           { id: `toolu_mock_plan_b_${stamp}`, index: 1 }
         ),
       ],
+      "tool_use"
+    );
+  }
+  if (MEMORY_PATTERN.test(userText)) {
+    const token = userText.match(COMPANY_TOKEN_PATTERN)?.[0];
+    return messageEnvelope(
+      toolUseEvents("save_memory", {
+        content: token
+          ? `Jess prefers SMS follow-ups for Bunnings leads (${token})`
+          : "Jess prefers SMS follow-ups for Bunnings leads",
+      }),
+      "tool_use"
+    );
+  }
+  // Before KNOWLEDGE: the citations trigger ("policy question") also matches
+  // the knowledge pattern, and this scenario needs its own query wording.
+  if (CITATION_PATTERN.test(userText)) {
+    const token = userText.match(COMPANY_TOKEN_PATTERN)?.[0];
+    return messageEnvelope(
+      toolUseEvents("search_knowledge_base", {
+        query: token ? `brand voice ${token}` : "brand voice",
+      }),
       "tool_use"
     );
   }
@@ -422,6 +472,81 @@ const streamReasoning = (res: ServerResponse): void => {
   });
 };
 
+// The exact citation record the Anthropic API attaches to an answering text
+// block when the request carried citable search_result blocks. The agent
+// loop's citations_delta handler numbers it (dedupe key: title), injects the
+// inline " [1]" marker into the visible stream, and emits the numbered
+// citation payload the Sources list renders.
+const CITATIONS_DELTA_EVENT: SseEvent = {
+  data: {
+    delta: {
+      citation: {
+        cited_text:
+          "Blu is The Creative Build Company: warm, confident, and never salesy.",
+        end_block_index: 1,
+        search_result_index: 0,
+        source: "Brand voice",
+        start_block_index: 0,
+        title: "Brand voice § Tone",
+        type: "search_result_location",
+      },
+      type: "citations_delta",
+    },
+    index: 0,
+    type: "content_block_delta",
+  },
+  event: "content_block_delta",
+};
+
+// Scripted closing answer for the citations scenario's tool_result turn:
+// text streams, a citations_delta lands mid-block right after the cited
+// span (so the injected " [1]" sits inside the sentence, as the real API
+// interleaves it), then more text closes the block.
+const streamCitations = (res: ServerResponse): void => {
+  res.write(startFrame());
+  res.write(
+    sse([
+      {
+        data: {
+          content_block: { text: "", type: "text" },
+          index: 0,
+          type: "content_block_start",
+        },
+        event: "content_block_start",
+      },
+      {
+        data: {
+          delta: {
+            text: "Our brand voice policy: lead with warmth",
+            type: "text_delta",
+          },
+          index: 0,
+          type: "content_block_delta",
+        },
+        event: "content_block_delta",
+      },
+      CITATIONS_DELTA_EVENT,
+      {
+        data: {
+          delta: {
+            text: " and keep every follow-up upbeat.",
+            type: "text_delta",
+          },
+          index: 0,
+          type: "content_block_delta",
+        },
+        event: "content_block_delta",
+      },
+      {
+        data: { index: 0, type: "content_block_stop" },
+        event: "content_block_stop",
+      },
+    ])
+  );
+  res.write(endFrame("end_turn"));
+  res.end();
+};
+
 const server = createServer((req, res) => {
   if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "content-type": "text/plain" });
@@ -457,6 +582,13 @@ const server = createServer((req, res) => {
       }
       if (REASONING_PATTERN.test(userText) && !hasToolResult(body)) {
         streamReasoning(res);
+        return;
+      }
+      // The citations scenario's SECOND call: the trigger text lives on the
+      // first user turn (the tool_result turn's own user message has no text
+      // blocks), so the whole transcript is scanned.
+      if (hasToolResult(body) && CITATION_PATTERN.test(allUserText(body))) {
+        streamCitations(res);
         return;
       }
       res.end(respond(body));

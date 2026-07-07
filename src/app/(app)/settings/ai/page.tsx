@@ -1,6 +1,14 @@
-import { Activity, Bot, Cpu, Image as ImageIcon, Sparkles } from "lucide-react";
+import {
+  Activity,
+  BookMarked,
+  Bot,
+  Cpu,
+  Image as ImageIcon,
+  Sparkles,
+} from "lucide-react";
 import { AiModelForm } from "@/components/ai-model-form";
 import { AssistantInstructionsForm } from "@/components/assistant-instructions-form";
+import { AssistantMemorySection } from "@/components/assistant-memory-section";
 import { AssistantUsagePanel } from "@/components/assistant-usage-panel";
 import { AttachmentDescriptionModeForm } from "@/components/attachment-description-mode-form";
 import { SettingsPanel, SettingsSection } from "@/components/settings-section";
@@ -9,6 +17,7 @@ import { getAssistantUsageSummary } from "@/lib/ai/analytics";
 import { getAssistantInstructions } from "@/lib/ai/assistant-instructions";
 import { getAttachmentDescriptionMode } from "@/lib/ai/attachment-describe";
 import { getStoredAiModel } from "@/lib/ai/client";
+import { listMemories, toAssistantMemoryItems } from "@/lib/ai/memory";
 import { requireSession } from "@/lib/session";
 
 export const metadata = {
@@ -42,14 +51,21 @@ export default async function AiPreferencesPage() {
   );
   // Independent reads fan out together (sequential Neon awaits in one render
   // have caused 503s on workerd).
-  const [descriptionMode, assistantInstructions, aiModel, usageSummary] =
-    await Promise.all([
-      getAttachmentDescriptionMode(),
-      getAssistantInstructions(),
-      getStoredAiModel(),
-      getAssistantUsageSummary(),
-    ]);
+  const [
+    descriptionMode,
+    assistantInstructions,
+    aiModel,
+    usageSummary,
+    memories,
+  ] = await Promise.all([
+    getAttachmentDescriptionMode(),
+    getAssistantInstructions(),
+    getStoredAiModel(),
+    getAssistantUsageSummary(),
+    listMemories(session.user.id),
+  ]);
   const aiModelEnvOverride = Boolean(process.env.AI_MODEL);
+  const memoryItems = toAssistantMemoryItems(memories);
 
   return (
     <>
@@ -101,6 +117,19 @@ export default async function AiPreferencesPage() {
       >
         <SettingsPanel>
           <AssistantInstructionsForm instructions={assistantInstructions} />
+        </SettingsPanel>
+      </SettingsSection>
+
+      <SettingsSection
+        description="Facts the assistant has saved from chats and uses to personalise its answers."
+        icon={BookMarked}
+        title="Assistant memory"
+      >
+        <SettingsPanel>
+          <AssistantMemorySection
+            canManageTeamMemories={isAdmin}
+            memories={memoryItems}
+          />
         </SettingsPanel>
       </SettingsSection>
 

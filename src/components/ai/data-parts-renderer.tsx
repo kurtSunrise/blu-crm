@@ -3,6 +3,10 @@
 import { useMessage, useMessageRuntime } from "@assistant-ui/react";
 import { RefreshCwIcon } from "lucide-react";
 import {
+  CitationList,
+  type CitationListData,
+} from "@/components/ai/artifacts/citation-list";
+import {
   DealCardArtifact,
   type DealCardData,
 } from "@/components/ai/artifacts/deal-card-artifact";
@@ -26,6 +30,10 @@ import {
   ConfirmationCard,
   type ConfirmationRequestData,
 } from "@/components/ai/confirmation-card";
+import {
+  MemorySavedChip,
+  type MemorySavedData,
+} from "@/components/ai/memory-saved-chip";
 import { Button } from "@/components/ui/button";
 
 interface DataPart {
@@ -60,15 +68,32 @@ function RetryHintButton() {
 // Artifact cards arrive as unstable data content parts on the assistant
 // message (Billify pattern); MessagePrimitive.Parts skips them, so this
 // renders them after the prose.
+// True when a sibling data part carries at least one numbered citation.
+const hasCitationsPart = (parts: DataPart[]): boolean =>
+  parts.some(
+    (part) =>
+      part.name === "citations" &&
+      ((part.data as { citations?: unknown[] } | null)?.citations?.length ??
+        0) > 0
+  );
+
 export function DataPartsRenderer() {
   const message = useMessage();
   if (!Array.isArray(message.content)) {
     return null;
   }
 
+  const dataParts = message.content.filter(isDataPart);
+  // Suppression rule: when this message carries a numbered citations part,
+  // the flat "sources" chips are skipped so the answer is not attributed
+  // twice. The chips remain the fallback for turns without citations. The
+  // check reads siblings off the message content, so it holds for both live
+  // streams and resumed threads.
+  const suppressSources = hasCitationsPart(dataParts);
+
   return (
     <>
-      {message.content.filter(isDataPart).map((part, index) => {
+      {dataParts.map((part, index) => {
         const key = `${part.name}-${index}`;
         switch (part.name) {
           case "deal_card":
@@ -100,8 +125,16 @@ export function DataPartsRenderer() {
                 key={key}
               />
             );
-          case "sources":
+          case "citations":
             return (
+              <CitationList data={part.data as CitationListData} key={key} />
+            );
+          case "memory_saved":
+            return (
+              <MemorySavedChip data={part.data as MemorySavedData} key={key} />
+            );
+          case "sources":
+            return suppressSources ? null : (
               <SourceChips data={part.data as SourceChipsData} key={key} />
             );
           case "retry_hint":

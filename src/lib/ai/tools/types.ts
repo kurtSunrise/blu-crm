@@ -16,7 +16,15 @@ export interface AiToolOutcome {
   // The agent loop puts these in the live tool result only; the persisted
   // result keeps just resultText so history stays lean and replay-cheap.
   media?: Anthropic.ImageBlockParam[];
+  // Set by save_memory (auto-save, runs inline): the agent loop forwards it
+  // to the client as the `memory_saved` stream payload, which renders the
+  // "Memory saved" chip with its one-tap Undo.
+  memorySaved?: { content: string; memoryId: string };
   resultText: string;
+  // Citable search_result blocks the model should see this turn (native
+  // citations). Like media, live tool result only: the persisted result
+  // keeps resultText, so replayed turns lose citability by design.
+  searchResults?: Anthropic.SearchResultBlockParam[];
   // Knowledge-base attributions behind the answer, streamed to the client as
   // a `sources` payload and rendered as source chips
   sources?: SourceRef[];

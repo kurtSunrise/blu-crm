@@ -8,7 +8,9 @@ import {
   getAssistantInstructions,
 } from "@/lib/ai/assistant-instructions";
 import { recordProposedToolCall } from "@/lib/ai/audit";
+import { createCitationNumberer } from "@/lib/ai/citations";
 import { getAiModel, streamMessage } from "@/lib/ai/client";
+import { buildMemoryBlock } from "@/lib/ai/memory";
 import type {
   ArtifactPayload,
   SourceRef,
@@ -61,6 +63,10 @@ export interface AgentTurnResult {
 interface ToolCallResults {
   artifacts: ArtifactPayload[];
   live: Anthropic.ToolResultBlockParam[];
+  // Auto-saved memories (save_memory runs inline): streamed as memory_saved
+  // payloads and persisted as memory_saved artifact rows so the chip (with
+  // its Undo) re-renders on thread resume.
+  memorySaved: { memoryId: string; content: string }[];
   persisted: Anthropic.ToolResultBlockParam[];
   sources: SourceRef[];
 }
@@ -72,6 +78,7 @@ const runReadToolCalls = async (
 ): Promise<ToolCallResults> => {
   const artifacts: ArtifactPayload[] = [];
   const live: Anthropic.ToolResultBlockParam[] = [];
+  const memorySaved: { memoryId: string; content: string }[] = [];
   const persisted: Anthropic.ToolResultBlockParam[] = [];
   const sources: SourceRef[] = [];
   for (const block of toolUses) {
@@ -92,6 +99,10 @@ const runReadToolCalls = async (
       params.send({ sources: outcome.sources, type: "sources" });
       sources.push(...outcome.sources);
     }
+    if (outcome.memorySaved) {
+      params.send({ ...outcome.memorySaved, type: "memory_saved" });
+      memorySaved.push(outcome.memorySaved);
+    }
     params.send({
       isError: outcome.isError,
       toolName: block.name,
@@ -107,20 +118,24 @@ const runReadToolCalls = async (
     // The Messages API accepts image blocks inside a tool_result, but the
     // SDK's ToolResultBlockParam content type only lists text blocks, so the
     // mixed array is cast to the param type.
-    const liveContent = outcome.media?.length
+    const mediaContent = outcome.media?.length
       ? ([
           { text: outcome.resultText, type: "text" },
           ...outcome.media,
         ] as Anthropic.ToolResultBlockParam["content"])
       : outcome.resultText;
     live.push({
-      content: liveContent,
+      // Citable search_result blocks (when the tool provides them) go to the
+      // model live-only; the persisted result above keeps the lean text.
+      content: outcome.searchResults?.length
+        ? outcome.searchResults
+        : mediaContent,
       is_error: outcome.isError,
       tool_use_id: block.id,
       type: "tool_result",
     });
   }
-  return { artifacts, live, persisted, sources };
+  return { artifacts, live, memorySaved, persisted, sources };
 };
 
 // Turn sections persisted alongside the final assistant message so thread
@@ -207,12 +222,15 @@ export const runAgentTurn = async (
   };
 
   // Built once per turn: the static prompt keeps its own cache breakpoint
-  // (always a hit) and the team instructions, when set, become a second cached
-  // block. Caching is prefix-based, so the static prefix still hits on the rare
-  // turn right after the instructions change.
-  const instructionsBlock = buildInstructionsBlock(
-    await getAssistantInstructions()
-  );
+  // (always a hit), the team instructions become a second cached block, and
+  // the user's remembered context a third (4 breakpoints allowed; 3 used).
+  // Caching is prefix-based, so each block only busts its own suffix when it
+  // changes and the static prefix always hits.
+  const [instructions, memoryBlock] = await Promise.all([
+    getAssistantInstructions(),
+    buildMemoryBlock(ctx.userId),
+  ]);
+  const instructionsBlock = buildInstructionsBlock(instructions);
   const system: Anthropic.TextBlockParam[] = [
     {
       cache_control: { type: "ephemeral" },
@@ -224,6 +242,13 @@ export const runAgentTurn = async (
     system.push({
       cache_control: { type: "ephemeral" },
       text: instructionsBlock,
+      type: "text",
+    });
+  }
+  if (memoryBlock) {
+    system.push({
+      cache_control: { type: "ephemeral" },
+      text: memoryBlock,
       type: "text",
     });
   }
@@ -262,6 +287,14 @@ export const runAgentTurn = async (
         send({ state: "thinking", type: "status" });
       }
     };
+    // Numbered per assistant message, same numberer semantics the resume path
+    // uses (encounter order, dedupe by title), so live and resumed markers
+    // agree. The " [N]" marker is injected into the visible stream only; the
+    // persisted content keeps the API's own citation records untouched.
+    const citationNumberer = createCitationNumberer();
+    // A span citing the same source in consecutive citation events would
+    // stream " [1] [1]"; suppress repeats until other text intervenes.
+    let lastStreamedMarker: number | null = null;
     const finalMessage = await streamMessage(
       {
         max_tokens: MAX_OUTPUT_TOKENS,
@@ -275,11 +308,32 @@ export const runAgentTurn = async (
       },
       {
         onActivity: markThinking,
+        onCitation: (citation) => {
+          const assigned = citationNumberer.assign(citation);
+          if (!assigned) {
+            return;
+          }
+          // The cited span has just finished streaming, so the marker lands
+          // right after it; resume injects the same marker at the block end.
+          if (assigned.marker !== lastStreamedMarker) {
+            send({ delta: ` [${assigned.marker}]`, type: "text" });
+            lastStreamedMarker = assigned.marker;
+          }
+          if (assigned.isNew) {
+            send({
+              marker: assigned.marker,
+              snippet: assigned.snippet,
+              title: assigned.title,
+              type: "citation",
+            });
+          }
+        },
         onText: (delta) => {
           if (!sentResponding) {
             sentResponding = true;
             send({ state: "responding", type: "status" });
           }
+          lastStreamedMarker = null;
           send({ delta, type: "text" });
         },
         onThinking: (delta) => {
@@ -337,10 +391,16 @@ export const runAgentTurn = async (
       await saveMessageArtifacts(
         ctx.threadId,
         assistantMessageId,
-        held.artifacts,
+        [
+          ...held.artifacts,
+          ...held.memorySaved.map((data) => ({
+            artifactType: "memory_saved",
+            data,
+          })),
+        ],
         artifactPosition
       );
-      artifactPosition += held.artifacts.length;
+      artifactPosition += held.artifacts.length + held.memorySaved.length;
       // A confirmation pause ends this request, and the post-approval
       // continuation starts a fresh turn with empty accumulators, so the
       // reasoning and sources gathered so far persist here or never.
@@ -361,19 +421,19 @@ export const runAgentTurn = async (
       return { lastAssistantMessageId };
     }
 
-    const { artifacts, live, persisted, sources } = await runReadToolCalls(
-      toolUses,
-      params,
-      activity
-    );
+    const { artifacts, live, memorySaved, persisted, sources } =
+      await runReadToolCalls(toolUses, params, activity);
     collectSources(sources);
     await saveMessageArtifacts(
       ctx.threadId,
       assistantMessageId,
-      artifacts,
+      [
+        ...artifacts,
+        ...memorySaved.map((data) => ({ artifactType: "memory_saved", data })),
+      ],
       artifactPosition
     );
-    artifactPosition += artifacts.length;
+    artifactPosition += artifacts.length + memorySaved.length;
     await appendThreadMessage(ctx.threadId, "user", persisted);
     messages.push({ content: live, role: "user" });
   }

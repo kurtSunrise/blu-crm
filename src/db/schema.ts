@@ -677,6 +677,40 @@ export const chatFeedback = pgTable(
   ]
 );
 
+// Cross-thread assistant memory (Assistant v3 Phase 3): durable facts and
+// preferences the assistant saves automatically via the save_memory tool and
+// injects into future conversations. userId NULL means the memory is
+// org-wide (visible to every user's assistant); a non-null userId scopes it
+// to that person. Soft delete via disabledAt so the review UI in Settings
+// and the in-chat Undo chip never hard-delete history.
+export const assistantMemory = pgTable(
+  "assistant_memory",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+    content: text("content").notNull(),
+    // The chat thread the memory was saved from, for provenance in the
+    // review UI. Detached (not deleted) if the thread goes away.
+    sourceThreadId: text("source_thread_id").references(() => chatThread.id, {
+      onDelete: "set null",
+    }),
+    disabledAt: timestamp("disabled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // Every read path filters by scope + active: own rows, org rows (NULL
+    // user_id lands in the index too), disabled_at IS NULL.
+    index("assistant_memory_user_idx").on(table.userId, table.disabledAt),
+  ]
+);
+
 // ---------------------------------------------------------------------------
 // Knowledge base — a small corpus of company "how we work" docs (brand voice,
 // sales process, quoting/pricing rules). The assistant searches it via the
@@ -735,6 +769,7 @@ export const schema = {
   activity,
   aiAuditLog,
   appSetting,
+  assistantMemory,
   attachment,
   chatArtifact,
   chatFeedback,

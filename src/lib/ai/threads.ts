@@ -28,6 +28,7 @@ import {
   isBluMediaBlock,
   rehydrateMediaInMessages,
 } from "@/lib/ai/attachments";
+import { assignCitationMarkers, type CitationRef } from "@/lib/ai/citations";
 import { summarizeToolCall } from "@/lib/ai/tools";
 
 // Replay cap (least-context): only the tail of long threads goes back to the
@@ -428,6 +429,12 @@ export type DisplayMessagePart =
 
 export interface DisplayMessage {
   attachments: DisplayMessageAttachment[];
+  // The numbered knowledge sources behind an assistant answer, re-derived on
+  // resume from the citations persisted inside the message's text blocks.
+  // Marker numbers match the " [N]" markers injected into `text`, assigned in
+  // order of first appearance and deduped by title (see src/lib/ai/citations).
+  // Absent when the message cites nothing.
+  citations?: CitationRef[];
   id: string;
   parts: DisplayMessagePart[];
   role: "user" | "assistant";
@@ -461,6 +468,36 @@ const displayTextFromContent = (content: unknown): string => {
     }
   }
   return parts.join("\n\n");
+};
+
+// Display text plus derived citation markers for a persisted turn. Cited
+// text blocks get " [N]" appended right after their text (one per distinct
+// marker they cite, ascending); the numbered list rides on the message as
+// `citations`. Marker assignment lives in src/lib/ai/citations.ts so this
+// resume path numbers identically to the live stream.
+const displayTextWithCitations = (
+  content: unknown
+): { citations: CitationRef[]; text: string } => {
+  if (typeof content === "string") {
+    return { citations: [], text: content };
+  }
+  if (!Array.isArray(content)) {
+    return { citations: [], text: "" };
+  }
+  const { citations, markersForBlock } = assignCitationMarkers(content);
+  const parts: string[] = [];
+  content.forEach((block, index) => {
+    if (
+      !isDisplayTextBlock(block) ||
+      block.text.startsWith(PAGE_CONTEXT_PREFIX)
+    ) {
+      return;
+    }
+    const markers = markersForBlock[index] ?? [];
+    const suffix = markers.map((marker) => ` [${marker}]`).join("");
+    parts.push(`${block.text}${suffix}`);
+  });
+  return { citations, text: parts.join("\n\n") };
 };
 
 // The attachments carried by a persisted user turn, rebuilt from the
@@ -602,12 +639,14 @@ export const loadThreadDisplayMessages = async (
           type: "confirmation",
         });
       }
+      const { citations, text } = displayTextWithCitations(row.content);
       return {
         attachments: displayAttachmentsFromContent(row.content),
+        ...(citations.length > 0 ? { citations } : {}),
         id: row.id,
         parts,
         role: row.role,
-        text: displayTextFromContent(row.content).trim(),
+        text: text.trim(),
       };
     })
     .filter(
@@ -628,6 +667,30 @@ const isPlainUserTurn = (message: Anthropic.MessageParam): boolean => {
   return message.content.every((block) => block.type !== "tool_result");
 };
 
+// Persisted assistant text blocks can carry citation records, but their
+// search_result sources are NOT replayed (tool results persist as lean text
+// by design) and the API rejects a citation whose source index is missing
+// ("Invalid search result index in citation", verified 07/2026 against the
+// live API). Strip citations from replayed content; the display path still
+// reads them from the stored rows.
+const stripCitationsFromContent = (content: unknown): unknown => {
+  if (!Array.isArray(content)) {
+    return content;
+  }
+  return content.map((block) => {
+    if (
+      typeof block === "object" &&
+      block !== null &&
+      (block as { type?: unknown }).type === "text" &&
+      "citations" in block
+    ) {
+      const { citations: _dropped, ...rest } = block as Record<string, unknown>;
+      return rest;
+    }
+    return block;
+  });
+};
+
 // Returns the replayable history, oldest first, trimmed to start on a fresh
 // user turn so the Anthropic message constraints hold.
 export const loadThreadMessages = async (
@@ -643,7 +706,9 @@ export const loadThreadMessages = async (
   const messages = rows.reverse().map(
     (row) =>
       ({
-        content: row.content as Anthropic.MessageParam["content"],
+        content: stripCitationsFromContent(
+          row.content
+        ) as Anthropic.MessageParam["content"],
         role: row.role,
       }) as Anthropic.MessageParam
   );

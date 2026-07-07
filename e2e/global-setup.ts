@@ -47,6 +47,7 @@ const signInForSuite = async (): Promise<void> => {
 // delete).
 const TABLES_TO_CLEAR = [
   "ai_audit_log",
+  "assistant_memory",
   "chat_message",
   "chat_thread",
   "notification",

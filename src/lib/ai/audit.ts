@@ -27,6 +27,33 @@ export const recordProposedToolCall = async (params: {
   });
 };
 
+// For inline-executed tools (save_memory): the write happens without a
+// confirmation round-trip, so one row lands directly as "executed".
+// messageId is optional because AiToolContext does not carry it (the
+// assistant chat_message does not exist yet while tools run mid-turn);
+// inline rows anchor to the thread only.
+export const recordExecutedToolCall = async (params: {
+  input: unknown;
+  messageId?: string;
+  result?: unknown;
+  threadId: string;
+  toolName: string;
+  toolUseId: string;
+  userId: string;
+}): Promise<void> => {
+  await db.insert(aiAuditLog).values({
+    input: params.input,
+    messageId: params.messageId ?? null,
+    resolvedAt: new Date(),
+    result: params.result,
+    status: "executed",
+    threadId: params.threadId,
+    toolName: params.toolName,
+    toolUseId: params.toolUseId,
+    userId: params.userId,
+  });
+};
+
 export const resolveAuditedToolCall = async (params: {
   confirmedBy?: string;
   error?: string;

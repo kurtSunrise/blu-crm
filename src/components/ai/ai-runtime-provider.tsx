@@ -20,6 +20,11 @@ import {
   type PendingConfirmation,
   useAiAssistant,
 } from "@/components/ai/ai-context";
+import {
+  type CitationRef,
+  insertBeforeSourcesPart,
+  normalizeCitations,
+} from "@/components/ai/artifacts/citation-list";
 import { createChatAttachmentAdapter } from "@/components/ai/chat-attachment-adapter";
 import {
   type ConfirmationItem,
@@ -312,6 +317,36 @@ const upsertSources = (
   parts.push({ data: { sources: merged }, name: "sources", type: "data" });
 };
 
+// Keeps exactly one "citations" data part per message: merge with the
+// existing part, dedupe by marker (first payload for a number wins), sort by
+// marker. Same merge pattern as upsertSources above. If a flat "sources"
+// part already exists the citations part is re-inserted before it, so the
+// numbered list always precedes the fallback chips (and upsertSources always
+// re-pushes sources to the end, keeping the order stable in both arrival
+// orders).
+const upsertCitations = (
+  parts: AssistantContentPart[],
+  incoming: CitationRef[]
+): void => {
+  const existingIndex = parts.findIndex(
+    (part) => part.type === "data" && part.name === "citations"
+  );
+  const existing = parts[existingIndex];
+  const current =
+    existing?.type === "data"
+      ? ((existing.data as { citations?: CitationRef[] }).citations ?? [])
+      : [];
+  if (existingIndex >= 0) {
+    parts.splice(existingIndex, 1);
+  }
+  const merged = normalizeCitations([...current, ...incoming]);
+  insertBeforeSourcesPart(parts, {
+    data: { citations: merged },
+    name: "citations",
+    type: "data",
+  });
+};
+
 // Older servers omit items on confirmation_request; wrap the legacy
 // single-write fields so the checklist card always receives items.
 const confirmationItemsOf = (payload: {
@@ -394,6 +429,26 @@ const applyPayload = (
     }
     case "sources":
       upsertSources(state.parts, payload.sources);
+      return snapshotOf(state);
+    case "citation":
+      // The inline " [N]" marker already arrived inside the text deltas;
+      // this payload carries the numbered card the marker points at.
+      upsertCitations(state.parts, [
+        {
+          marker: payload.marker,
+          snippet: payload.snippet,
+          title: payload.title,
+        },
+      ]);
+      return snapshotOf(state);
+    case "memory_saved":
+      // One chip per payload, in stream order (no merging: each save is its
+      // own undoable row).
+      state.parts.push({
+        data: { content: payload.content, memoryId: payload.memoryId },
+        name: "memory_saved",
+        type: "data",
+      });
       return snapshotOf(state);
     case "suggestions":
       callbacks.stashSuggestions(payload.prompts);

@@ -13,8 +13,35 @@ export interface Usage {
   output_tokens: number;
 }
 
+// Citation attached to a response text block when the request carried
+// citable content (search_result blocks with citations enabled). Only
+// search_result_location is modelled fully; the fallback member keeps the
+// union open so other location types (char_location, page_location, ...)
+// parse without breaking, and callers narrow with a type guard.
+export interface SearchResultLocationCitation {
+  cited_text: string;
+  // Exclusive end index of the cited block range in the search result's
+  // content array; always greater than start_block_index.
+  end_block_index: number;
+  // 0-based index of the cited search_result block among all search_result
+  // blocks in the request, in the order they appear.
+  search_result_index: number;
+  source: string;
+  start_block_index: number;
+  title: string | null;
+  type: "search_result_location";
+}
+
+export interface UnknownCitation {
+  cited_text?: string;
+  type: string;
+  [key: string]: unknown;
+}
+
+export type TextCitation = SearchResultLocationCitation | UnknownCitation;
+
 export interface TextBlock {
-  citations?: unknown[] | null;
+  citations?: TextCitation[] | null;
   text: string;
   type: "text";
 }
@@ -60,9 +87,26 @@ export interface ToolUseBlockParam {
   type: "tool_use";
 }
 
+// A retrieved passage sent back to the model with citations enabled, either
+// inside a tool_result content array (dynamic RAG: search_knowledge_base) or
+// as top-level user content. The model's answering text blocks then carry
+// search_result_location citations pointing back at these blocks.
+export interface SearchResultBlockParam {
+  cache_control?: CacheControlEphemeral | null;
+  citations?: { enabled: boolean };
+  content: TextBlockParam[];
+  source: string;
+  title: string;
+  type: "search_result";
+}
+
 export interface ToolResultBlockParam {
   cache_control?: CacheControlEphemeral | null;
-  content?: string | Array<TextBlockParam | { [key: string]: unknown }>;
+  content?:
+    | string
+    | Array<
+        TextBlockParam | SearchResultBlockParam | { [key: string]: unknown }
+      >;
   is_error?: boolean;
   tool_use_id: string;
   type: "tool_result";
@@ -114,6 +158,7 @@ export type ContentBlockParam =
   | TextBlockParam
   | ImageBlockParam
   | DocumentBlockParam
+  | SearchResultBlockParam
   | ToolUseBlockParam
   | ToolResultBlockParam
   | ThinkingBlockParam
@@ -195,7 +240,7 @@ export interface SignatureDelta {
 }
 
 export interface CitationsDelta {
-  citation: unknown;
+  citation: TextCitation;
   type: "citations_delta";
 }
 

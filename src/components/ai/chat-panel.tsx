@@ -25,7 +25,9 @@ import {
   FileTextIcon,
   HandshakeIcon,
   Loader2Icon,
+  MicIcon,
   PaperclipIcon,
+  PencilIcon,
   RefreshCwIcon,
   SparklesIcon,
   SquareIcon,
@@ -46,6 +48,7 @@ import {
   useState,
 } from "react";
 import { useAiAssistant } from "@/components/ai/ai-context";
+import { useComposerMenus } from "@/components/ai/composer-menus";
 import { DataPartsRenderer } from "@/components/ai/data-parts-renderer";
 import { MarkdownText } from "@/components/ai/markdown-text";
 import { TooltipIconButton } from "@/components/ai/tooltip-icon-button";
@@ -207,15 +210,159 @@ function FollowUpSuggestions() {
   );
 }
 
-function UserMessage() {
+// The plain text of a message's content parts, for prefilling the edit box.
+const selectMessageText = (message: {
+  content: readonly { type: string }[];
+}): string =>
+  message.content
+    .filter(
+      (part): part is { type: "text"; text: string } =>
+        part.type === "text" &&
+        typeof (part as { text?: unknown }).text === "string"
+    )
+    .map((part) => part.text)
+    .join("\n");
+
+// Edit affordance for the LAST user message only, and only while nothing is
+// running and no write plan awaits review (an edited resubmit replaces the
+// thread's tail server-side, which must never race a pending confirmation).
+// Same hover/touch visibility treatment as the assistant action bar.
+function EditMessageButton({ onBeginEdit }: { onBeginEdit: () => void }) {
+  const { pendingConfirmation } = useAiAssistant();
+  const messageId = useMessage((message) => message.id);
+  const isRunning = useThread((thread) => thread.isRunning);
+  const isLastUserMessage = useThread((thread) => {
+    for (let index = thread.messages.length - 1; index >= 0; index--) {
+      const message = thread.messages[index];
+      if (message?.role === "user") {
+        return message.id === messageId;
+      }
+    }
+    return false;
+  });
+
+  if (!isLastUserMessage || isRunning || pendingConfirmation) {
+    return null;
+  }
+
   return (
-    <MessagePrimitive.Root className="fade-in slide-in-from-bottom-1 flex animate-in flex-col items-end gap-1.5 py-1.5 duration-200">
+    <div className="-my-2 flex justify-end transition-opacity group-focus-within:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100">
+      <Button
+        aria-label="Edit message"
+        className="size-11 rounded-md text-muted-foreground"
+        onClick={onBeginEdit}
+        size="icon"
+        type="button"
+        variant="ghost"
+      >
+        <PencilIcon aria-hidden className="size-3.5" />
+      </Button>
+    </div>
+  );
+}
+
+// Inline editor that swaps in for the bubble. Send goes through the
+// message's edit composer with runConfig.custom.editedMessage, so the
+// runtime replaces the tail locally while the adapter tells the server to
+// replace the persisted turn (POST /api/chat editedMessage). A 409 (the span
+// after this turn executed writes) surfaces the server's wording exactly
+// like the regenerate path.
+function UserMessageEditor({
+  initialText,
+  onClose,
+}: {
+  initialText: string;
+  onClose: () => void;
+}) {
+  const messageRuntime = useMessageRuntime();
+  const [draft, setDraft] = useState(initialText);
+  const fieldId = useId();
+  const trimmed = draft.trim();
+
+  const send = () => {
+    if (!trimmed) {
+      return;
+    }
+    if (trimmed === initialText.trim()) {
+      onClose();
+      return;
+    }
+    const composer = messageRuntime.composer;
+    composer.beginEdit();
+    composer.setText(trimmed);
+    composer.setRunConfig({ custom: { editedMessage: trimmed } });
+    composer.send();
+    onClose();
+  };
+
+  return (
+    <div className="w-full rounded-2xl border bg-muted/30 p-2">
+      <Label className="sr-only" htmlFor={fieldId}>
+        Edit your message
+      </Label>
+      <Textarea
+        autoFocus
+        className="bg-background"
+        id={fieldId}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onClose();
+            return;
+          }
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            send();
+          }
+        }}
+        rows={3}
+        value={draft}
+      />
+      <div className="mt-2 flex justify-end gap-1.5">
+        <Button
+          className="min-h-11 px-4"
+          onClick={onClose}
+          type="button"
+          variant="ghost"
+        >
+          Cancel
+        </Button>
+        <Button
+          className="min-h-11 px-4"
+          disabled={!trimmed}
+          onClick={send}
+          type="button"
+        >
+          Send
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function UserMessage() {
+  const [editing, setEditing] = useState(false);
+  const text = useMessage(selectMessageText);
+
+  return (
+    <MessagePrimitive.Root className="fade-in slide-in-from-bottom-1 group flex animate-in flex-col items-end gap-1.5 py-1.5 duration-200">
       <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5 empty:hidden">
         <MessagePrimitive.Attachments components={ATTACHMENT_COMPONENTS} />
       </div>
-      <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-blu px-3.5 py-2 text-sm text-white empty:hidden">
-        <MessagePrimitive.Parts />
-      </div>
+      {editing ? (
+        <UserMessageEditor
+          initialText={text}
+          onClose={() => setEditing(false)}
+        />
+      ) : (
+        <>
+          <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-blu px-3.5 py-2 text-sm text-white empty:hidden">
+            <MessagePrimitive.Parts />
+          </div>
+          <EditMessageButton onBeginEdit={() => setEditing(true)} />
+        </>
+      )}
     </MessagePrimitive.Root>
   );
 }
@@ -747,6 +894,39 @@ function AddAttachmentButton({
   );
 }
 
+// Chips for transcribed voice notes whose audio will ride the next send as
+// an attachment (ai-context's voiceAttachmentIds, consumed by the runtime
+// adapter). Removing one drops the audio; the list clears after send.
+function VoiceNoteChips() {
+  const { removeVoiceAttachment, voiceAttachmentIds } = useAiAssistant();
+  if (voiceAttachmentIds.length === 0) {
+    return null;
+  }
+  return (
+    <>
+      {voiceAttachmentIds.map((attachmentId) => (
+        <span
+          className="flex items-center gap-1.5 rounded-full border bg-muted py-1 pr-1 pl-3 text-foreground text-xs"
+          key={attachmentId}
+        >
+          <MicIcon aria-hidden className="size-3.5 shrink-0 text-blu" />
+          Voice note attached
+          <Button
+            aria-label="Remove voice note"
+            className="-my-3 -mr-1 size-11 rounded-full text-muted-foreground"
+            onClick={() => removeVoiceAttachment(attachmentId)}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <XIcon aria-hidden className="size-3.5" />
+          </Button>
+        </span>
+      ))}
+    </>
+  );
+}
+
 // Copilot-style context chip: shows which deal or contact the assistant is
 // drawing on (registered by the page via AiEntityBeacon and already sent to
 // /api/chat as pageContext; this makes that invisible context visible).
@@ -792,12 +972,14 @@ function Composer() {
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   useComposerPrefill(inputRef);
+  const { inputProps, menu } = useComposerMenus(inputRef);
 
   return (
     <div className="flex w-full flex-col gap-2">
       <ContextChip />
       <div className="flex flex-wrap items-center gap-1.5 empty:hidden">
         <ComposerPrimitive.Attachments components={ATTACHMENT_COMPONENTS} />
+        <VoiceNoteChips />
         {uploading ? (
           <span className="flex items-center gap-1 text-muted-foreground text-xs">
             <Loader2Icon aria-hidden className="size-3.5 animate-spin" />
@@ -815,6 +997,7 @@ function Composer() {
           {voiceError}
         </p>
       ) : null}
+      {menu}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop dropzone wrapping interactive composer children, matching assistant-ui's own ComposerPrimitive.AttachmentDropzone (an unlabelled div with the same handlers) */}
       {/* biome-ignore lint/a11y/noNoninteractiveElementInteractions: see above */}
       <div
@@ -849,6 +1032,7 @@ function Composer() {
             placeholder="Ask the Blu assistant…"
             ref={inputRef}
             rows={1}
+            {...inputProps}
           />
           <AssistantIf condition={({ thread }) => !thread.isRunning}>
             <ComposerPrimitive.Send asChild>

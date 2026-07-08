@@ -171,7 +171,9 @@ const pauseForConfirmation = async (
 ): Promise<void> => {
   const items = writes.map((block) => ({
     input: block.input,
-    summary: summarizeToolCall(block.name),
+    // Input-aware so variants like "Log activity with voice note" match the
+    // resumed card's wording.
+    summary: summarizeToolCall(block.name, block.input),
     toolName: block.name,
     toolUseId: block.id,
   }));

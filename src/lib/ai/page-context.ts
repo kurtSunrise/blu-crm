@@ -12,8 +12,15 @@ import { formatAudFromCents, formatDateAwst } from "@/lib/format";
 export interface PageContextInput {
   contactId?: string;
   dealId?: string;
+  // Entities @-mentioned in the composer (Assistant v3 Phase 4). Only ids
+  // travel from the client; the headers are looked up here like everything
+  // else. Capped at MAX_MENTIONED_ENTITIES each.
+  mentionedContactIds?: string[];
+  mentionedDealIds?: string[];
   pathname: string;
 }
+
+const MAX_MENTIONED_ENTITIES = 5;
 
 // The URL is the reliable source of truth for the open entity: the client may
 // not register it (e.g. the chat was opened on another page first), but the
@@ -63,7 +70,14 @@ const describePage = (pathname: string): string => {
   return "the app";
 };
 
-const dealHeader = async (dealId: string): Promise<string | null> => {
+// "viewing" is the open page's entity; "mentioned" is an @-mention typed
+// into the composer. Same lookup, different framing in the prompt.
+type EntityRelation = "mentioned" | "viewing";
+
+const dealHeader = async (
+  dealId: string,
+  relation: EntityRelation
+): Promise<string | null> => {
   const rows = await db
     .select({
       companyName: company.name,
@@ -97,10 +111,16 @@ const dealHeader = async (dealId: string): Promise<string | null> => {
     row.fixedDate ? `fixed date: ${formatDateAwst(row.fixedDate)}` : null,
   ].filter((part): part is string => part !== null);
 
+  if (relation === "mentioned") {
+    return `The user mentioned deal ${parts.join(", ")}. Use get_deal for its full record.`;
+  }
   return `The user is viewing deal ${parts.join(", ")}. Use get_deal for its full record before answering detailed questions about it.`;
 };
 
-const contactHeader = async (contactId: string): Promise<string | null> => {
+const contactHeader = async (
+  contactId: string,
+  relation: EntityRelation
+): Promise<string | null> => {
   const rows = await db
     .select({ companyName: company.name, name: contact.name })
     .from(contact)
@@ -113,6 +133,9 @@ const contactHeader = async (contactId: string): Promise<string | null> => {
     return null;
   }
   const suffix = row.companyName ? ` (${row.companyName})` : "";
+  if (relation === "mentioned") {
+    return `The user mentioned contact ${row.name}${suffix}. Use get_contact for their full record.`;
+  }
   return `The user is viewing contact ${row.name}${suffix}. Use get_contact for their full record.`;
 };
 
@@ -133,7 +156,11 @@ const companyHeader = async (companyId: string): Promise<string | null> => {
 
 export const buildPageContext = async (
   input: PageContextInput,
-  userName: string
+  userName: string,
+  // Server-derived ids of audio chat_attachments on this message. The audio
+  // itself never reaches the model, so this line is the ONLY way it can learn
+  // the id log_activity needs to file the recording (FR-7.7).
+  voiceNoteAttachmentIds: string[] = []
 ): Promise<string> => {
   const lines: string[] = [
     `Today is ${formatDateAwst(new Date())} (AWST).`,
@@ -146,23 +173,41 @@ export const buildPageContext = async (
   const contactId = input.contactId ?? contactIdFromPath(input.pathname);
   const companyId = companyIdFromPath(input.pathname);
 
-  if (dealId) {
-    const header = await dealHeader(dealId);
+  // Mentions duplicating the viewed entity add nothing; drop them. The zod
+  // layer already caps these, the slice is defensive for other callers.
+  const mentionedDealIds = (input.mentionedDealIds ?? [])
+    .filter((id) => id !== dealId)
+    .slice(0, MAX_MENTIONED_ENTITIES);
+  const mentionedContactIds = (input.mentionedContactIds ?? [])
+    .filter((id) => id !== contactId)
+    .slice(0, MAX_MENTIONED_ENTITIES);
+
+  // Every header lookup is independent; fan them out together (sequential
+  // Neon awaits in one request are what caused the deal-page 503s).
+  const [viewedDeal, viewedContact, viewedCompany, ...mentioned] =
+    await Promise.all([
+      dealId ? dealHeader(dealId, "viewing") : Promise.resolve(null),
+      contactId ? contactHeader(contactId, "viewing") : Promise.resolve(null),
+      companyId ? companyHeader(companyId) : Promise.resolve(null),
+      ...mentionedDealIds.map((id) => dealHeader(id, "mentioned")),
+      ...mentionedContactIds.map((id) => contactHeader(id, "mentioned")),
+    ]);
+
+  for (const header of [
+    viewedDeal,
+    viewedContact,
+    viewedCompany,
+    ...mentioned,
+  ]) {
     if (header) {
       lines.push(header);
     }
   }
-  if (contactId) {
-    const header = await contactHeader(contactId);
-    if (header) {
-      lines.push(header);
-    }
-  }
-  if (companyId) {
-    const header = await companyHeader(companyId);
-    if (header) {
-      lines.push(header);
-    }
+
+  for (const id of voiceNoteAttachmentIds.slice(0, MAX_MENTIONED_ENTITIES)) {
+    lines.push(
+      `A voice note is attached to this message (audioAttachmentId: ${id}). When the user asks to file or log this note as an activity, pass this id to log_activity's audioAttachmentId so the recording is attached.`
+    );
   }
 
   return `<page_context>\n${lines.join("\n")}\n</page_context>`;

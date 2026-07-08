@@ -9,6 +9,7 @@ import type * as Anthropic from "@/lib/ai/anthropic";
 import { saveMessageArtifacts } from "@/lib/ai/artifact-store";
 import { resolveAssistantUser } from "@/lib/ai/assistant-user";
 import {
+  audioAttachmentIdsOf,
   type BluMediaBlock,
   buildMediaRefBlocks,
   linkAttachmentsToThread,
@@ -27,9 +28,11 @@ import {
   createThread,
   getThreadForUser,
   loadThreadMessages,
+  maybeCompactThread,
   type PendingPlan,
   type PendingPlanItem,
   parsePendingPlan,
+  rollbackForEdit,
   rollbackToLastPlainUserTurn,
   type ThreadRecord,
 } from "@/lib/ai/threads";
@@ -74,6 +77,13 @@ const MAX_CHAT_ATTACHMENTS = 5;
 // that would bloat the model input and stretch one turn toward a timeout.
 const MAX_MESSAGE_LENGTH = 16_000;
 
+// Edited turns are composed by hand in the edit box, never pasted email
+// threads, so they get a tighter cap (pinned contract with the chat UI).
+const MAX_EDITED_MESSAGE_LENGTH = 4000;
+
+// @-mentions resolved to context headers; a handful is plenty for one turn.
+const MAX_MENTIONED_ENTITIES = 5;
+
 // Matches the write-plan review card: one decision per plan item.
 const MAX_PLAN_DECISIONS = 10;
 
@@ -100,10 +110,28 @@ const chatRequestSchema = z
         toolUseId: z.string().optional(),
       })
       .optional(),
+    // Replaces the thread's last plain user turn (edit + resubmit): the turn
+    // and everything after it roll back, then this text runs as a new message
+    editedMessage: z
+      .string()
+      .trim()
+      .min(1)
+      .max(MAX_EDITED_MESSAGE_LENGTH)
+      .optional(),
     message: z.string().min(1).max(MAX_MESSAGE_LENGTH).optional(),
     pageContext: z.object({
       contactId: z.string().optional(),
       dealId: z.string().optional(),
+      // Entities @-mentioned in the composer; resolved server-side to the
+      // same minimal headers as the viewed entity (least-context, PRD §9.3)
+      mentionedContactIds: z
+        .array(z.uuid())
+        .max(MAX_MENTIONED_ENTITIES)
+        .optional(),
+      mentionedDealIds: z
+        .array(z.uuid())
+        .max(MAX_MENTIONED_ENTITIES)
+        .optional(),
       pathname: z.string(),
     }),
     // Re-answer the thread's last plain user turn instead of adding one
@@ -113,13 +141,28 @@ const chatRequestSchema = z
   .refine(
     (value) =>
       Boolean(value.message) ||
+      Boolean(value.editedMessage) ||
       Boolean(value.confirmation) ||
       value.regenerate === true,
-    { message: "Provide a message, a confirmation, or a regenerate flag" }
+    {
+      message:
+        "Provide a message, an edited message, a confirmation, or a regenerate flag",
+    }
   )
   .refine(
-    (value) => !(value.regenerate && (value.message || value.confirmation)),
-    { message: "Regenerate cannot be combined with a message or confirmation" }
+    (value) =>
+      !(
+        value.regenerate &&
+        (value.message || value.confirmation || value.editedMessage)
+      ),
+    { message: "Regenerate cannot be combined with another request kind" }
+  )
+  .refine(
+    (value) => !(value.editedMessage && (value.message || value.confirmation)),
+    {
+      message:
+        "An edited message cannot be combined with a message or confirmation",
+    }
   );
 
 type ChatRequestBody = z.infer<typeof chatRequestSchema>;
@@ -360,14 +403,23 @@ const buildMessageContent = async (params: {
     // stuck awaiting a confirmation that can never resolve.
     await clearThreadPending(thread.id);
   }
-  const pageContext = await buildPageContext(body.pageContext, userName);
+  // Voice-note ids ride inside <page_context>: the audio never reaches the
+  // model, so this line is its only way to learn the id log_activity needs.
+  const voiceNoteIds = body.attachmentIds?.length
+    ? await audioAttachmentIdsOf(body.attachmentIds, userId)
+    : [];
+  const pageContext = await buildPageContext(
+    body.pageContext,
+    userName,
+    voiceNoteIds
+  );
   content.push(
     { text: pageContext, type: "text" },
     { text: message, type: "text" }
   );
   if (body.attachmentIds?.length) {
-    content.push(...(await buildMediaRefBlocks(body.attachmentIds)));
-    await linkAttachmentsToThread(body.attachmentIds, thread.id);
+    content.push(...(await buildMediaRefBlocks(body.attachmentIds, userId)));
+    await linkAttachmentsToThread(body.attachmentIds, thread.id, userId);
   }
   return content;
 };
@@ -433,10 +485,84 @@ const guardRegenerate = async (
   return null;
 };
 
+// Edit + resubmit pre-flight (Assistant v3 Phase 4): rolls the thread back
+// past its most recent plain user turn, deleting that turn too so the edited
+// text replaces it. A pending plan is superseded exactly like a new message
+// supersedes one (every item denied, FR-7.8), except the held tool_results
+// are discarded because the proposal turn they answer is being deleted. The
+// denial runs via rollbackForEdit's beforeDelete hook, after the conflict
+// check has passed, so a rejected edit leaves the pending plan untouched and
+// a crash between the denial and the delete is healed by retrying the edit.
+const guardEdit = async (params: {
+  plan: PendingPlan | null;
+  thread: ThreadRecord;
+  userId: string;
+}): Promise<Response | null> => {
+  const { plan, thread, userId } = params;
+  const rollback = await rollbackForEdit(thread.id, async () => {
+    if (plan) {
+      await denySupersededPlan(thread.id, userId, plan);
+    } else if (thread.status === "awaiting_confirmation") {
+      // Unparseable pending blob: release the thread rather than leaving it
+      // stuck (mirrors the new-message path in buildMessageContent).
+      await clearThreadPending(thread.id);
+    }
+  });
+  if (rollback === "conflict") {
+    return NextResponse.json(
+      {
+        error:
+          "This part of the conversation made changes and cannot be edited.",
+      },
+      { status: 409 }
+    );
+  }
+  if (rollback === "no_user_turn") {
+    return NextResponse.json(
+      { error: "Nothing to edit yet." },
+      { status: 400 }
+    );
+  }
+  return null;
+};
+
+// Request-shape pre-flight: rejections that need no thread lookup. Returns
+// null when the request may proceed.
+const rejectBeforeThread = async (
+  parsedBody: ChatRequestBody,
+  userId: string
+): Promise<Response | null> => {
+  if (parsedBody.regenerate && !parsedBody.threadId) {
+    return NextResponse.json(
+      { error: "Regenerate requires a thread" },
+      { status: 400 }
+    );
+  }
+  if (parsedBody.editedMessage && !parsedBody.threadId) {
+    return NextResponse.json(
+      { error: "Editing requires a thread" },
+      { status: 400 }
+    );
+  }
+  // Checked before thread creation so an over-cap request never leaves an
+  // empty thread behind.
+  if ((await countMessagesToday(userId)) >= dailyMessageLimit()) {
+    return NextResponse.json(
+      {
+        error:
+          "Daily assistant limit reached. It resets at midnight UTC; contact an admin if you need more.",
+      },
+      { status: 429 }
+    );
+  }
+  return null;
+};
+
 // The AI assistant chat endpoint (M4 / FR-7). Streams NDJSON payloads; the
 // thread, messages, tool outcomes, and artifacts are persisted server-side so
 // the conversation can resume across reloads. A POST carries a new user
-// message, the resolution of a pending write plan, or a regenerate request.
+// message, an edited replacement for the last user turn, the resolution of a
+// pending write plan, or a regenerate request.
 export async function POST(request: Request): Promise<Response> {
   const assistantUser = await resolveAssistantUser(request);
   if (!assistantUser) {
@@ -463,23 +589,9 @@ export async function POST(request: Request): Promise<Response> {
 
   const userId = assistantUser.id;
 
-  if (parsedBody.regenerate && !parsedBody.threadId) {
-    return NextResponse.json(
-      { error: "Regenerate requires a thread" },
-      { status: 400 }
-    );
-  }
-
-  // Checked before thread creation so an over-cap request never leaves an
-  // empty thread behind.
-  if ((await countMessagesToday(userId)) >= dailyMessageLimit()) {
-    return NextResponse.json(
-      {
-        error:
-          "Daily assistant limit reached. It resets at midnight UTC; contact an admin if you need more.",
-      },
-      { status: 429 }
-    );
+  const preflightRejection = await rejectBeforeThread(parsedBody, userId);
+  if (preflightRejection) {
+    return preflightRejection;
   }
 
   const thread = parsedBody.threadId
@@ -518,6 +630,22 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
 
+  if (parsedBody.editedMessage) {
+    const rejection = await guardEdit({ plan, thread, userId });
+    if (rejection) {
+      return rejection;
+    }
+  }
+
+  // An edit already rolled the thread back and resolved any pending plan in
+  // guardEdit; from here it runs exactly like a new message carrying the
+  // edited text.
+  const messageText = parsedBody.editedMessage ?? parsedBody.message;
+  const messagePlan = parsedBody.editedMessage ? null : plan;
+  const messageThread: ThreadRecord = parsedBody.editedMessage
+    ? { ...thread, pendingToolUse: null, status: "idle" }
+    : thread;
+
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const writer = writable.getWriter();
   const encoder = new TextEncoder();
@@ -526,6 +654,10 @@ export async function POST(request: Request): Promise<Response> {
       // Client went away mid-stream; the turn still completes server-side.
     });
   };
+
+  // A turn only compacts after it fully succeeded; error turns change little
+  // and must not delay their error payload with a summariser call.
+  let turnSucceeded = false;
 
   const run = async (): Promise<void> => {
     try {
@@ -556,13 +688,13 @@ export async function POST(request: Request): Promise<Response> {
           toolsUsed: executed.executedToolNames,
           wroteChanges: executed.wroteChanges,
         };
-      } else if (parsedBody.message) {
+      } else if (messageText) {
         userContent.push(
           ...(await buildMessageContent({
             body: parsedBody,
-            message: parsedBody.message,
-            plan,
-            thread,
+            message: messageText,
+            plan: messagePlan,
+            thread: messageThread,
             userId,
             userName: assistantUser.name,
           }))
@@ -590,6 +722,7 @@ export async function POST(request: Request): Promise<Response> {
         turnActivity,
       });
       send({ messageId: result.lastAssistantMessageId, type: "done" });
+      turnSucceeded = true;
     } catch (error) {
       const message =
         error instanceof Error
@@ -602,14 +735,25 @@ export async function POST(request: Request): Promise<Response> {
       });
     }
   };
+  // Post-turn bookkeeping, sequenced after run() closes the stream so it
+  // never delays a byte of the reply: compaction summarises the older span of
+  // long threads (maybeCompactThread no-ops below its thresholds and
+  // swallows its own failures).
+  const runThenCompact = async (): Promise<void> => {
+    await run();
+    if (turnSucceeded) {
+      await maybeCompactThread(thread.id);
+    }
+  };
   // Tie the streamed turn to the request lifecycle. Without waitUntil, the
   // Workers runtime cancels the detached run() once it considers the
   // invocation ended, so long turns (model thinking + tool loop) are killed
   // mid-stream and the user sees no reply.
   const { ctx } = getCloudflareContext();
   ctx.waitUntil(
-    run().catch(() => {
-      // run() handles its own errors; nothing can reach here.
+    runThenCompact().catch(() => {
+      // run() and maybeCompactThread handle their own errors; nothing can
+      // reach here.
     })
   );
 

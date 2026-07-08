@@ -57,8 +57,21 @@ const SUMMARY_LABELS: Record<string, string> = {
   update_deal: "Update a deal",
 };
 
-export const summarizeToolCall = (name: string): string =>
-  SUMMARY_LABELS[name] ?? `Run ${name}`;
+const hasAudioAttachment = (input: unknown): boolean =>
+  typeof input === "object" &&
+  input !== null &&
+  typeof (input as { audioAttachmentId?: unknown }).audioAttachmentId ===
+    "string";
+
+// `input` (the proposed or final tool input) refines the label for calls
+// whose summary depends on it; callers that don't have the input at hand
+// still get the base label.
+export const summarizeToolCall = (name: string, input?: unknown): string => {
+  if (name === "log_activity" && hasAudioAttachment(input)) {
+    return "Log activity with voice note";
+  }
+  return SUMMARY_LABELS[name] ?? `Run ${name}`;
+};
 
 // Present-tense activity line streamed with tool_start and shown live in the
 // transcript while a tool runs ("Searching deals…").

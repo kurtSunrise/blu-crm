@@ -2,6 +2,7 @@
 
 import {
   Bell,
+  BookOpen,
   Building2,
   Cpu,
   type LucideIcon,
@@ -28,6 +29,8 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   { href: "/settings/company", label: "Company", icon: Building2 },
   { href: "/settings/team", label: "Team", icon: Users },
   { href: "/settings/ai", label: "AI Preferences", icon: Cpu },
+  // Admin-gated in the page itself, like Deal statuses, Company, and Team.
+  { href: "/settings/knowledge", label: "Knowledge", icon: BookOpen },
 ];
 
 // General is an exact match so deeper tabs (e.g. /settings/account) don't also

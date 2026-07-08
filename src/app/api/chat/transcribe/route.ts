@@ -1,12 +1,17 @@
 import { Buffer } from "node:buffer";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { NextResponse } from "next/server";
+import { storeChatAttachment } from "@/lib/ai/attachments";
 import { getSessionUserId } from "@/lib/session";
 
 // Transcribe a short voice recording from the assistant composer via Workers
 // AI Whisper. The client posts multipart form data with an `audio` field and
-// receives `{ text }` on success or `{ error }` with 400/401/502/503/504.
-// Resolves PRD open question Q3: transcription path = Workers AI Whisper.
+// receives `{ text, attachmentId }` on success or `{ error }` with
+// 400/401/502/503/504. Resolves PRD open question Q3: transcription path =
+// Workers AI Whisper. The recording itself is retained as a chat_attachment
+// in R2 (PRD FR-7.7) so log_activity can later file it against a deal;
+// attachmentId is null when retention fails, because keeping the audio must
+// never break dictation.
 
 // Fallback if this model ever rejects a browser container: `@cf/openai/whisper`
 // accepts `{ audio: number[] }` as a raw byte array instead of base64.
@@ -21,6 +26,69 @@ const isAcceptedAudioType = (contentType: string): boolean => {
   const type = (contentType.split(";")[0] ?? "").trim().toLowerCase();
   // Safari's MediaRecorder labels mp4 audio-only recordings as video/mp4.
   return type.startsWith("audio/") || type === "video/mp4";
+};
+
+// A human-scannable file name for the retained recording, stamped in AWST
+// (house rule: DD/MM/YYYY dates, AWST times), e.g. voice-note-07072026-1432.
+const VOICE_NOTE_STAMP = new Intl.DateTimeFormat("en-AU", {
+  day: "2-digit",
+  hour: "2-digit",
+  hour12: false,
+  minute: "2-digit",
+  month: "2-digit",
+  timeZone: "Australia/Perth",
+  year: "numeric",
+});
+
+const EXTENSION_BY_TYPE: Record<string, string> = {
+  "audio/aac": "aac",
+  "audio/mp4": "m4a",
+  "audio/mpeg": "mp3",
+  "audio/ogg": "ogg",
+  "audio/wav": "wav",
+  "audio/webm": "webm",
+  "video/mp4": "mp4",
+};
+
+const voiceNoteFileName = (contentType: string): string => {
+  const type = (contentType.split(";")[0] ?? "").trim().toLowerCase();
+  const extension = EXTENSION_BY_TYPE[type] ?? "webm";
+  const parts = new Map(
+    VOICE_NOTE_STAMP.formatToParts(new Date()).map((part) => [
+      part.type,
+      part.value,
+    ])
+  );
+  const stamp = `${parts.get("day")}${parts.get("month")}${parts.get("year")}-${parts.get("hour")}${parts.get("minute")}`;
+  return `voice-note-${stamp}.${extension}`;
+};
+
+// Best-effort retention: R2 or insert failures degrade to attachmentId null
+// with the transcription still returned.
+const retainVoiceNote = async (params: {
+  bytes: ArrayBuffer;
+  contentType: string;
+  userId: string;
+}): Promise<string | null> => {
+  try {
+    const stored = await storeChatAttachment({
+      bytes: params.bytes,
+      contentType: params.contentType,
+      fileName: voiceNoteFileName(params.contentType),
+      threadId: null,
+      uploadedBy: params.userId,
+    });
+    if (!stored) {
+      console.warn("[transcribe] retain-failed", { reason: "insert" });
+      return null;
+    }
+    return stored.id;
+  } catch (error) {
+    console.warn("[transcribe] retain-failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 };
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -70,8 +138,10 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
-  // Base64 via Buffer (nodejs_compat) — chunk-safe, no giant argument spreads.
-  const base64 = Buffer.from(await audio.arrayBuffer()).toString("base64");
+  // Read once, shared by transcription (base64) and retention (R2 bytes).
+  const audioBytes = await audio.arrayBuffer();
+  // Base64 via Buffer (nodejs_compat): chunk-safe, no giant argument spreads.
+  const base64 = Buffer.from(audioBytes).toString("base64");
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   let result: unknown;
@@ -115,5 +185,11 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
-  return NextResponse.json({ text });
+  const attachmentId = await retainVoiceNote({
+    bytes: audioBytes,
+    contentType: audio.type,
+    userId,
+  });
+
+  return NextResponse.json({ attachmentId, text });
 }

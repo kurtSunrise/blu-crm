@@ -524,6 +524,14 @@ export const chatThread = pgTable("chat_thread", {
   // writes await user confirmation; legacy single-item shape still parses.
   // Cleared once resolved (FR-7.8).
   pendingToolUse: jsonb("pending_tool_use"),
+  // Rolling compaction summary of the older part of a long thread, written by
+  // maybeCompactThread after a turn. loadThreadMessages prepends it as a
+  // synthetic user turn when the replay cap trims older rows away, so the
+  // model keeps the gist instead of silently losing it. summaryUpTo is the
+  // createdAt of the newest summarised message; both null until the thread
+  // grows past the compaction threshold.
+  summaryText: text("summary_text"),
+  summaryUpTo: timestamp("summary_up_to", { withTimezone: true }),
   lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   // Pinned threads sort first in history; null = unpinned

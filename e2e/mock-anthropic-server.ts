@@ -134,6 +134,8 @@ interface AnthropicRequestBody {
     content?: string | { text?: string; type?: string }[];
     role?: string;
   }[];
+  stream?: boolean;
+  system?: unknown;
 }
 
 const hasToolResult = (body: AnthropicRequestBody): boolean =>
@@ -176,7 +178,10 @@ const lastUserText = (body: AnthropicRequestBody): string => {
 };
 
 const INBOX_PATTERN = /inbox/i;
-const CAPTURE_PATTERN = /capture/i;
+// The full phrase, not bare /capture/i: page-context headers ride in the
+// same user turn and routinely contain the stage name "Lead Captured" (e.g.
+// for @-mentioned deals), which must not hijack the turn into a lead card.
+const CAPTURE_PATTERN = /capture this enquiry/i;
 const DRAFT_PATTERN = /draft/i;
 const CHASE_PATTERN = /chase|prioriti/i;
 // A two-item write plan: two create_lead tool_use blocks in one assistant
@@ -221,11 +226,128 @@ const REASONING_STEP_MS = 1000;
 const COMPANY_TOKEN_PATTERN = /UNIQ-\d+/;
 const ALL_COMPANY_TOKENS_PATTERN = /UNIQ-\d+/g;
 
+// Voice-note filing scenario (Assistant v3 Phase 4): the /api/chat route
+// surfaces retained voice-note ids to the model inside <page_context> as
+// "A voice note is attached to this message (audioAttachmentId: <uuid>)".
+// This scenario reads that id and the deal handle (BLU-…) off the request
+// text — exactly the information the real model would use — and returns a
+// log_activity tool_use carrying audioAttachmentId, so the confirmation card
+// and the attach-to-deal execution path run for real.
+const VOICE_FILE_PATTERN = /file this voice note/i;
+const AUDIO_ATTACHMENT_ID_PATTERN =
+  /audioAttachmentId: ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+const DEAL_HANDLE_PATTERN = /BLU-[A-Za-z0-9-]+/;
+
+// Compaction (Assistant v3 Phase 4) calls createMessage WITHOUT stream: true
+// and parses the response as JSON. This is the deterministic summary text a
+// non-streaming request gets back; specs assert it lands in
+// chat_thread.summary_text and later re-enters the replay as a
+// <thread_summary> turn.
+const NON_STREAMING_SUMMARY_TEXT =
+  "Mock compaction summary of the earlier conversation.";
+
+const nonStreamingMessage = (): string =>
+  JSON.stringify({
+    content: [{ text: NON_STREAMING_SUMMARY_TEXT, type: "text" }],
+    id: `msg_mock_${Date.now()}`,
+    model: "claude-haiku-mock",
+    role: "assistant",
+    stop_reason: "end_turn",
+    stop_sequence: null,
+    type: "message",
+    usage: { input_tokens: 10, output_tokens: 20 },
+  });
+
+// Bounded log of every /v1/messages request, exposed at GET /__requests so
+// specs can assert what actually reached the model (e.g. that a compacted
+// thread's next turn carries the <thread_summary> block). Only the joined
+// user text is kept: bodies can carry megabytes of base64 media.
+interface RecordedRequest {
+  at: number;
+  stream: boolean;
+  text: string;
+}
+const RECORDED_REQUEST_LIMIT = 200;
+const recordedRequests: RecordedRequest[] = [];
+const recordRequest = (body: AnthropicRequestBody): void => {
+  recordedRequests.push({
+    at: Date.now(),
+    stream: body.stream === true,
+    text: allUserText(body),
+  });
+  if (recordedRequests.length > RECORDED_REQUEST_LIMIT) {
+    recordedRequests.splice(
+      0,
+      recordedRequests.length - RECORDED_REQUEST_LIMIT
+    );
+  }
+};
+
 // The stall scenario only stalls the FIRST request per unique message text;
 // a regenerate retry of the same turn then gets a normal greeting, so the
 // spec can prove "Try again" recovers. Specs make the stall message unique
 // per run (UNIQ token) so parallel projects never share an entry.
 const stalledOnce = new Set<string>();
+
+// The voice-filing tool_use, or null when the trigger phrase is absent or
+// the request text lacks the audio id / deal handle (a null falls through to
+// the plain greeting, so a wiring failure reads clearly in the spec).
+const respondVoiceFile = (userText: string): string | null => {
+  if (!VOICE_FILE_PATTERN.test(userText)) {
+    return null;
+  }
+  const audioAttachmentId = userText.match(AUDIO_ATTACHMENT_ID_PATTERN)?.[1];
+  const dealHandle = userText.match(DEAL_HANDLE_PATTERN)?.[0];
+  if (!(audioAttachmentId && dealHandle)) {
+    return null;
+  }
+  return messageEnvelope(
+    toolUseEvents("log_activity", {
+      audioAttachmentId,
+      content: "Voice note filed from the assistant",
+      dealId: dealHandle,
+      type: "call",
+    }),
+    "tool_use"
+  );
+};
+
+// The memory / citations / knowledge scenario family: token-aware tool_use
+// responses, or null when none of their triggers match.
+const respondKnowledgeFamily = (userText: string): string | null => {
+  if (MEMORY_PATTERN.test(userText)) {
+    const token = userText.match(COMPANY_TOKEN_PATTERN)?.[0];
+    return messageEnvelope(
+      toolUseEvents("save_memory", {
+        content: token
+          ? `Jess prefers SMS follow-ups for Bunnings leads (${token})`
+          : "Jess prefers SMS follow-ups for Bunnings leads",
+      }),
+      "tool_use"
+    );
+  }
+  // Before KNOWLEDGE: the citations trigger ("policy question") also matches
+  // the knowledge pattern, and this scenario needs its own query wording.
+  if (CITATION_PATTERN.test(userText)) {
+    const token = userText.match(COMPANY_TOKEN_PATTERN)?.[0];
+    return messageEnvelope(
+      toolUseEvents("search_knowledge_base", {
+        query: token ? `brand voice ${token}` : "brand voice",
+      }),
+      "tool_use"
+    );
+  }
+  if (KNOWLEDGE_PATTERN.test(userText)) {
+    const token = userText.match(COMPANY_TOKEN_PATTERN)?.[0];
+    return messageEnvelope(
+      toolUseEvents("search_knowledge_base", {
+        query: token ? `deposit terms ${token}` : "deposit terms",
+      }),
+      "tool_use"
+    );
+  }
+  return null;
+};
 
 const respond = (body: AnthropicRequestBody): string => {
   if (hasToolResult(body)) {
@@ -235,6 +357,10 @@ const respond = (body: AnthropicRequestBody): string => {
     );
   }
   const userText = lastUserText(body);
+  const voiceFile = respondVoiceFile(userText);
+  if (voiceFile) {
+    return voiceFile;
+  }
   if (CAPTURE_PATTERN.test(userText)) {
     const companyName =
       userText.match(COMPANY_TOKEN_PATTERN)?.[0] ?? "Westfield AI Mock Co";
@@ -286,36 +412,9 @@ const respond = (body: AnthropicRequestBody): string => {
       "tool_use"
     );
   }
-  if (MEMORY_PATTERN.test(userText)) {
-    const token = userText.match(COMPANY_TOKEN_PATTERN)?.[0];
-    return messageEnvelope(
-      toolUseEvents("save_memory", {
-        content: token
-          ? `Jess prefers SMS follow-ups for Bunnings leads (${token})`
-          : "Jess prefers SMS follow-ups for Bunnings leads",
-      }),
-      "tool_use"
-    );
-  }
-  // Before KNOWLEDGE: the citations trigger ("policy question") also matches
-  // the knowledge pattern, and this scenario needs its own query wording.
-  if (CITATION_PATTERN.test(userText)) {
-    const token = userText.match(COMPANY_TOKEN_PATTERN)?.[0];
-    return messageEnvelope(
-      toolUseEvents("search_knowledge_base", {
-        query: token ? `brand voice ${token}` : "brand voice",
-      }),
-      "tool_use"
-    );
-  }
-  if (KNOWLEDGE_PATTERN.test(userText)) {
-    const token = userText.match(COMPANY_TOKEN_PATTERN)?.[0];
-    return messageEnvelope(
-      toolUseEvents("search_knowledge_base", {
-        query: token ? `deposit terms ${token}` : "deposit terms",
-      }),
-      "tool_use"
-    );
+  const knowledgeFamily = respondKnowledgeFamily(userText);
+  if (knowledgeFamily) {
+    return knowledgeFamily;
   }
   if (WEEKLY_REPORT_PATTERN.test(userText)) {
     return messageEnvelope(toolUseEvents("get_weekly_report"), "tool_use");
@@ -547,10 +646,50 @@ const streamCitations = (res: ServerResponse): void => {
   res.end();
 };
 
+// The hand-scripted streaming scenarios (stall, thinking, reasoning, and the
+// citations closing turn) that bypass the plain respond() chain. Returns
+// true when one of them has taken over the response.
+const streamSpecialScenario = (
+  body: AnthropicRequestBody,
+  res: ServerResponse
+): boolean => {
+  const userText = lastUserText(body);
+  if (STALL_PATTERN.test(userText) && !stalledOnce.has(userText)) {
+    stalledOnce.add(userText);
+    streamStall(res);
+    return true;
+  }
+  if (THINKING_PATTERN.test(userText)) {
+    streamThinking(res);
+    return true;
+  }
+  if (REASONING_PATTERN.test(userText) && !hasToolResult(body)) {
+    streamReasoning(res);
+    return true;
+  }
+  // The citations scenario's SECOND call: the trigger text lives on the
+  // first user turn (the tool_result turn's own user message has no text
+  // blocks), so the whole transcript is scanned.
+  if (hasToolResult(body) && CITATION_PATTERN.test(allUserText(body))) {
+    streamCitations(res);
+    return true;
+  }
+  return false;
+};
+
 const server = createServer((req, res) => {
   if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "content-type": "text/plain" });
     res.end("ok");
+    return;
+  }
+
+  // Test-only introspection: what reached the "model", newest last. Specs
+  // filter by their own unique tokens, so sharing one log across parallel
+  // projects is safe.
+  if (req.method === "GET" && req.url === "/__requests") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ requests: recordedRequests }));
     return;
   }
 
@@ -566,32 +705,21 @@ const server = createServer((req, res) => {
       } catch {
         body = {};
       }
+      recordRequest(body);
+      // Non-streaming callers (the compaction summariser's createMessage)
+      // parse the response as JSON; only stream: true requests get SSE.
+      if (body.stream !== true) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(nonStreamingMessage());
+        return;
+      }
       res.writeHead(200, {
         "cache-control": "no-store",
         "content-type": "text/event-stream",
       });
-      const userText = lastUserText(body);
-      if (STALL_PATTERN.test(userText) && !stalledOnce.has(userText)) {
-        stalledOnce.add(userText);
-        streamStall(res);
-        return;
+      if (!streamSpecialScenario(body, res)) {
+        res.end(respond(body));
       }
-      if (THINKING_PATTERN.test(userText)) {
-        streamThinking(res);
-        return;
-      }
-      if (REASONING_PATTERN.test(userText) && !hasToolResult(body)) {
-        streamReasoning(res);
-        return;
-      }
-      // The citations scenario's SECOND call: the trigger text lives on the
-      // first user turn (the tool_result turn's own user message has no text
-      // blocks), so the whole transcript is scanned.
-      if (hasToolResult(body) && CITATION_PATTERN.test(allUserText(body))) {
-        streamCitations(res);
-        return;
-      }
-      res.end(respond(body));
     });
     return;
   }

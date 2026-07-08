@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useAiAssistant } from "@/components/ai/ai-context";
 import { Button } from "@/components/ui/button";
 
 // Voice capture for the composer: record with MediaRecorder, transcribe via
@@ -52,6 +53,7 @@ export function VoiceInputButton({
   onError: (message: string | null) => void;
 }) {
   const composerRuntime = useComposerRuntime();
+  const { addVoiceAttachment } = useAiAssistant();
   const [state, setState] = useState<VoiceState>("idle");
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   // MediaRecorder support is probed after mount so server and first client
@@ -119,7 +121,10 @@ export function VoiceInputButton({
           onError(GENERIC_MESSAGE);
           return;
         }
-        const payload = (await response.json()) as { text?: string };
+        const payload = (await response.json()) as {
+          attachmentId?: string | null;
+          text?: string;
+        };
         const transcript = payload.text?.trim();
         if (!transcript) {
           onError(GENERIC_MESSAGE);
@@ -129,6 +134,12 @@ export function VoiceInputButton({
         composerRuntime.setText(
           current ? `${current} ${transcript}` : transcript
         );
+        // The server also stored the recording itself; stage it so the sent
+        // message carries the audio (the "Voice note attached" chip in the
+        // composer, consumed by the runtime adapter on send).
+        if (payload.attachmentId) {
+          addVoiceAttachment(payload.attachmentId);
+        }
         inputRef.current?.focus();
       } catch {
         onError(GENERIC_MESSAGE);
@@ -136,7 +147,7 @@ export function VoiceInputButton({
         setState("idle");
       }
     },
-    [composerRuntime, inputRef, onError]
+    [addVoiceAttachment, composerRuntime, inputRef, onError]
   );
 
   const stopRecording = useCallback(() => {

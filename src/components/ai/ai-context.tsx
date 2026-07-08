@@ -42,7 +42,19 @@ export interface ConfirmationDecision {
   decisions: ConfirmationDecisionItem[];
 }
 
+// One @-mention picked in the composer. The token is the literal text the
+// pick inserted; the runtime adapter only sends the id if that token still
+// appears in the message when it is sent, so deleting the token drops the id.
+export interface ComposerMention {
+  id: string;
+  kind: "deal" | "contact";
+  token: string;
+}
+
 interface AiAssistantContextValue {
+  // Registers a transcribed voice note's uploaded audio so the next send
+  // carries it as an attachment (the "Voice note attached" chip).
+  addVoiceAttachment: (attachmentId: string) => void;
   // The last composer attachment upload/validation failure, shown beneath the
   // input. assistant-ui owns the staged attachments themselves; this is the
   // one piece of attachment state it cannot surface, since the runtime adapter
@@ -50,6 +62,8 @@ interface AiAssistantContextValue {
   attachmentError: string | null;
   clearComposerPrefill: () => void;
   clearEntity: () => void;
+  // Called by the runtime adapter once a send has consumed the voice notes.
+  clearVoiceAttachments: () => void;
   // Text staged by an "Ask AI" entry point; the composer consumes it into the
   // input (never auto-sent) and then clears it.
   composerPrefill: string | null;
@@ -60,17 +74,23 @@ interface AiAssistantContextValue {
   // write as superseded).
   decisionRef: MutableRefObject<ConfirmationDecision | null>;
   entity: AiEntityRef | null;
+  // A ref for the same reason as decisionRef: the mention picker records a
+  // pick and the adapter reads the list synchronously when the send runs.
+  mentionsRef: MutableRefObject<ComposerMention[]>;
   offline: boolean;
   open: boolean;
   openWithPrompt: (prompt: string) => void;
   pendingConfirmation: PendingConfirmation | null;
   registerEntity: (entity: AiEntityRef) => void;
+  removeVoiceAttachment: (attachmentId: string) => void;
   setAttachmentError: (message: string | null) => void;
   setOffline: (offline: boolean) => void;
   setOpen: (open: boolean) => void;
   setPendingConfirmation: (pending: PendingConfirmation | null) => void;
   setThreadId: (threadId: string | null) => void;
   threadId: string | null;
+  // Uploaded audio attachment ids from voice notes awaiting the next send.
+  voiceAttachmentIds: string[];
 }
 
 const AiAssistantContext = createContext<AiAssistantContextValue | null>(null);
@@ -84,7 +104,9 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
     useState<PendingConfirmation | null>(null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [composerPrefill, setComposerPrefill] = useState<string | null>(null);
+  const [voiceAttachmentIds, setVoiceAttachmentIds] = useState<string[]>([]);
   const decisionRef = useRef<ConfirmationDecision | null>(null);
+  const mentionsRef = useRef<ComposerMention[]>([]);
 
   const registerEntity = useCallback((next: AiEntityRef) => {
     setEntity(next);
@@ -99,31 +121,49 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
   const clearComposerPrefill = useCallback(() => {
     setComposerPrefill(null);
   }, []);
+  const addVoiceAttachment = useCallback((attachmentId: string) => {
+    setVoiceAttachmentIds((ids) =>
+      ids.includes(attachmentId) ? ids : [...ids, attachmentId]
+    );
+  }, []);
+  const removeVoiceAttachment = useCallback((attachmentId: string) => {
+    setVoiceAttachmentIds((ids) => ids.filter((id) => id !== attachmentId));
+  }, []);
+  const clearVoiceAttachments = useCallback(() => {
+    setVoiceAttachmentIds([]);
+  }, []);
 
   const value = useMemo(
     () => ({
+      addVoiceAttachment,
       attachmentError,
       clearComposerPrefill,
       clearEntity,
+      clearVoiceAttachments,
       composerPrefill,
       decisionRef,
       entity,
+      mentionsRef,
       offline,
       open,
       openWithPrompt,
       pendingConfirmation,
       registerEntity,
+      removeVoiceAttachment,
       setAttachmentError,
       setOffline,
       setOpen,
       setPendingConfirmation,
       setThreadId,
       threadId,
+      voiceAttachmentIds,
     }),
     [
+      addVoiceAttachment,
       attachmentError,
       clearComposerPrefill,
       clearEntity,
+      clearVoiceAttachments,
       composerPrefill,
       entity,
       offline,
@@ -131,7 +171,9 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
       openWithPrompt,
       pendingConfirmation,
       registerEntity,
+      removeVoiceAttachment,
       threadId,
+      voiceAttachmentIds,
     ]
   );
 

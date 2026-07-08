@@ -1,8 +1,9 @@
-import { eq } from "drizzle-orm";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { deal } from "@/db/schema";
+import { attachment, chatAttachment, deal } from "@/db/schema";
 import { logQuickActivity, moveDealStage } from "@/lib/actions/deal-actions";
 import {
   DEAL_HANDLE_DESCRIPTION,
@@ -219,24 +220,102 @@ const moveDealStageTool = defineTool({
 });
 
 const logActivitySchema = z.object({
+  audioAttachmentId: z
+    .uuid()
+    .optional()
+    .describe(
+      "Attach the voice note the user just recorded, when they ask to file it"
+    ),
   content: z.string().optional().describe("What happened, in one line"),
   dealId: z.string().describe(DEAL_HANDLE_DESCRIPTION),
   type: z.enum(QUICK_LOG_TYPES),
 });
 
+// Files a retained voice note (a chat_attachment written by the transcribe
+// route, FR-7.7) against the deal by inserting a deal attachment row pointing
+// at the SAME R2 object; no bytes are copied. Runs after the activity insert
+// so a crash leaves the activity without its file, which the user can simply
+// re-attach. Ownership: the chat attachment must belong to the acting user.
+const attachVoiceNoteToDeal = async (params: {
+  audioAttachmentId: string;
+  dealId: string;
+  userId: string;
+}): Promise<boolean> => {
+  const [voiceNote] = await db
+    .select({
+      contentType: chatAttachment.contentType,
+      fileKey: chatAttachment.fileKey,
+      fileName: chatAttachment.fileName,
+      sizeBytes: chatAttachment.sizeBytes,
+    })
+    .from(chatAttachment)
+    .where(
+      and(
+        eq(chatAttachment.id, params.audioAttachmentId),
+        eq(chatAttachment.uploadedBy, params.userId)
+      )
+    )
+    .limit(1);
+  if (!voiceNote) {
+    return false;
+  }
+  // Copy the bytes to a deal-owned R2 object rather than sharing the chat
+  // object's key: the deal-attachment DELETE route purges its fileKey from R2
+  // unconditionally, so a shared key would let deleting one row 404 the other
+  // (and filing one recording on two deals would alias all three rows).
+  // Voice notes are capped at 5 MB, so the copy is cheap.
+  const { env } = getCloudflareContext();
+  const source = await env.PHOTO_BUCKET.get(voiceNote.fileKey);
+  if (!source) {
+    return false;
+  }
+  const dealFileKey = `deals/${params.dealId}/${crypto.randomUUID()}/${voiceNote.fileName}`;
+  await env.PHOTO_BUCKET.put(dealFileKey, await source.arrayBuffer(), {
+    httpMetadata: { contentType: voiceNote.contentType },
+  });
+  await db.insert(attachment).values({
+    contentType: voiceNote.contentType,
+    dealId: params.dealId,
+    fileKey: dealFileKey,
+    fileName: voiceNote.fileName,
+    sizeBytes: voiceNote.sizeBytes,
+    uploadedBy: params.userId,
+  });
+  return true;
+};
+
 const logActivityTool = defineTool({
   description:
-    "Log an activity (call, email, site visit, meeting, or note) on a deal's timeline. This also updates the deal's last-contact date, clearing staleness alerts.",
-  execute: async (input) => {
+    "Log an activity (call, email, site visit, meeting, or note) on a deal's timeline. This also updates the deal's last-contact date, clearing staleness alerts. When the user dictated a voice note and asks to file it, pass its audioAttachmentId to attach the recording to the deal.",
+  execute: async (input, ctx) => {
+    const { audioAttachmentId, ...activityInput } = input;
     const dealId = await resolveDealId(input.dealId);
     if (!dealId) {
       return {
         resultText: `No deal found for "${input.dealId}". Use query_deals or get_deal to find it.`,
       };
     }
-    const outcome = await logQuickActivity({ ...input, dealId });
+    const outcome = await logQuickActivity({ ...activityInput, dealId });
     if (outcome.error) {
       return { resultText: `Logging failed: ${outcome.error}` };
+    }
+    if (audioAttachmentId) {
+      const attached = await attachVoiceNoteToDeal({
+        audioAttachmentId,
+        dealId,
+        userId: ctx.userId,
+      });
+      if (!attached) {
+        return {
+          changedPaths: ["/", `/deals/${dealId}`],
+          resultText:
+            "Activity logged, but the voice note could not be attached (recording not found).",
+        };
+      }
+      return {
+        changedPaths: ["/", `/deals/${dealId}`],
+        resultText: "Activity logged with the voice note attached.",
+      };
     }
     return {
       changedPaths: ["/", `/deals/${dealId}`],

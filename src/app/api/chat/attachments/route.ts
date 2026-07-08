@@ -1,12 +1,9 @@
-import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { NextResponse } from "next/server";
-import { db } from "@/db";
-import { chatAttachment } from "@/db/schema";
+import { storeChatAttachment } from "@/lib/ai/attachments";
 import { getSessionUserId } from "@/lib/session";
 import {
   AI_READABLE_TYPES,
   MAX_ATTACHMENT_BYTES,
-  sanitizeFileName,
 } from "@/lib/validation/attachment";
 
 // Upload a file the assistant can read (images, PDFs) into the private R2
@@ -47,40 +44,20 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
-  const fileName = sanitizeFileName(file.name);
-  const fileKey = `chat/${threadId ?? "unbound"}/${crypto.randomUUID()}/${fileName}`;
-
-  const { env } = getCloudflareContext();
-  await env.PHOTO_BUCKET.put(fileKey, await file.arrayBuffer(), {
-    httpMetadata: { contentType: file.type },
+  const stored = await storeChatAttachment({
+    bytes: await file.arrayBuffer(),
+    contentType: file.type,
+    fileName: file.name,
+    threadId,
+    uploadedBy: userId,
   });
 
-  const [created] = await db
-    .insert(chatAttachment)
-    .values({
-      contentType: file.type,
-      fileKey,
-      fileName,
-      sizeBytes: file.size,
-      threadId,
-      uploadedBy: userId,
-    })
-    .returning({ id: chatAttachment.id });
-
-  if (!created) {
+  if (!stored) {
     return NextResponse.json(
       { error: "Failed to record the attachment" },
       { status: 500 }
     );
   }
 
-  return NextResponse.json(
-    {
-      contentType: file.type,
-      fileName,
-      id: created.id,
-      sizeBytes: file.size,
-    },
-    { status: 201 }
-  );
+  return NextResponse.json(stored, { status: 201 });
 }

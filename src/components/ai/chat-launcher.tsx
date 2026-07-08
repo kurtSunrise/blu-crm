@@ -1,7 +1,8 @@
 "use client";
 
-import type { ThreadMessageLike } from "@assistant-ui/react";
+import { type ThreadMessageLike, useThreadRuntime } from "@assistant-ui/react";
 import {
+  ClipboardCopyIcon,
   HistoryIcon,
   Settings2Icon,
   SparklesIcon,
@@ -10,7 +11,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import type * as React from "react";
-import { useState } from "react";
+import { type MutableRefObject, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useAiAssistant } from "@/components/ai/ai-context";
 import { AiRuntimeProvider } from "@/components/ai/ai-runtime-provider";
 import {
@@ -20,6 +22,10 @@ import {
 } from "@/components/ai/artifacts/citation-list";
 import { ChatPanel } from "@/components/ai/chat-panel";
 import type { ResumedConfirmationStatus } from "@/components/ai/confirmation-card";
+import {
+  type ExportMessageLike,
+  serializeThreadToMarkdown,
+} from "@/components/ai/thread-export";
 import { ThreadHistory } from "@/components/ai/thread-history";
 import { TooltipIconButton } from "@/components/ai/tooltip-icon-button";
 import type { ConfirmationItem } from "@/lib/ai/stream-protocol";
@@ -259,6 +265,27 @@ const toThreadMessages = (messages: ResumedMessage[]): ThreadMessageLike[] =>
     };
   });
 
+type ThreadMessagesGetter = () => readonly ExportMessageLike[];
+
+// Hands the dock header a live getter for the current thread's runtime
+// messages. The "Copy as Markdown" button sits outside AiRuntimeProvider, so
+// it cannot use the runtime hooks itself; this bridge (mounted inside the
+// provider) closes that gap without moving the header.
+function ThreadExportBridge({
+  getterRef,
+}: {
+  getterRef: MutableRefObject<ThreadMessagesGetter | null>;
+}) {
+  const threadRuntime = useThreadRuntime();
+  useEffect(() => {
+    getterRef.current = () => threadRuntime.getState().messages;
+    return () => {
+      getterRef.current = null;
+    };
+  }, [getterRef, threadRuntime]);
+  return null;
+}
+
 // The assistant surface itself. Stays mounted while closed (hidden via CSS)
 // so the conversation survives open/close. Mobile: full-screen overlay.
 // Desktop: fixed 400px right sidebar; AppShell pads the main content.
@@ -267,13 +294,16 @@ const toThreadMessages = (messages: ResumedMessage[]): ThreadMessageLike[] =>
 // creation), while toggling the history view only hides the live chat.
 export function AiAssistantDock() {
   const {
+    clearVoiceAttachments,
     decisionRef,
+    mentionsRef,
     open,
     setOpen,
     setPendingConfirmation,
     setThreadId,
     threadId,
   } = useAiAssistant();
+  const exportMessagesRef = useRef<ThreadMessagesGetter | null>(null);
   const [view, setView] = useState<"chat" | "history">("chat");
   const [session, setSession] = useState<ChatSession>({
     epoch: 0,
@@ -289,6 +319,10 @@ export function AiAssistantDock() {
     setThreadId(nextThreadId);
     setPendingConfirmation(null);
     decisionRef.current = null;
+    // Composer-side staging belongs to the old session: drop any recorded
+    // @-mention picks and unsent voice notes.
+    mentionsRef.current = [];
+    clearVoiceAttachments();
     setSession((current) => ({
       epoch: current.epoch + 1,
       initialFeedback,
@@ -298,6 +332,21 @@ export function AiAssistantDock() {
   };
 
   const startNewChat = () => switchSession(null, []);
+
+  // Serializes the visible thread client-side and copies it. Not async so
+  // the handler type stays void; failures surface as a toast.
+  const copyThreadAsMarkdown = () => {
+    const messages = exportMessagesRef.current?.() ?? [];
+    const markdown = serializeThreadToMarkdown(messages);
+    if (!markdown) {
+      toast("Nothing to copy yet. Start a conversation first.");
+      return;
+    }
+    navigator.clipboard.writeText(markdown).then(
+      () => toast.success("Conversation copied as Markdown."),
+      () => toast.error("Could not copy the conversation.")
+    );
+  };
 
   const resumeThread = async (resumeId: string) => {
     if (resumeId === threadId) {
@@ -366,6 +415,12 @@ export function AiAssistantDock() {
             <HistoryIcon aria-hidden className="size-4.5" />
           </TooltipIconButton>
           <TooltipIconButton
+            onClick={copyThreadAsMarkdown}
+            tooltip="Copy as Markdown"
+          >
+            <ClipboardCopyIcon aria-hidden className="size-4.5" />
+          </TooltipIconButton>
+          <TooltipIconButton
             // Renders an <a>, so opt out of Base UI's native-button contract.
             nativeButton={false}
             render={<Link href="/settings/ai" />}
@@ -384,6 +439,7 @@ export function AiAssistantDock() {
             initialMessages={session.initialMessages}
             key={session.epoch}
           >
+            <ThreadExportBridge getterRef={exportMessagesRef} />
             <ChatPanel initialFeedback={session.initialFeedback} />
           </AiRuntimeProvider>
         </div>

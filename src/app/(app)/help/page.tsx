@@ -779,6 +779,16 @@ const GLOSSARY = [
 
 const WHATS_NEW = [
   {
+    date: "08/07/2026",
+    items: [
+      "Voice notes now stick around: dictating attaches the recording to your message, and asking the assistant to log the note on a deal files the audio on that deal's timeline too.",
+      "Type / at the start of the assistant composer for quick commands (/report, /rank, /draft) and @ to mention a specific deal or contact so the assistant knows exactly which record you mean.",
+      "Made a typo or want to rephrase? Edit your last message with the pencil and the assistant re-answers from there. You can also copy a whole conversation as Markdown from the header.",
+      "Long conversations no longer forget their beginning: the assistant keeps a running summary of older messages and carries it forward.",
+      "Admins can now manage the assistant's knowledge base in Settings, Knowledge: add, edit, or remove the documents it cites, with instant effect on answers.",
+    ],
+  },
+  {
     date: "07/07/2026",
     items: [
       "The assistant now remembers useful facts across conversations: tell it something worth keeping (who handles a client, how you sign off) and it saves a memory with a Memory saved chip you can undo on the spot. Review, edit, or remove everything it remembers under Settings, Account (admins can also add team-wide memories under AI Preferences).",

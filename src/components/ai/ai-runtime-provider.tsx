@@ -16,6 +16,7 @@ import {
   useRef,
 } from "react";
 import {
+  type ComposerMention,
   type ConfirmationDecision,
   type PendingConfirmation,
   useAiAssistant,
@@ -45,9 +46,13 @@ interface RequestContext {
   dealId?: string;
   pathname: string;
   threadId: string | null;
+  // Uploaded voice-note audio ids staged for the next send (ai-context).
+  voiceAttachmentIds: string[];
 }
 
 interface AdapterCallbacks {
+  // Drops the staged voice notes once a send has consumed them.
+  clearVoiceAttachments: () => void;
   refresh: () => void;
   setOffline: (offline: boolean) => void;
   setPendingConfirmation: (pending: PendingConfirmation | null) => void;
@@ -209,8 +214,15 @@ interface ChatRequestBody {
   confirmation?: {
     decisions: { approved: boolean; finalInput?: unknown; toolUseId: string }[];
   };
+  editedMessage?: string;
   message?: string;
-  pageContext: { contactId?: string; dealId?: string; pathname: string };
+  pageContext: {
+    contactId?: string;
+    dealId?: string;
+    mentionedContactIds?: string[];
+    mentionedDealIds?: string[];
+    pathname: string;
+  };
   regenerate?: boolean;
   threadId?: string;
 }
@@ -521,6 +533,40 @@ const startTurn = async (
 const GREETING_MESSAGE =
   "Hi! Ask me about the pipeline, a client, or paste an enquiry to capture.";
 
+// The server caps mention ids at five per kind; enforce the same here.
+const MAX_MENTIONS_PER_KIND = 5;
+
+// Resolves the @-mention picks against the outgoing text: an id is only sent
+// while its inserted token still appears in the message, so deleting the
+// token before sending drops the id. Consuming clears the ref either way;
+// picks belong to the message they were made in.
+const consumeMentions = (
+  mentionsRef: MutableRefObject<ComposerMention[]>,
+  text: string
+): { contactIds: string[]; dealIds: string[] } => {
+  const mentions = mentionsRef.current;
+  mentionsRef.current = [];
+  const contactIds: string[] = [];
+  const dealIds: string[] = [];
+  for (const mention of mentions) {
+    if (!text.includes(mention.token)) {
+      continue;
+    }
+    const bucket = mention.kind === "deal" ? dealIds : contactIds;
+    if (bucket.length < MAX_MENTIONS_PER_KIND && !bucket.includes(mention.id)) {
+      bucket.push(mention.id);
+    }
+  }
+  return { contactIds, dealIds };
+};
+
+// How the turn was triggered, read off runConfig.custom: a regenerate reload,
+// an edit-and-resubmit of the last user turn, or a plain send.
+interface TurnKind {
+  editedMessage: string | null;
+  regenerate: boolean;
+}
+
 // Builds the POST body for one turn, or null when the user turn carries no
 // text (an empty submit) so run() can answer with the greeting. The decision
 // is read and cleared synchronously off the shared ref before any await — the
@@ -534,8 +580,9 @@ const buildRequestBody = (
   }[],
   request: RequestContext,
   decisionRef: MutableRefObject<ConfirmationDecision | null>,
+  mentionsRef: MutableRefObject<ComposerMention[]>,
   callbacks: AdapterCallbacks,
-  regenerate: boolean
+  turn: TurnKind
 ): ChatRequestBody | null => {
   const body: ChatRequestBody = {
     pageContext: {
@@ -554,10 +601,18 @@ const buildRequestBody = (
     return body;
   }
 
+  // An edited turn replaces the tail of a persisted thread server-side. An
+  // unsaved thread has no persisted turn to replace, so fall through to a
+  // plain send (the edited text is already the last user message locally).
+  if (turn.editedMessage && request.threadId) {
+    body.editedMessage = turn.editedMessage;
+    return body;
+  }
+
   // Regenerate re-runs the last exchange server-side; no user turn is
   // appended. An unsaved thread has nothing to re-run, so fall back to a
   // normal send of the last user message.
-  if (regenerate && request.threadId) {
+  if (turn.regenerate && request.threadId) {
     body.regenerate = true;
     return body;
   }
@@ -567,8 +622,19 @@ const buildRequestBody = (
     return null;
   }
   body.message = text;
-  if (attachmentIds.length > 0) {
-    body.attachmentIds = attachmentIds;
+  const mentions = consumeMentions(mentionsRef, text);
+  if (mentions.dealIds.length > 0) {
+    body.pageContext.mentionedDealIds = mentions.dealIds;
+  }
+  if (mentions.contactIds.length > 0) {
+    body.pageContext.mentionedContactIds = mentions.contactIds;
+  }
+  const allAttachmentIds = [...attachmentIds, ...request.voiceAttachmentIds];
+  if (request.voiceAttachmentIds.length > 0) {
+    callbacks.clearVoiceAttachments();
+  }
+  if (allAttachmentIds.length > 0) {
+    body.attachmentIds = allAttachmentIds;
   }
   return body;
 };
@@ -576,16 +642,26 @@ const buildRequestBody = (
 const createAdapter = (
   requestRef: MutableRefObject<RequestContext>,
   decisionRef: MutableRefObject<ConfirmationDecision | null>,
+  mentionsRef: MutableRefObject<ComposerMention[]>,
   callbacksRef: MutableRefObject<AdapterCallbacks>
 ): ChatModelAdapter => ({
   async *run({ messages, abortSignal, runConfig }) {
-    const regenerate = runConfig?.custom?.regenerate === true;
+    const custom = runConfig?.custom;
+    const turn: TurnKind = {
+      editedMessage:
+        typeof custom?.editedMessage === "string" &&
+        custom.editedMessage.length > 0
+          ? custom.editedMessage
+          : null,
+      regenerate: custom?.regenerate === true,
+    };
     const body = buildRequestBody(
       messages,
       requestRef.current,
       decisionRef,
+      mentionsRef,
       callbacksRef.current,
-      regenerate
+      turn
     );
     if (!body) {
       yield { content: [{ text: GREETING_MESSAGE, type: "text" }] };
@@ -668,30 +744,39 @@ export function AiRuntimeProvider({
   initialMessages?: ThreadMessageLike[];
 }) {
   const {
+    clearVoiceAttachments,
     decisionRef,
     entity,
+    mentionsRef,
     setAttachmentError,
     setOffline,
     setPendingConfirmation,
     setThreadId,
     threadId,
+    voiceAttachmentIds,
   } = useAiAssistant();
   const pathname = usePathname();
   const router = useRouter();
 
-  const requestRef = useRef<RequestContext>({ pathname, threadId });
+  const requestRef = useRef<RequestContext>({
+    pathname,
+    threadId,
+    voiceAttachmentIds: [],
+  });
   useEffect(() => {
     requestRef.current = {
       contactId: entity?.contactId,
       dealId: entity?.dealId,
       pathname,
       threadId,
+      voiceAttachmentIds,
     };
-  }, [entity, pathname, threadId]);
+  }, [entity, pathname, threadId, voiceAttachmentIds]);
 
   const suggestionPromptsRef = useRef<string[]>([]);
 
   const callbacksRef = useRef<AdapterCallbacks>({
+    clearVoiceAttachments,
     refresh: () => router.refresh(),
     setOffline,
     setPendingConfirmation,
@@ -702,6 +787,7 @@ export function AiRuntimeProvider({
   });
   useEffect(() => {
     callbacksRef.current = {
+      clearVoiceAttachments,
       refresh: () => router.refresh(),
       setOffline,
       setPendingConfirmation,
@@ -710,13 +796,20 @@ export function AiRuntimeProvider({
         suggestionPromptsRef.current = prompts;
       },
     };
-  }, [router, setOffline, setPendingConfirmation, setThreadId]);
+  }, [
+    clearVoiceAttachments,
+    router,
+    setOffline,
+    setPendingConfirmation,
+    setThreadId,
+  ]);
 
   // Created once; refs keep it current (recreating the adapter would reset
-  // in-flight streams). decisionRef is the context's stable ref instance.
+  // in-flight streams). decisionRef and mentionsRef are the context's stable
+  // ref instances.
   const adapter = useMemo(
-    () => createAdapter(requestRef, decisionRef, callbacksRef),
-    [decisionRef]
+    () => createAdapter(requestRef, decisionRef, mentionsRef, callbacksRef),
+    [decisionRef, mentionsRef]
   );
   // The attachment adapter reads the live thread id off requestRef and routes
   // upload failures to the composer error line; both refs are stable.

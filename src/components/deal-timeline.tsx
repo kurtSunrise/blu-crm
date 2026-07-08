@@ -113,7 +113,7 @@ function TimelineItem({ entry }: { entry: TimelineEntry }) {
         <Icon aria-hidden className="size-3.5" />
       </span>
       <RelativeDayTooltip date={entry.createdAt}>
-        <div className="flex min-w-0 flex-1 cursor-help flex-col gap-0.5 pt-1">
+        <div className="flex min-w-0 flex-1 cursor-default flex-col gap-0.5 pt-1">
           <p className="text-xs">
             <span className="font-medium">{style.label}</span>
             <span className="text-muted-foreground">
@@ -157,7 +157,7 @@ export function DealTimeline({
           <Sparkles aria-hidden className="size-3.5" />
         </span>
         <RelativeDayTooltip date={leadCreatedAt}>
-          <div className="flex min-w-0 flex-1 cursor-help flex-col gap-0.5 pt-1">
+          <div className="flex min-w-0 flex-1 cursor-default flex-col gap-0.5 pt-1">
             <p className="text-xs">
               <span className="font-medium">{footerLabel}</span>
               <span className="text-muted-foreground">

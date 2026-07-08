@@ -39,7 +39,11 @@ const toActionRowData = (row: ReportActionRow) => ({
   ownerName: row.ownerName,
 });
 
-const toArtifactData = (report: WeeklyReport): WeeklyReportArtifactData => ({
+// Exported for the proactive generators (src/lib/ai/proactive.ts), which
+// build the same weekly_report artifact without a model turn.
+export const toWeeklyReportArtifactData = (
+  report: WeeklyReport
+): WeeklyReportArtifactData => ({
   actions: report.actions.map(toActionRowData),
   closingSoon: report.closingSoon.map(toAlertDealData),
   closingSoonDays: report.closingSoonDays,
@@ -81,7 +85,7 @@ const getWeeklyReportTool = defineTool({
     const report = await getWeeklyReport();
     const artifact: ArtifactPayload = {
       artifactType: "weekly_report",
-      data: toArtifactData(report),
+      data: toWeeklyReportArtifactData(report),
       type: "artifact",
     };
     return {

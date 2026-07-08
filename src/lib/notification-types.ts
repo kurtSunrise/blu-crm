@@ -6,12 +6,14 @@ import { formatDateAwst } from "@/lib/format";
 // time, so copy fixes apply retroactively to stored rows.
 
 export type NotificationType =
+  | "daily_briefing"
   | "follow_up_due"
   | "follow_up_overdue"
   | "handover_to_delivery"
   | "lead_assigned"
   | "quote_viewed"
-  | "stale_deal";
+  | "stale_deal"
+  | "weekly_report";
 
 export interface NotificationPayload {
   action?: string;
@@ -22,6 +24,9 @@ export interface NotificationPayload {
   lastContactAt?: string;
   leadId?: string;
   quoteId?: string;
+  // Assistant thread carrying a proactive briefing/report; the client opens
+  // the assistant dock on it instead of navigating (href stays null).
+  threadId?: string;
   valueCents?: number | null;
 }
 
@@ -105,6 +110,26 @@ export const NOTIFICATION_TYPES: Record<
     }),
     href: dealHref,
   },
+  weekly_report: {
+    label: "Weekly pipeline report",
+    description: "When your Monday pipeline report is ready in the assistant.",
+    describe: () => ({
+      title: "Your weekly pipeline report is ready",
+      detail: "Open it in the assistant for the full pipeline breakdown.",
+    }),
+    href: () => null,
+  },
+  daily_briefing: {
+    label: "Morning briefing",
+    description:
+      "A weekday morning briefing of your follow-ups and deals to watch, in the assistant.",
+    describe: () => ({
+      title: "Your morning briefing",
+      detail:
+        "Open it in the assistant for today's follow-ups and deals to watch.",
+    }),
+    href: () => null,
+  },
   handover_to_delivery: {
     label: "Handover to delivery",
     description: "When a won deal is flagged for handover to delivery.",
@@ -123,6 +148,8 @@ export const NOTIFICATION_TYPE_ORDER: readonly NotificationType[] = [
   "follow_up_due",
   "follow_up_overdue",
   "stale_deal",
+  "weekly_report",
+  "daily_briefing",
   "handover_to_delivery",
 ];
 

@@ -11,7 +11,13 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import type * as React from "react";
-import { type MutableRefObject, useEffect, useRef, useState } from "react";
+import {
+  type MutableRefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import { useAiAssistant } from "@/components/ai/ai-context";
 import { AiRuntimeProvider } from "@/components/ai/ai-runtime-provider";
@@ -294,10 +300,12 @@ function ThreadExportBridge({
 // creation), while toggling the history view only hides the live chat.
 export function AiAssistantDock() {
   const {
+    clearRequestedThread,
     clearVoiceAttachments,
     decisionRef,
     mentionsRef,
     open,
+    requestedThread,
     setOpen,
     setPendingConfirmation,
     setThreadId,
@@ -311,27 +319,39 @@ export function AiAssistantDock() {
     initialMessages: [],
   });
 
-  const switchSession = (
-    nextThreadId: string | null,
-    initialMessages: ThreadMessageLike[],
-    initialFeedback: ThreadFeedbackMap = {}
-  ) => {
-    setThreadId(nextThreadId);
-    setPendingConfirmation(null);
-    decisionRef.current = null;
-    // Composer-side staging belongs to the old session: drop any recorded
-    // @-mention picks and unsent voice notes.
-    mentionsRef.current = [];
-    clearVoiceAttachments();
-    setSession((current) => ({
-      epoch: current.epoch + 1,
-      initialFeedback,
-      initialMessages,
-    }));
-    setView("chat");
-  };
+  const switchSession = useCallback(
+    (
+      nextThreadId: string | null,
+      initialMessages: ThreadMessageLike[],
+      initialFeedback: ThreadFeedbackMap = {}
+    ) => {
+      setThreadId(nextThreadId);
+      setPendingConfirmation(null);
+      decisionRef.current = null;
+      // Composer-side staging belongs to the old session: drop any recorded
+      // @-mention picks and unsent voice notes.
+      mentionsRef.current = [];
+      clearVoiceAttachments();
+      setSession((current) => ({
+        epoch: current.epoch + 1,
+        initialFeedback,
+        initialMessages,
+      }));
+      setView("chat");
+    },
+    [
+      clearVoiceAttachments,
+      decisionRef,
+      mentionsRef,
+      setPendingConfirmation,
+      setThreadId,
+    ]
+  );
 
-  const startNewChat = () => switchSession(null, []);
+  const startNewChat = useCallback(
+    () => switchSession(null, []),
+    [switchSession]
+  );
 
   // Serializes the visible thread client-side and copies it. Not async so
   // the handler type stays void; failures surface as a toast.
@@ -348,36 +368,60 @@ export function AiAssistantDock() {
     );
   };
 
-  const resumeThread = async (resumeId: string) => {
-    if (resumeId === threadId) {
-      setView("chat");
+  const resumeThread = useCallback(
+    async (resumeId: string, options?: { fallbackToNewChat?: boolean }) => {
+      if (resumeId === threadId) {
+        setView("chat");
+        return;
+      }
+      const response = await fetch(`/api/chat/threads/${resumeId}`);
+      if (!response.ok) {
+        // A notification can outlive its thread. Fall back to a fresh chat
+        // so the dock never opens onto a dead end.
+        if (options?.fallbackToNewChat) {
+          toast.error("That conversation is no longer available.");
+          startNewChat();
+        }
+        return;
+      }
+      const payload = (await response.json()) as {
+        feedback?: { messageId: string; rating: "up" | "down" }[];
+        messages: ResumedMessage[];
+        thread?: ResumedThread;
+      };
+      const initialFeedback: ThreadFeedbackMap = {};
+      for (const entry of payload.feedback ?? []) {
+        initialFeedback[entry.messageId] = entry.rating;
+      }
+      switchSession(
+        resumeId,
+        toThreadMessages(payload.messages),
+        initialFeedback
+      );
+      // A thread paused on a write plan resumes actionable: re-seed the pending
+      // confirmation so its card's buttons work again.
+      const pendingToolUses = payload.thread?.pendingToolUses;
+      if (pendingToolUses && pendingToolUses.length > 0) {
+        setPendingConfirmation({ items: pendingToolUses });
+      }
+    },
+    [threadId, switchSession, startNewChat, setPendingConfirmation]
+  );
+
+  // Thread-open requests from outside the dock (notification cards) load
+  // through the exact resume path history selection uses. The request is
+  // cleared first so a re-render mid-fetch cannot double-load.
+  useEffect(() => {
+    if (!requestedThread) {
       return;
     }
-    const response = await fetch(`/api/chat/threads/${resumeId}`);
-    if (!response.ok) {
-      return;
-    }
-    const payload = (await response.json()) as {
-      feedback?: { messageId: string; rating: "up" | "down" }[];
-      messages: ResumedMessage[];
-      thread?: ResumedThread;
-    };
-    const initialFeedback: ThreadFeedbackMap = {};
-    for (const entry of payload.feedback ?? []) {
-      initialFeedback[entry.messageId] = entry.rating;
-    }
-    switchSession(
-      resumeId,
-      toThreadMessages(payload.messages),
-      initialFeedback
+    clearRequestedThread();
+    resumeThread(requestedThread.threadId, { fallbackToNewChat: true }).catch(
+      () => {
+        // Network failure: leave the dock on its current session.
+      }
     );
-    // A thread paused on a write plan resumes actionable: re-seed the pending
-    // confirmation so its card's buttons work again.
-    const pendingToolUses = payload.thread?.pendingToolUses;
-    if (pendingToolUses && pendingToolUses.length > 0) {
-      setPendingConfirmation({ items: pendingToolUses });
-    }
-  };
+  }, [requestedThread, clearRequestedThread, resumeThread]);
 
   const handleThreadDeleted = (deletedThreadId: string) => {
     if (deletedThreadId === threadId) {

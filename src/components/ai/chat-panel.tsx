@@ -72,6 +72,11 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 // One chip serves both the composer (with a remove control) and the sent
@@ -141,9 +146,20 @@ function AttachmentChip() {
 const ATTACHMENT_COMPONENTS = { Attachment: AttachmentChip };
 
 // Rounded suggestion chip shared by the welcome screen and the follow-up
-// row so both read as the same affordance.
-function SuggestionChip({ prompt }: { prompt: string }) {
-  return (
+// row so both read as the same affordance. The chip stays a single-line pill
+// with a uniform max width and truncates rather than wrapping into a tall
+// blob; `label` shows a short version while `prompt` is what gets sent. When a
+// `tooltip` is given (the full prompt), hovering reveals it.
+function SuggestionChip({
+  prompt,
+  label,
+  tooltip,
+}: {
+  prompt: string;
+  label?: string;
+  tooltip?: string;
+}) {
+  const chip = (
     <ThreadPrimitive.Suggestion
       asChild
       autoSend
@@ -151,13 +167,24 @@ function SuggestionChip({ prompt }: { prompt: string }) {
       prompt={prompt}
     >
       <Button
-        className="h-auto min-h-10 max-w-[80%] shrink-0 whitespace-normal rounded-full px-4 py-2 text-left"
+        className="h-10 max-w-[15rem] shrink-0 rounded-full px-4"
         type="button"
         variant="outline"
       >
-        {prompt}
+        <span className="min-w-0 truncate">{label ?? prompt}</span>
       </Button>
     </ThreadPrimitive.Suggestion>
+  );
+
+  if (!tooltip) {
+    return chip;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger render={chip} />
+      <TooltipContent className="max-w-xs">{tooltip}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -185,7 +212,12 @@ function ThreadWelcome() {
         </div>
         <div className="mt-2 flex w-full gap-2 overflow-x-auto pb-1">
           {suggestions.map((suggestion) => (
-            <SuggestionChip key={suggestion} prompt={suggestion} />
+            <SuggestionChip
+              key={suggestion.prompt}
+              label={suggestion.display}
+              prompt={suggestion.prompt}
+              tooltip={suggestion.prompt}
+            />
           ))}
         </div>
       </div>
@@ -204,7 +236,11 @@ function FollowUpSuggestions() {
   return (
     <div className="flex w-full gap-2 overflow-x-auto pb-1">
       {suggestions.map((suggestion) => (
-        <SuggestionChip key={suggestion.prompt} prompt={suggestion.prompt} />
+        <SuggestionChip
+          key={suggestion.prompt}
+          prompt={suggestion.prompt}
+          tooltip={suggestion.prompt}
+        />
       ))}
     </div>
   );

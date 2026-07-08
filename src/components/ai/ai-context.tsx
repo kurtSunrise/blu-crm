@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import type { ConfirmationItem } from "@/lib/ai/stream-protocol";
+import { setAssistantWide } from "@/lib/sidebar-actions";
 
 // Shared assistant state (Billify's *-context pattern): panel visibility,
 // the active persisted thread, the on-screen entity registered by detail
@@ -121,14 +122,26 @@ interface AiAssistantContextValue {
   // registered entity, the first message becomes linked to that entity.
   startNewAssistantChat: () => void;
   threadId: string | null;
+  // Toggles the desktop assistant between its normal and wide widths and
+  // persists the choice (fire-and-forget cookie write). Desktop-only.
+  toggleWide: () => void;
   // Uploaded audio attachment ids from voice notes awaiting the next send.
   voiceAttachmentIds: string[];
+  // Whether the desktop assistant dock is at its wider width.
+  wide: boolean;
 }
 
 const AiAssistantContext = createContext<AiAssistantContextValue | null>(null);
 
-export function AiAssistantProvider({ children }: { children: ReactNode }) {
+export function AiAssistantProvider({
+  children,
+  defaultWide = false,
+}: {
+  children: ReactNode;
+  defaultWide?: boolean;
+}) {
   const [open, setOpen] = useState(false);
+  const [wide, setWide] = useState(defaultWide);
   const [offline, setOffline] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [entity, setEntity] = useState<AiEntityRef | null>(null);
@@ -189,6 +202,17 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
   const clearRequestedNewChat = useCallback(() => {
     setRequestedNewChat(null);
   }, []);
+  const toggleWide = useCallback(() => {
+    setWide((current) => {
+      const next = !current;
+      // Persist via a server action; a failed cookie write only affects the
+      // next page load's initial width, so a rejection is non-fatal here.
+      setAssistantWide(next).catch(() => {
+        // Intentionally ignored: persistence is best-effort.
+      });
+      return next;
+    });
+  }, []);
 
   const value = useMemo(
     () => ({
@@ -220,7 +244,9 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
       setThreadId,
       startNewAssistantChat,
       threadId,
+      toggleWide,
       voiceAttachmentIds,
+      wide,
     }),
     [
       addVoiceAttachment,
@@ -243,7 +269,9 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
       requestedThread,
       startNewAssistantChat,
       threadId,
+      toggleWide,
       voiceAttachmentIds,
+      wide,
     ]
   );
 

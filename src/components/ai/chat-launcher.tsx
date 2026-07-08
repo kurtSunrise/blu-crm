@@ -4,6 +4,8 @@ import { type ThreadMessageLike, useThreadRuntime } from "@assistant-ui/react";
 import {
   ClipboardCopyIcon,
   HistoryIcon,
+  Maximize2Icon,
+  Minimize2Icon,
   Settings2Icon,
   SparklesIcon,
   SquarePenIcon,
@@ -312,6 +314,8 @@ export function AiAssistantDock() {
     setPendingConfirmation,
     setThreadId,
     threadId,
+    toggleWide,
+    wide,
   } = useAiAssistant();
   const exportMessagesRef = useRef<ThreadMessagesGetter | null>(null);
   const [view, setView] = useState<"chat" | "history">("chat");
@@ -446,7 +450,8 @@ export function AiAssistantDock() {
     <aside
       aria-label="Blu assistant"
       className={cn(
-        "fixed inset-0 z-50 flex flex-col bg-background transition-transform duration-200 ease-out md:left-auto md:z-30 md:w-[400px] md:border-l",
+        "fixed inset-0 z-50 flex flex-col bg-background transition-[transform,width] duration-200 ease-out md:left-auto md:z-30 md:border-l",
+        wide ? "md:w-[640px]" : "md:w-[400px]",
         open
           ? "translate-x-0 translate-y-0"
           : "translate-y-full md:translate-x-full md:translate-y-0"
@@ -459,6 +464,22 @@ export function AiAssistantDock() {
           <h2 className="font-heading font-semibold text-sm">Blu assistant</h2>
         </div>
         <div className="flex items-center">
+          {/* Width toggle, desktop-only. Set apart from the conversation
+              actions with a divider so it reads as a panel control, not
+              another chat action. */}
+          <TooltipIconButton
+            aria-pressed={wide}
+            className="hidden md:flex"
+            onClick={toggleWide}
+            tooltip={wide ? "Narrow the panel" : "Widen the panel"}
+          >
+            {wide ? (
+              <Minimize2Icon aria-hidden className="size-4.5" />
+            ) : (
+              <Maximize2Icon aria-hidden className="size-4.5" />
+            )}
+          </TooltipIconButton>
+          <div className="mr-1 ml-0.5 hidden h-5 w-px bg-border md:block" />
           <TooltipIconButton onClick={startNewChat} tooltip="New conversation">
             <SquarePenIcon aria-hidden className="size-4.5" />
           </TooltipIconButton>

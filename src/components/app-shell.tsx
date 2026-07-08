@@ -157,15 +157,17 @@ export function AppShell({
   userEmail,
   userImage = null,
   defaultCollapsed = false,
+  defaultWide = false,
 }: {
   children: React.ReactNode;
   userName: string;
   userEmail: string;
   userImage?: string | null;
   defaultCollapsed?: boolean;
+  defaultWide?: boolean;
 }) {
   return (
-    <AiAssistantProvider>
+    <AiAssistantProvider defaultWide={defaultWide}>
       <AppShellInner
         defaultCollapsed={defaultCollapsed}
         userEmail={userEmail}
@@ -192,7 +194,11 @@ function AppShellInner({
   defaultCollapsed: boolean;
 }) {
   const pathname = usePathname();
-  const { open: assistantOpen, setOpen: setAssistantOpen } = useAiAssistant();
+  const {
+    open: assistantOpen,
+    setOpen: setAssistantOpen,
+    wide: assistantWide,
+  } = useAiAssistant();
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   // One poller serves both the desktop sidebar and the mobile header badge.
   const unreadCount = useUnreadNotificationCount(pathname);
@@ -360,7 +366,7 @@ function AppShellInner({
           className={cn(
             "flex-1 pb-20 transition-[padding] md:pb-8",
             collapsed ? "md:pl-16" : "md:pl-60",
-            assistantOpen && "md:pr-[400px]"
+            assistantOpen && (assistantWide ? "md:pr-[640px]" : "md:pr-[400px]")
           )}
           id="main-content"
         >

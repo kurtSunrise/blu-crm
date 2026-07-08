@@ -781,6 +781,8 @@ const WHATS_NEW = [
   {
     date: "08/07/2026",
     items: [
+      "On desktop you can now make the assistant wider: use the resize button next to the Blu assistant title to give it more room for reading answers and cards, then use it again to go back to the normal width. It remembers your choice.",
+      "The assistant's starter suggestions are tidier: each one is now a short single line, and hovering it shows the full prompt, so a long deal name no longer stretches a suggestion into a tall block.",
       "Every deal now has an AI conversations panel under Quotes: it lists the assistant chats you have had about that deal, so you can reopen one with a tap, and a New chat button starts a fresh chat already focused on that deal.",
       "The assistant now comes to you: every Monday morning it drops a ready-made weekly pipeline report into your chat, and Tuesday to Friday a short morning briefing with your follow-ups due, deals closing soon, and anything gone quiet. Each one lands as a notification you can tap to open.",
       "When a deal needs attention, its notification now has an Ask assistant button that opens the chat already primed to talk about that deal.",

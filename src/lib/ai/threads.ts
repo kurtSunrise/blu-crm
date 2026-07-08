@@ -214,6 +214,9 @@ export const archiveThread = async (threadId: string): Promise<void> => {
 };
 
 const THREAD_LIST_LIMIT = 30;
+// The deal page's AI-conversations card is compact; it never needs the full
+// history page's worth of rows.
+const DEAL_THREAD_LIMIT = 8;
 
 export interface ThreadContext {
   kind: "deal" | "contact";
@@ -327,6 +330,63 @@ const previewsForThreads = async (
   return previews;
 };
 
+// Shared column set for the two thread-list queries (history + deal card):
+// the thread fields plus the joined deal/contact labels the context chip needs.
+const THREAD_LIST_COLUMNS = {
+  contactName: contact.name,
+  dealLeadId: deal.leadId,
+  dealTitle: deal.title,
+  id: chatThread.id,
+  lastMessageAt: chatThread.lastMessageAt,
+  originPage: chatThread.originPage,
+  pinnedAt: chatThread.pinnedAt,
+  status: chatThread.status,
+  title: chatThread.title,
+};
+
+interface ThreadListRow {
+  contactName: string | null;
+  dealLeadId: string | null;
+  dealTitle: string | null;
+  id: string;
+  lastMessageAt: Date | null;
+  originPage: string | null;
+  pinnedAt: Date | null;
+  status: "idle" | "awaiting_confirmation";
+  title: string | null;
+}
+
+// Attaches previews and derives the context chip label — shared so the history
+// list and the deal card render identical rows.
+const toThreadListItems = async (
+  rows: ThreadListRow[]
+): Promise<ThreadListItem[]> => {
+  const previews = await previewsForThreads(rows.map((row) => row.id));
+  const emptyPreview: ThreadPreview = {
+    firstMessage: null,
+    lastMessage: null,
+    messageCount: 0,
+  };
+
+  return rows.map(
+    ({ contactName, dealLeadId, dealTitle, pinnedAt, ...thread }) => {
+      let context: ThreadContext | null = null;
+      if (dealTitle) {
+        // Same label shape as the composer's context chip.
+        context = { kind: "deal", label: `${dealLeadId} · ${dealTitle}` };
+      } else if (contactName) {
+        context = { kind: "contact", label: contactName };
+      }
+      return {
+        ...thread,
+        context,
+        pinned: pinnedAt !== null,
+        preview: previews.get(thread.id) ?? emptyPreview,
+      };
+    }
+  );
+};
+
 // Recent conversations for the history view, most recently active first.
 // A search query matches the thread title and the linked deal (title or
 // lead id) or contact name, over the user's whole history, not just the
@@ -354,17 +414,7 @@ export const listThreadsForUser = async (
   }
 
   const rows = await db
-    .select({
-      contactName: contact.name,
-      dealLeadId: deal.leadId,
-      dealTitle: deal.title,
-      id: chatThread.id,
-      lastMessageAt: chatThread.lastMessageAt,
-      originPage: chatThread.originPage,
-      pinnedAt: chatThread.pinnedAt,
-      status: chatThread.status,
-      title: chatThread.title,
-    })
+    .select(THREAD_LIST_COLUMNS)
     .from(chatThread)
     .leftJoin(deal, eq(chatThread.dealId, deal.id))
     .leftJoin(contact, eq(chatThread.contactId, contact.id))
@@ -375,30 +425,35 @@ export const listThreadsForUser = async (
     )
     .limit(THREAD_LIST_LIMIT);
 
-  const previews = await previewsForThreads(rows.map((row) => row.id));
-  const emptyPreview: ThreadPreview = {
-    firstMessage: null,
-    lastMessage: null,
-    messageCount: 0,
-  };
+  return toThreadListItems(rows);
+};
 
-  return rows.map(
-    ({ contactName, dealLeadId, dealTitle, pinnedAt, ...thread }) => {
-      let context: ThreadContext | null = null;
-      if (dealTitle) {
-        // Same label shape as the composer's context chip.
-        context = { kind: "deal", label: `${dealLeadId} · ${dealTitle}` };
-      } else if (contactName) {
-        context = { kind: "contact", label: contactName };
-      }
-      return {
-        ...thread,
-        context,
-        pinned: pinnedAt !== null,
-        preview: previews.get(thread.id) ?? emptyPreview,
-      };
-    }
-  );
+// Conversations linked to a specific deal for the deal page's AI card, scoped
+// to the viewing user (threads are user-owned, so this matches what the resume
+// path will let them reopen) and most recently active first.
+export const listDealThreadsForUser = async (
+  userId: string,
+  dealId: string
+): Promise<ThreadListItem[]> => {
+  const rows = await db
+    .select(THREAD_LIST_COLUMNS)
+    .from(chatThread)
+    .leftJoin(deal, eq(chatThread.dealId, deal.id))
+    .leftJoin(contact, eq(chatThread.contactId, contact.id))
+    .where(
+      and(
+        eq(chatThread.userId, userId),
+        eq(chatThread.dealId, dealId),
+        isNull(chatThread.archivedAt)
+      )
+    )
+    .orderBy(
+      sql`${chatThread.pinnedAt} desc nulls last`,
+      sql`${chatThread.lastMessageAt} desc nulls last`
+    )
+    .limit(DEAL_THREAD_LIMIT);
+
+  return toThreadListItems(rows);
 };
 
 export interface DisplayMessageAttachment {

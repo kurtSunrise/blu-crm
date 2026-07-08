@@ -508,41 +508,49 @@ export const aiAuditStatus = pgEnum("ai_audit_status", [
   "skipped",
 ]);
 
-export const chatThread = pgTable("chat_thread", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  title: text("title"),
-  originPage: text("origin_page"),
-  dealId: text("deal_id").references(() => deal.id),
-  contactId: text("contact_id").references(() => contact.id),
-  status: chatThreadStatus("status").notNull().default("idle"),
-  // PendingPlan jsonb ({ version: 2, items[], heldToolResults }) while gated
-  // writes await user confirmation; legacy single-item shape still parses.
-  // Cleared once resolved (FR-7.8).
-  pendingToolUse: jsonb("pending_tool_use"),
-  // Rolling compaction summary of the older part of a long thread, written by
-  // maybeCompactThread after a turn. loadThreadMessages prepends it as a
-  // synthetic user turn when the replay cap trims older rows away, so the
-  // model keeps the gist instead of silently losing it. summaryUpTo is the
-  // createdAt of the newest summarised message; both null until the thread
-  // grows past the compaction threshold.
-  summaryText: text("summary_text"),
-  summaryUpTo: timestamp("summary_up_to", { withTimezone: true }),
-  lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
-  archivedAt: timestamp("archived_at", { withTimezone: true }),
-  // Pinned threads sort first in history; null = unpinned
-  pinnedAt: timestamp("pinned_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const chatThread = pgTable(
+  "chat_thread",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    title: text("title"),
+    originPage: text("origin_page"),
+    dealId: text("deal_id").references(() => deal.id),
+    contactId: text("contact_id").references(() => contact.id),
+    status: chatThreadStatus("status").notNull().default("idle"),
+    // PendingPlan jsonb ({ version: 2, items[], heldToolResults }) while gated
+    // writes await user confirmation; legacy single-item shape still parses.
+    // Cleared once resolved (FR-7.8).
+    pendingToolUse: jsonb("pending_tool_use"),
+    // Rolling compaction summary of the older part of a long thread, written by
+    // maybeCompactThread after a turn. loadThreadMessages prepends it as a
+    // synthetic user turn when the replay cap trims older rows away, so the
+    // model keeps the gist instead of silently losing it. summaryUpTo is the
+    // createdAt of the newest summarised message; both null until the thread
+    // grows past the compaction threshold.
+    summaryText: text("summary_text"),
+    summaryUpTo: timestamp("summary_up_to", { withTimezone: true }),
+    lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    // Pinned threads sort first in history; null = unpinned
+    pinnedAt: timestamp("pinned_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // The deal page lists a viewer's conversations for one deal; index the FK so
+    // that filter never scans the whole thread table.
+    index("chat_thread_deal_idx").on(table.dealId),
+  ]
+);
 
 export const chatMessage = pgTable("chat_message", {
   id: text("id")

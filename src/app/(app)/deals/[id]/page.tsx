@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AiEntityBeacon } from "@/components/ai/ai-entity-beacon";
 import { AskAiButton } from "@/components/ai/ask-ai-button";
+import { DealChatsList } from "@/components/ai/deal-chats-list";
 import { AttachmentDeleteButton } from "@/components/attachment-delete-button";
 import { AttachmentUpload } from "@/components/attachment-upload";
 import { CompleteFollowUpButton } from "@/components/complete-follow-up-button";
@@ -31,6 +32,7 @@ import {
   quote,
   user,
 } from "@/db/schema";
+import { listDealThreadsForUser, type ThreadListItem } from "@/lib/ai/threads";
 import { awstMonthKey } from "@/lib/calendar";
 import {
   awstDayDiff,
@@ -46,6 +48,7 @@ import {
   LOST_REASON_LABELS,
   PROJECT_TYPE_LABELS,
 } from "@/lib/labels";
+import { getSessionUserId } from "@/lib/session";
 import {
   getActiveSubStatuses,
   getSubStatusById,
@@ -234,48 +237,54 @@ export default async function DealPage({
 }) {
   const { id } = await params;
 
-  const [record] = await db
-    .select({
-      id: deal.id,
-      leadId: deal.leadId,
-      title: deal.title,
-      stageId: deal.stageId,
-      stageName: pipelineStage.name,
-      estimatedValueCents: deal.estimatedValueCents,
-      quotedValueCents: deal.quotedValueCents,
-      source: deal.source,
-      projectType: deal.projectType,
-      venue: deal.venue,
-      scopeSummary: deal.scopeSummary,
-      fixedDate: deal.fixedDate,
-      fixedDateType: deal.fixedDateType,
-      decisionMakerConfirmed: deal.decisionMakerConfirmed,
-      expectedCloseDate: deal.expectedCloseDate,
-      lostReason: deal.lostReason,
-      subStatusId: deal.subStatusId,
-      subStatusNote: deal.subStatusNote,
-      handoverToDelivery: deal.handoverToDelivery,
-      stageIsWon: pipelineStage.isWon,
-      notes: deal.notes,
-      sharedFolderUrl: deal.sharedFolderUrl,
-      ownerId: deal.ownerId,
-      companyId: company.id,
-      companyName: company.name,
-      contactId: contact.id,
-      contactName: contact.name,
-      contactEmail: contact.email,
-      contactPhone: contact.phone,
-      ownerName: user.name,
-      createdAt: deal.createdAt,
-    })
-    .from(deal)
-    .leftJoin(company, eq(deal.companyId, company.id))
-    .leftJoin(contact, eq(deal.contactId, contact.id))
-    .leftJoin(user, eq(deal.ownerId, user.id))
-    .innerJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
-    .where(eq(deal.id, id))
-    .limit(1);
+  // The viewer id (for their deal-linked chats) is independent of the deal
+  // record, so resolve it in the same wave rather than adding a serial await.
+  const [dealRows, viewerId] = await Promise.all([
+    db
+      .select({
+        id: deal.id,
+        leadId: deal.leadId,
+        title: deal.title,
+        stageId: deal.stageId,
+        stageName: pipelineStage.name,
+        estimatedValueCents: deal.estimatedValueCents,
+        quotedValueCents: deal.quotedValueCents,
+        source: deal.source,
+        projectType: deal.projectType,
+        venue: deal.venue,
+        scopeSummary: deal.scopeSummary,
+        fixedDate: deal.fixedDate,
+        fixedDateType: deal.fixedDateType,
+        decisionMakerConfirmed: deal.decisionMakerConfirmed,
+        expectedCloseDate: deal.expectedCloseDate,
+        lostReason: deal.lostReason,
+        subStatusId: deal.subStatusId,
+        subStatusNote: deal.subStatusNote,
+        handoverToDelivery: deal.handoverToDelivery,
+        stageIsWon: pipelineStage.isWon,
+        notes: deal.notes,
+        sharedFolderUrl: deal.sharedFolderUrl,
+        ownerId: deal.ownerId,
+        companyId: company.id,
+        companyName: company.name,
+        contactId: contact.id,
+        contactName: contact.name,
+        contactEmail: contact.email,
+        contactPhone: contact.phone,
+        ownerName: user.name,
+        createdAt: deal.createdAt,
+      })
+      .from(deal)
+      .leftJoin(company, eq(deal.companyId, company.id))
+      .leftJoin(contact, eq(deal.contactId, contact.id))
+      .leftJoin(user, eq(deal.ownerId, user.id))
+      .innerJoin(pipelineStage, eq(deal.stageId, pipelineStage.id))
+      .where(eq(deal.id, id))
+      .limit(1),
+    getSessionUserId(),
+  ]);
 
+  const [record] = dealRows;
   if (!record) {
     notFound();
   }
@@ -296,6 +305,7 @@ export default async function DealPage({
     quotes,
     attachments,
     timeline,
+    dealThreads,
   ] = await Promise.all([
     getActiveSubStatuses(),
     getSubStatusPlacement(),
@@ -361,6 +371,9 @@ export default async function DealPage({
       .leftJoin(user, eq(activity.createdBy, user.id))
       .where(eq(activity.dealId, id))
       .orderBy(desc(activity.createdAt)),
+    viewerId
+      ? listDealThreadsForUser(viewerId, id)
+      : Promise.resolve<ThreadListItem[]>([]),
   ]);
 
   const valueCents = record.quotedValueCents ?? record.estimatedValueCents;
@@ -565,6 +578,18 @@ export default async function DealPage({
               </ul>
             )}
             <QuoteForm dealId={record.id} />
+          </section>
+
+          <Separator />
+
+          <section
+            aria-label="AI conversations"
+            className="flex flex-col gap-3"
+          >
+            <h2 className="font-heading font-medium text-sm">
+              AI conversations
+            </h2>
+            <DealChatsList threads={dealThreads} />
           </section>
 
           <Separator />

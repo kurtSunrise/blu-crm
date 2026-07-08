@@ -31,6 +31,14 @@ export interface AssistantThreadRequest {
   threadId: string;
 }
 
+// A request from outside the dock to start a fresh (empty) conversation. The
+// nonce lets repeat taps re-fire the dock's effect. Used by the deal page's
+// "New chat" action, where the mounted entity beacon makes the first send
+// deal-linked.
+export interface AssistantNewChatRequest {
+  nonce: number;
+}
+
 // The write plan currently awaiting review: one or more gated tool calls in
 // proposal order. A single-item plan is the common case.
 export interface PendingConfirmation {
@@ -70,6 +78,8 @@ interface AiAssistantContextValue {
   attachmentError: string | null;
   clearComposerPrefill: () => void;
   clearEntity: () => void;
+  // Called by the dock once it has picked up a new-chat request.
+  clearRequestedNewChat: () => void;
   // Called by the dock once it has picked up a thread-open request.
   clearRequestedThread: () => void;
   // Called by the runtime adapter once a send has consumed the voice notes.
@@ -100,12 +110,16 @@ interface AiAssistantContextValue {
   pendingConfirmation: PendingConfirmation | null;
   registerEntity: (entity: AiEntityRef) => void;
   removeVoiceAttachment: (attachmentId: string) => void;
+  requestedNewChat: AssistantNewChatRequest | null;
   requestedThread: AssistantThreadRequest | null;
   setAttachmentError: (message: string | null) => void;
   setOffline: (offline: boolean) => void;
   setOpen: (open: boolean) => void;
   setPendingConfirmation: (pending: PendingConfirmation | null) => void;
   setThreadId: (threadId: string | null) => void;
+  // Opens the dock on a fresh, empty conversation. On a detail page with a
+  // registered entity, the first message becomes linked to that entity.
+  startNewAssistantChat: () => void;
   threadId: string | null;
   // Uploaded audio attachment ids from voice notes awaiting the next send.
   voiceAttachmentIds: string[];
@@ -125,9 +139,12 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
   const [voiceAttachmentIds, setVoiceAttachmentIds] = useState<string[]>([]);
   const [requestedThread, setRequestedThread] =
     useState<AssistantThreadRequest | null>(null);
+  const [requestedNewChat, setRequestedNewChat] =
+    useState<AssistantNewChatRequest | null>(null);
   const decisionRef = useRef<ConfirmationDecision | null>(null);
   const mentionsRef = useRef<ComposerMention[]>([]);
   const threadRequestNonceRef = useRef(0);
+  const newChatNonceRef = useRef(0);
 
   const registerEntity = useCallback((next: AiEntityRef) => {
     setEntity(next);
@@ -164,6 +181,14 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
   const clearRequestedThread = useCallback(() => {
     setRequestedThread(null);
   }, []);
+  const startNewAssistantChat = useCallback(() => {
+    newChatNonceRef.current += 1;
+    setRequestedNewChat({ nonce: newChatNonceRef.current });
+    setOpen(true);
+  }, []);
+  const clearRequestedNewChat = useCallback(() => {
+    setRequestedNewChat(null);
+  }, []);
 
   const value = useMemo(
     () => ({
@@ -171,6 +196,7 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
       attachmentError,
       clearComposerPrefill,
       clearEntity,
+      clearRequestedNewChat,
       clearRequestedThread,
       clearVoiceAttachments,
       composerPrefill,
@@ -185,12 +211,14 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
       pendingConfirmation,
       registerEntity,
       removeVoiceAttachment,
+      requestedNewChat,
       requestedThread,
       setAttachmentError,
       setOffline,
       setOpen,
       setPendingConfirmation,
       setThreadId,
+      startNewAssistantChat,
       threadId,
       voiceAttachmentIds,
     }),
@@ -199,6 +227,7 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
       attachmentError,
       clearComposerPrefill,
       clearEntity,
+      clearRequestedNewChat,
       clearRequestedThread,
       clearVoiceAttachments,
       composerPrefill,
@@ -210,7 +239,9 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
       pendingConfirmation,
       registerEntity,
       removeVoiceAttachment,
+      requestedNewChat,
       requestedThread,
+      startNewAssistantChat,
       threadId,
       voiceAttachmentIds,
     ]

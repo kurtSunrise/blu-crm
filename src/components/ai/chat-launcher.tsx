@@ -300,11 +300,13 @@ function ThreadExportBridge({
 // creation), while toggling the history view only hides the live chat.
 export function AiAssistantDock() {
   const {
+    clearRequestedNewChat,
     clearRequestedThread,
     clearVoiceAttachments,
     decisionRef,
     mentionsRef,
     open,
+    requestedNewChat,
     requestedThread,
     setOpen,
     setPendingConfirmation,
@@ -422,6 +424,17 @@ export function AiAssistantDock() {
       }
     );
   }, [requestedThread, clearRequestedThread, resumeThread]);
+
+  // New-chat requests from outside the dock (the deal page's "New chat"
+  // action) reset to an empty session. The detail page's entity beacon is
+  // still mounted, so the first send links the new thread to that entity.
+  useEffect(() => {
+    if (!requestedNewChat) {
+      return;
+    }
+    clearRequestedNewChat();
+    startNewChat();
+  }, [requestedNewChat, clearRequestedNewChat, startNewChat]);
 
   const handleThreadDeleted = (deletedThreadId: string) => {
     if (deletedThreadId === threadId) {

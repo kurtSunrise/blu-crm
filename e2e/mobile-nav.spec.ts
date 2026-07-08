@@ -48,3 +48,17 @@ test("the More tab reaches Contacts and Reports", async ({ page }) => {
     page.getByRole("heading", { name: "Reports", exact: true })
   ).toBeVisible();
 });
+
+test("the active report pill scrolls into view on a phone", async ({
+  page,
+}) => {
+  // "Daily" is the last of six pills, so on a phone it starts off the right
+  // edge of the swipeable Reports nav. ScrollRow should slide it into view so
+  // the current view is never hidden.
+  await page.goto("/reports/daily");
+  const activePill = page
+    .getByRole("navigation", { name: "Report views" })
+    .getByRole("link", { name: "Daily" });
+  await expect(activePill).toHaveAttribute("aria-current", "page");
+  await expect(activePill).toBeInViewport();
+});

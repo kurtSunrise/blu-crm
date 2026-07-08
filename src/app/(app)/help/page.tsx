@@ -790,7 +790,7 @@ const WHATS_NEW = [
       "Long conversations no longer forget their beginning: the assistant keeps a running summary of older messages and carries it forward.",
       "Admins can now manage the assistant's knowledge base in Settings, Knowledge: add, edit, or remove the documents it cites, with instant effect on answers.",
       "On a deal's timeline, hover any activity (or the Lead created marker) to see how long ago it happened, like '5 days ago', so you don't have to work it out from the date.",
-      "More room on phones across the app: pages now open with less empty space up top, and the view switchers on Reports (Overview, Trends, Funnel, and the rest) sit in a single row you can swipe sideways instead of wrapping onto several lines. This follows the same tidy-up already made to the Pipeline header.",
+      "More room on phones across the app: pages open with less empty space up top, and the view switchers on Reports (Overview, Trends, Funnel, and the rest) now sit in a single row you can swipe sideways. The row fades at the edge to show there's more, always slides the view you're on into sight, and stays pinned below the header as you scroll. This follows the same tidy-up already made to the Pipeline header.",
     ],
   },
   {

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ScrollRow } from "@/components/scroll-row";
 import { cn } from "@/lib/utils";
 
 export interface PillNavLink {
@@ -22,28 +23,27 @@ export function PillNav({
   query?: string;
 }) {
   return (
-    // On phones the pills sit in a single row you can swipe sideways
-    // (overflow-x-auto, no wrap) instead of stacking into several lines;
-    // desktop restores wrapping. Mirrors the pipeline mobile-header pattern.
-    <nav
-      aria-label={ariaLabel}
-      className="flex gap-2 overflow-x-auto md:flex-wrap md:overflow-visible"
-    >
-      {links.map((link) => (
-        <Link
-          aria-current={link.href === active ? "page" : undefined}
-          className={cn(
-            "flex min-h-9 shrink-0 items-center whitespace-nowrap rounded-full border px-4 font-medium text-sm transition-colors",
-            link.href === active
-              ? "border-blu bg-blu/10 text-blu"
-              : "text-muted-foreground hover:bg-accent"
-          )}
-          href={query ? `${link.href}?${query}` : link.href}
-          key={link.href}
-        >
-          {link.label}
-        </Link>
-      ))}
+    // On phones the pills sit in a single row you can swipe sideways instead of
+    // stacking into several lines; ScrollRow fades the overflowing edge and
+    // scrolls the active pill into view. Desktop restores wrapping.
+    <nav aria-label={ariaLabel}>
+      <ScrollRow className="flex gap-2 md:flex-wrap">
+        {links.map((link) => (
+          <Link
+            aria-current={link.href === active ? "page" : undefined}
+            className={cn(
+              "flex min-h-9 shrink-0 items-center whitespace-nowrap rounded-full border px-4 font-medium text-sm transition-colors",
+              link.href === active
+                ? "border-blu bg-blu/10 text-blu"
+                : "text-muted-foreground hover:bg-accent"
+            )}
+            href={query ? `${link.href}?${query}` : link.href}
+            key={link.href}
+          >
+            {link.label}
+          </Link>
+        ))}
+      </ScrollRow>
     </nav>
   );
 }

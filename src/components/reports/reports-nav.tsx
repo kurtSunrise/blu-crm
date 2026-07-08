@@ -22,12 +22,17 @@ export function ReportsNav({
   active?: ReportsNavKey;
   query?: string;
 }) {
+  // Pin the switcher under the mobile app-shell header (h-14) so it stays
+  // reachable down long report pages, matching the pipeline/contacts filter
+  // bars. The -mx-4/px-4 bleed lets the pinned bar span the page padding.
   return (
-    <PillNav
-      active={active}
-      ariaLabel="Report views"
-      links={REPORT_LINKS}
-      query={query}
-    />
+    <div className="sticky top-14 z-10 -mx-4 bg-background/95 px-4 py-2 backdrop-blur md:top-0">
+      <PillNav
+        active={active}
+        ariaLabel="Report views"
+        links={REPORT_LINKS}
+        query={query}
+      />
+    </div>
   );
 }

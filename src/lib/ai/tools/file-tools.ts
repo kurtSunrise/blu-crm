@@ -6,12 +6,23 @@ import type * as Anthropic from "@/lib/ai/anthropic";
 import {
   cacheAttachmentDescription,
   describeMedia,
+  describeText,
 } from "@/lib/ai/attachment-describe";
-import { loadDealAttachmentMedia } from "@/lib/ai/attachments";
+import {
+  loadDealAttachmentBytes,
+  loadDealAttachmentMedia,
+} from "@/lib/ai/attachments";
 import { isAiConfigured } from "@/lib/ai/client";
+import { indexAttachmentText } from "@/lib/ai/documents";
+import { extractOfficeText } from "@/lib/ai/office-extract";
 import { defineTool } from "@/lib/ai/tools/types";
 
 const MAX_VIEW_FILES = 3;
+
+// How much extracted document text a single view returns to the model. The
+// full text stays in the search index; the view surfaces the opening so the
+// model can read the actual content without bloating the persisted history.
+const VIEW_TEXT_MAX_CHARS = 6000;
 
 const viewDealFileSchema = z.object({
   attachmentIds: z
@@ -21,19 +32,98 @@ const viewDealFileSchema = z.object({
     .describe("Attachment ids from get_deal's files list (up to 3)."),
 });
 
-// Lets the assistant actually look at a deal's images. The real image bytes
-// are returned for this turn only (the agent loop puts them in the live tool
-// result, not the persisted one); a text description is cached on first view
-// so get_deal can recall the file cheaply afterwards.
+interface FileRow {
+  aiDescribedAt: Date | null;
+  contentType: string | null;
+  dealId: string;
+  fileName: string;
+  id: string;
+}
+
+// Images/PDFs: hand image bytes to the model this turn, and on first view
+// cache a description + index it. Returns the image blocks and one summary line
+// per file.
+const viewMediaFiles = async (
+  media: Awaited<ReturnType<typeof loadDealAttachmentMedia>>,
+  rowById: Map<string, FileRow>
+): Promise<{ imageBlocks: Anthropic.ImageBlockParam[]; lines: string[] }> => {
+  const imageBlocks: Anthropic.ImageBlockParam[] = [];
+  const lines: string[] = [];
+  for (const item of media) {
+    if (item.block.type === "image") {
+      imageBlocks.push(item.block);
+    }
+    const row = rowById.get(item.id);
+    let description: string | null = null;
+    if (!row?.aiDescribedAt && isAiConfigured()) {
+      description = await describeMedia(item.block, item.fileName);
+      if (description) {
+        await cacheAttachmentDescription(item.id, description);
+        await indexAttachmentText({
+          attachmentId: item.id,
+          dealId: row?.dealId ?? "",
+          text: `${item.fileName}\n${description}`,
+        }).catch(() => undefined);
+      }
+    }
+    lines.push(
+      description ? `${item.fileName}: ${description}` : item.fileName
+    );
+  }
+  return { imageBlocks, lines };
+};
+
+// Office documents: return extracted text and, on first view, index it and
+// cache a description. Returns one block of text per readable file.
+const viewOfficeFiles = async (
+  officeFiles: Awaited<ReturnType<typeof loadDealAttachmentBytes>>,
+  rowById: Map<string, FileRow>
+): Promise<string[]> => {
+  const lines: string[] = [];
+  for (const file of officeFiles) {
+    const text = await extractOfficeText(file.buffer, file.contentType);
+    if (!text) {
+      lines.push(`${file.fileName}: no readable text found.`);
+      continue;
+    }
+    const row = rowById.get(file.id);
+    if (!row?.aiDescribedAt) {
+      await indexAttachmentText({
+        attachmentId: file.id,
+        dealId: row?.dealId ?? "",
+        text,
+      }).catch(() => undefined);
+      if (isAiConfigured()) {
+        const description = await describeText(text, file.fileName);
+        if (description) {
+          await cacheAttachmentDescription(file.id, description);
+        }
+      }
+    }
+    const shown =
+      text.length > VIEW_TEXT_MAX_CHARS
+        ? `${text.slice(0, VIEW_TEXT_MAX_CHARS)}\n…(truncated; use search_deal_documents to find more)`
+        : text;
+    lines.push(`${file.fileName} (extracted text):\n${shown}`);
+  }
+  return lines;
+};
+
+// Lets the assistant actually look at a deal's files. Images are returned as
+// real bytes for this turn only; Office documents (Word/Excel/PowerPoint) are
+// text-extracted and returned as text. On first view a file is enriched
+// (description cached, content indexed for search) so later turns and
+// search_deal_documents can use it cheaply.
 const viewDealFile = defineTool({
   description:
-    "Open and look at the actual contents of up to 3 of a deal's images. Call get_deal first to get the file ids, then pass them here. Returns the images for you to see; the first view also caches a short description so future references are free. Non-image files (Office docs) cannot be viewed inline.",
+    "Open and look at the actual contents of up to 3 of a deal's files. Call get_deal first to get the file ids, then pass them here. Images are returned for you to see; Word, Excel, and PowerPoint documents are returned as extracted text; PDFs are summarised. The first view also caches a short description and indexes the content for search_deal_documents. Legacy .doc/.xls/.ppt binaries cannot be read.",
   execute: async (input) => {
     const ids = input.attachmentIds.slice(0, MAX_VIEW_FILES);
-    const rows = await db
+    const rows: FileRow[] = await db
       .select({
-        aiDescription: attachment.aiDescription,
+        aiDescribedAt: attachment.aiDescribedAt,
         contentType: attachment.contentType,
+        dealId: attachment.dealId,
         fileName: attachment.fileName,
         id: attachment.id,
       })
@@ -42,40 +132,33 @@ const viewDealFile = defineTool({
     if (rows.length === 0) {
       return { resultText: "No matching files found on this deal." };
     }
-    const metaById = new Map(rows.map((row) => [row.id, row]));
+    const rowById = new Map(rows.map((row) => [row.id, row]));
 
     const media = await loadDealAttachmentMedia(ids);
-    const loadedIds = new Set(media.map((item) => item.id));
-    const imageBlocks: Anthropic.ImageBlockParam[] = [];
-    const lines: string[] = [];
+    const officeFiles = await loadDealAttachmentBytes(ids);
+    const handledIds = new Set<string>([
+      ...media.map((item) => item.id),
+      ...officeFiles.map((file) => file.id),
+    ]);
 
-    for (const item of media) {
-      if (item.block.type === "image") {
-        imageBlocks.push(item.block);
-      }
-      let description = metaById.get(item.id)?.aiDescription ?? null;
-      if (!description && isAiConfigured()) {
-        description = await describeMedia(item.block, item.fileName);
-        if (description) {
-          await cacheAttachmentDescription(item.id, description);
-        }
-      }
-      lines.push(
-        description ? `${item.fileName}: ${description}` : item.fileName
-      );
-    }
+    const [mediaResult, officeLines] = await Promise.all([
+      viewMediaFiles(media, rowById),
+      viewOfficeFiles(officeFiles, rowById),
+    ]);
+    const lines = [...mediaResult.lines, ...officeLines];
 
+    // Anything left is a format we cannot read (legacy binary, unknown type).
     for (const row of rows) {
-      if (!loadedIds.has(row.id)) {
+      if (!handledIds.has(row.id)) {
         lines.push(
-          `${row.fileName}: cannot be viewed inline (${row.contentType ?? "unknown type"}).`
+          `${row.fileName}: cannot be read (${row.contentType ?? "unknown type"}).`
         );
       }
     }
 
     return {
-      media: imageBlocks,
-      resultText: `Viewed ${imageBlocks.length} image(s).\n${lines.join("\n")}`,
+      media: mediaResult.imageBlocks,
+      resultText: `Viewed ${rows.length} file(s), ${mediaResult.imageBlocks.length} image(s).\n${lines.join("\n")}`,
     };
   },
   isWrite: false,

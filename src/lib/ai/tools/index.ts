@@ -1,5 +1,6 @@
 import type * as Anthropic from "@/lib/ai/anthropic";
 import { dealWriteTools } from "@/lib/ai/tools/deal-tools";
+import { documentTools } from "@/lib/ai/tools/document-tools";
 import { draftTools } from "@/lib/ai/tools/draft-tools";
 import { fileTools } from "@/lib/ai/tools/file-tools";
 import { followUpTools } from "@/lib/ai/tools/follow-up-tools";
@@ -30,6 +31,7 @@ const ALL_TOOLS: AiTool[] = [
   ...triageTools,
   ...knowledgeTools,
   ...fileTools,
+  ...documentTools,
   ...memoryTools,
 ];
 
@@ -93,6 +95,7 @@ const ACTIVITY_LABELS: Record<string, string> = {
   query_deals: "Searching deals",
   rank_open_deals: "Ranking open deals",
   save_memory: "Saving a memory",
+  search_deal_documents: "Searching deal documents",
   search_knowledge_base: "Searching the knowledge base",
   triage_inbox_lead: "Triaging the lead",
   update_contact: "Updating the contact",

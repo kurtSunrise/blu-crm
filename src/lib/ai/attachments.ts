@@ -3,6 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { attachment, chatAttachment } from "@/db/schema";
 import type * as Anthropic from "@/lib/ai/anthropic";
+import { isOfficeExtractable } from "@/lib/ai/office-extract";
 import { sanitizeFileName } from "@/lib/validation/attachment";
 
 // Bridges uploaded chat attachments and the Anthropic Messages API. A user
@@ -317,6 +318,54 @@ export interface LoadedAttachmentMedia {
   fileName: string;
   id: string;
 }
+
+// Raw bytes for deal attachments (Office documents) that cannot be sent to the
+// model as a media block and must be text-extracted instead. Only office-
+// extractable rows are read from R2, so an image id passed here costs no fetch.
+export interface LoadedAttachmentBytes {
+  buffer: ArrayBuffer;
+  contentType: string;
+  fileName: string;
+  id: string;
+}
+
+export const loadDealAttachmentBytes = async (
+  attachmentIds: string[]
+): Promise<LoadedAttachmentBytes[]> => {
+  if (attachmentIds.length === 0) {
+    return [];
+  }
+  const rows = await db
+    .select({
+      contentType: attachment.contentType,
+      fileKey: attachment.fileKey,
+      fileName: attachment.fileName,
+      id: attachment.id,
+    })
+    .from(attachment)
+    .where(inArray(attachment.id, attachmentIds));
+  const { env } = getCloudflareContext();
+  const loaded = await Promise.all(
+    rows.map(async (row) => {
+      if (!(row.contentType && isOfficeExtractable(row.contentType))) {
+        return null;
+      }
+      const object = await env.PHOTO_BUCKET.get(row.fileKey);
+      if (!object) {
+        return null;
+      }
+      return {
+        buffer: await object.arrayBuffer(),
+        contentType: row.contentType,
+        fileName: row.fileName,
+        id: row.id,
+      } satisfies LoadedAttachmentBytes;
+    })
+  );
+  return loaded.filter(
+    (entry): entry is LoadedAttachmentBytes => entry !== null
+  );
+};
 
 export const loadDealAttachmentMedia = async (
   attachmentIds: string[]

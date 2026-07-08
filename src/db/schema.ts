@@ -779,6 +779,41 @@ export const knowledgeChunk = pgTable(
   ]
 );
 
+// Semantic index over deal-attachment content (Ontology document layer): each
+// uploaded document's extracted text is chunked and embedded here so the
+// assistant can search across a deal's files the same way it searches the
+// knowledge corpus. Mirrors knowledge_chunk. Chunks cascade-delete with their
+// attachment, so the attachment DELETE route needs no extra cleanup statement.
+export const attachmentChunk = pgTable(
+  "attachment_chunk",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    attachmentId: text("attachment_id")
+      .notNull()
+      .references(() => attachment.id, { onDelete: "cascade" }),
+    // Denormalised for deal-scoped search and provenance back to the deal
+    // object without a second join through attachment.
+    dealId: text("deal_id")
+      .notNull()
+      .references(() => deal.id),
+    content: text("content").notNull(),
+    position: integer("position").notNull(),
+    // @cf/baai/bge-m3 (Workers AI), same model/dimension as knowledge_chunk.
+    // Nullable: chunks stored without a live AI binding fall back to full-text.
+    embedding: vector("embedding", { dimensions: 1024 }),
+  },
+  (table) => [
+    index("attachment_chunk_embedding_idx").using(
+      "hnsw",
+      table.embedding.op("vector_cosine_ops")
+    ),
+    index("attachment_chunk_attachment_idx").on(table.attachmentId),
+    index("attachment_chunk_deal_idx").on(table.dealId),
+  ]
+);
+
 // Named aggregate so consumers avoid namespace imports (Ultracite rule)
 export const schema = {
   account,
@@ -787,6 +822,7 @@ export const schema = {
   appSetting,
   assistantMemory,
   attachment,
+  attachmentChunk,
   chatArtifact,
   chatFeedback,
   chatMessage,

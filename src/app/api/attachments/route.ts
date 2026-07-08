@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { activity, attachment, deal } from "@/db/schema";
 import {
-  describeAttachmentsByIds,
+  enrichAttachmentsByIds,
   getAttachmentDescriptionMode,
 } from "@/lib/ai/attachment-describe";
 import { getSessionUserId } from "@/lib/session";
@@ -98,12 +98,13 @@ export async function POST(request: Request): Promise<NextResponse> {
     createdBy: userId,
   });
 
-  // Eager mode: describe the file now so the assistant has it immediately.
-  // Lazy mode (default) leaves it for the first view_deal_file call. The work
-  // is detached via waitUntil so the upload response is not held up.
+  // Eager mode: enrich the file now (describe + index for search) so the
+  // assistant has it immediately. Lazy mode (default) leaves it for the first
+  // view_deal_file call. The work is detached via waitUntil so the upload
+  // response is not held up.
   if ((await getAttachmentDescriptionMode()) === "eager") {
     const attachmentId = created.id;
-    ctx.waitUntil(describeAttachmentsByIds([attachmentId]));
+    ctx.waitUntil(enrichAttachmentsByIds([attachmentId]));
   }
 
   revalidatePath(`/deals/${dealId}`);

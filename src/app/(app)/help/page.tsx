@@ -781,6 +781,7 @@ const WHATS_NEW = [
   {
     date: "08/07/2026",
     items: [
+      "Every deal now has an AI conversations panel under Quotes: it lists the assistant chats you have had about that deal, so you can reopen one with a tap, and a New chat button starts a fresh chat already focused on that deal.",
       "The assistant now comes to you: every Monday morning it drops a ready-made weekly pipeline report into your chat, and Tuesday to Friday a short morning briefing with your follow-ups due, deals closing soon, and anything gone quiet. Each one lands as a notification you can tap to open.",
       "When a deal needs attention, its notification now has an Ask assistant button that opens the chat already primed to talk about that deal.",
       "Voice notes now stick around: dictating attaches the recording to your message, and asking the assistant to log the note on a deal files the audio on that deal's timeline too.",

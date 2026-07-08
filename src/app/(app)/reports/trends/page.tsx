@@ -103,7 +103,7 @@ export default async function TrendsPage({
   }));
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 lg:max-w-5xl">
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-4 md:gap-6 md:py-6 lg:max-w-5xl">
       <PageHeader
         actions={<ExportCsvLink query={query} report="trends" />}
         subtitle="How the pipeline is moving over time, and where the forecast lands."

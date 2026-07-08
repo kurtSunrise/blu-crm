@@ -100,7 +100,7 @@ export default async function DailyReportPage({
   );
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6 lg:max-w-5xl">
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-4 md:py-6 lg:max-w-5xl">
       <ReportsNav active="/reports/daily" />
       <PageHeader
         actions={

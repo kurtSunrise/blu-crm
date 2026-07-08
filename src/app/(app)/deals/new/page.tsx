@@ -32,7 +32,7 @@ export default async function QuickAddPage() {
   ]);
 
   return (
-    <main className="mx-auto flex w-full max-w-xl flex-col gap-4 px-4 py-6">
+    <main className="mx-auto flex w-full max-w-xl flex-col gap-4 px-4 py-4 md:py-6">
       <PageHeader
         subtitle="Capture a lead in under a minute. Client and one contact method are all that's required."
         title="Quick add"

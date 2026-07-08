@@ -76,7 +76,7 @@ export default async function CompanyPage({
     .reduce((total, entry) => total + dealValue(entry), 0);
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6">
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-4 md:py-6">
       <header className="flex flex-col gap-2">
         <p className="text-muted-foreground text-xs">
           <Link className="underline-offset-2 hover:underline" href="/contacts">

@@ -168,7 +168,7 @@ export default async function Home() {
   ];
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 lg:max-w-6xl">
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-4 md:gap-6 md:py-6 lg:max-w-6xl">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
           <p className="font-medium text-blu text-xs uppercase tracking-widest">

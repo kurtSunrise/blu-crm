@@ -80,7 +80,7 @@ export default async function TeamReportPage({
   const maxActivity = Math.max(...activityMix.map((row) => row.totalCount), 1);
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 lg:max-w-5xl">
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-4 md:gap-6 md:py-6 lg:max-w-5xl">
       <PageHeader
         subtitle="Quote conversion and each person's activity and follow-through."
         title="Team"

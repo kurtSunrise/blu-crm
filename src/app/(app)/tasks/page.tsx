@@ -195,7 +195,7 @@ export default async function TasksPage({
   const upcomingTasks = rows.filter((task) => task.dueDate >= end);
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 lg:max-w-5xl">
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-4 md:gap-6 md:py-6 lg:max-w-5xl">
       <header className="flex flex-col gap-3">
         <h1 className="font-semibold text-2xl tracking-tight">Tasks</h1>
         <nav aria-label="Filter by owner" className="flex flex-wrap gap-2">

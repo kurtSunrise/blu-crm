@@ -22,12 +22,18 @@ export function PillNav({
   query?: string;
 }) {
   return (
-    <nav aria-label={ariaLabel} className="flex flex-wrap gap-2">
+    // On phones the pills sit in a single row you can swipe sideways
+    // (overflow-x-auto, no wrap) instead of stacking into several lines;
+    // desktop restores wrapping. Mirrors the pipeline mobile-header pattern.
+    <nav
+      aria-label={ariaLabel}
+      className="flex gap-2 overflow-x-auto md:flex-wrap md:overflow-visible"
+    >
       {links.map((link) => (
         <Link
           aria-current={link.href === active ? "page" : undefined}
           className={cn(
-            "flex min-h-9 items-center rounded-full border px-4 font-medium text-sm transition-colors",
+            "flex min-h-9 shrink-0 items-center whitespace-nowrap rounded-full border px-4 font-medium text-sm transition-colors",
             link.href === active
               ? "border-blu bg-blu/10 text-blu"
               : "text-muted-foreground hover:bg-accent"

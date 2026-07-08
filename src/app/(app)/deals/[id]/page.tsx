@@ -383,7 +383,7 @@ export default async function DealPage({
   const keyDates = buildKeyDates(record, openFollowUps[0]?.dueDate);
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6 lg:max-w-6xl">
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-4 md:py-6 lg:max-w-6xl">
       <AiEntityBeacon
         dealId={record.id}
         label={`${record.leadId} · ${record.title}`}

@@ -781,6 +781,8 @@ const WHATS_NEW = [
   {
     date: "08/07/2026",
     items: [
+      "The assistant now comes to you: every Monday morning it drops a ready-made weekly pipeline report into your chat, and Tuesday to Friday a short morning briefing with your follow-ups due, deals closing soon, and anything gone quiet. Each one lands as a notification you can tap to open.",
+      "When a deal needs attention, its notification now has an Ask assistant button that opens the chat already primed to talk about that deal.",
       "Voice notes now stick around: dictating attaches the recording to your message, and asking the assistant to log the note on a deal files the audio on that deal's timeline too.",
       "Type / at the start of the assistant composer for quick commands (/report, /rank, /draft) and @ to mention a specific deal or contact so the assistant knows exactly which record you mean.",
       "Made a typo or want to rephrase? Edit your last message with the pencil and the assistant re-answers from there. You can also copy a whole conversation as Markdown from the header.",

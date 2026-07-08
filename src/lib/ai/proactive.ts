@@ -11,7 +11,11 @@ import {
   type PersistableArtifact,
   saveMessageArtifacts,
 } from "@/lib/ai/artifact-store";
-import { appendThreadMessage, createThread } from "@/lib/ai/threads";
+import {
+  appendThreadMessage,
+  archiveThread,
+  createThread,
+} from "@/lib/ai/threads";
 import {
   type DealSummary,
   dealListArtifact,
@@ -39,13 +43,15 @@ import { getWeeklyReport } from "@/lib/reports";
 // cron seeds ready-made conversations (Monday weekly report, Tue-Fri morning
 // briefings) and announces each via a notification carrying the thread id.
 // Strictly deterministic: templated text and reused report/alert queries,
-// never a model call. Idempotency piggybacks on the notification dedupe key
+// never a model call. Idempotency rests on the notification dedupe key
 // (`{type}:{periodKey}:{userId}` once emitNotificationBatch appends the
-// recipient): a user is skipped when their key already exists, so overlapping
-// or re-fired crons are no-ops.
+// recipient): the up-front existing-key read skips already-done users, and
+// the insert itself is the authority. If two runs race past the read, the
+// loser's emit returns 0 and it archives the thread it just seeded, so a
+// re-fired or overlapping cron leaves no duplicate notifications and no
+// orphan threads.
 
 const TEAM_LIMIT = 50;
-const BRIEFING_CLOSING_DAYS = 14;
 const BRIEFING_LIST_LIMIT = 20;
 const FOLLOW_UPS_DUE_LIMIT = 200;
 const DAYS_PER_WEEK = 7;
@@ -177,8 +183,10 @@ export const generateWeeklyReportThreads = async (
 
   // Same numbers for everyone: compute once, reuse per user.
   const report = await getWeeklyReport(now);
+  // getWeeklyReport covers the trailing seven days, so the window ENDS today;
+  // "week ending" keeps the label honest against the counts below.
   const assistantText = [
-    `Here is your weekly pipeline report for the week starting ${formatDateAwst(now)}.`,
+    `Here is your weekly pipeline report for the week ending ${formatDateAwst(now)}.`,
     `The open pipeline holds ${plural(report.totals.openCount, "deal")} worth ${formatAudFromCents(report.totals.openTotalCents)} (${formatAudFromCents(report.totals.weightedTotalCents)} weighted).`,
     `This week: ${report.newThisWeek} new, ${report.wonThisWeek.length} won, ${report.lostThisWeek.length} lost, with ${plural(report.closingSoon.length, "deal")} closing within ${report.closingSoonDays} days and ${plural(report.needsAttention.length, "deal")} needing attention.`,
   ].join(" ");
@@ -208,9 +216,15 @@ export const generateWeeklyReportThreads = async (
         },
       ]);
       if (inserted === 0) {
+        // The notification dedupe key is the real idempotency lock; the
+        // pre-check is only a read. A concurrent or re-fired run that lost
+        // the race archives its now-orphaned thread so no notification-less
+        // thread lingers in the user's history.
         console.warn(
-          `[proactive] weekly_report notification deduped or dropped for ${member.id} (thread ${threadId})`
+          `[proactive] weekly_report deduped for ${member.id}; archiving orphan thread ${threadId}`
         );
+        await archiveThread(threadId);
+        continue;
       }
       created += 1;
     } catch (error) {
@@ -280,6 +294,7 @@ const alertDealToSummary = (row: AlertDeal, ownerName: string): DealSummary =>
 
 const briefingText = (params: {
   closingCount: number;
+  closingSoonDays: number;
   followUps: BriefingFollowUp[];
   now: Date;
   staleCount: number;
@@ -288,7 +303,7 @@ const briefingText = (params: {
   const lines = [
     `Good morning! Here is your briefing for ${formatDateAwst(params.now)}.`,
     "",
-    `You have ${plural(params.followUps.length, "follow-up")} due today, ${plural(params.closingCount, "deal")} closing within ${BRIEFING_CLOSING_DAYS} days, and ${plural(params.staleCount, "deal")} quiet for ${params.staleDays}+ days.`,
+    `You have ${plural(params.followUps.length, "follow-up")} due today, ${plural(params.closingCount, "deal")} closing within ${params.closingSoonDays} days, and ${plural(params.staleCount, "deal")} quiet for ${params.staleDays}+ days.`,
   ];
   if (params.followUps.length > 0) {
     lines.push(
@@ -331,7 +346,7 @@ export const generateDailyBriefingThreads = async (
   // the canonical stale/closing definitions and the team is three people.
   const [staleDeals, closingSoon, dueFollowUps] = await Promise.all([
     getStaleDeals(thresholds.staleDays),
-    getClosingSoonDeals(BRIEFING_CLOSING_DAYS),
+    getClosingSoonDeals(thresholds.closingSoonDays),
     followUpsDueToday(now),
   ]);
 
@@ -380,6 +395,7 @@ export const generateDailyBriefingThreads = async (
         artifacts,
         assistantText: briefingText({
           closingCount: myClosing.length,
+          closingSoonDays: thresholds.closingSoonDays,
           followUps: myFollowUps,
           now,
           staleCount: myStale.length,
@@ -398,9 +414,13 @@ export const generateDailyBriefingThreads = async (
         },
       ]);
       if (inserted === 0) {
+        // See generateWeeklyReportThreads: archive the orphan thread the lost
+        // race just created.
         console.warn(
-          `[proactive] daily_briefing notification deduped or dropped for ${member.id} (thread ${threadId})`
+          `[proactive] daily_briefing deduped for ${member.id}; archiving orphan thread ${threadId}`
         );
+        await archiveThread(threadId);
+        continue;
       }
       created += 1;
     } catch (error) {

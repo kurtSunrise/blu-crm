@@ -1,3 +1,5 @@
+"use client";
+
 import {
   ArrowRightLeft,
   CheckCircle2,
@@ -10,8 +12,32 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { formatDateTimeAwst } from "@/lib/format";
+import type { ReactElement } from "react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { formatDateTimeAwst, formatRelativeDayAwst } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+// Hovering a timeline row surfaces how long ago it happened, relative to today.
+// The exact timestamp already shows on the row, so the tooltip is relative-only
+// ("Today", "Yesterday", "5 days ago").
+function RelativeDayTooltip({
+  date,
+  children,
+}: {
+  date: Date;
+  children: ReactElement;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={children} />
+      <TooltipContent side="top">{formatRelativeDayAwst(date)}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 export interface TimelineEntry {
   authorName: string | null;
@@ -86,26 +112,28 @@ function TimelineItem({ entry }: { entry: TimelineEntry }) {
       >
         <Icon aria-hidden className="size-3.5" />
       </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5 pt-1">
-        <p className="text-xs">
-          <span className="font-medium">{style.label}</span>
-          <span className="text-muted-foreground">
-            {entry.authorName ? ` · ${entry.authorName}` : ""}
-            {` · ${formatDateTimeAwst(entry.createdAt)}`}
-          </span>
-        </p>
-        {entry.content && (
-          <p className="break-words text-sm">{entry.content}</p>
-        )}
-        {entry.context && (
-          <Link
-            className="w-fit text-blu text-xs underline-offset-2 hover:underline"
-            href={entry.context.href}
-          >
-            {entry.context.label}
-          </Link>
-        )}
-      </div>
+      <RelativeDayTooltip date={entry.createdAt}>
+        <div className="flex min-w-0 flex-1 cursor-help flex-col gap-0.5 pt-1">
+          <p className="text-xs">
+            <span className="font-medium">{style.label}</span>
+            <span className="text-muted-foreground">
+              {entry.authorName ? ` · ${entry.authorName}` : ""}
+              {` · ${formatDateTimeAwst(entry.createdAt)}`}
+            </span>
+          </p>
+          {entry.content && (
+            <p className="break-words text-sm">{entry.content}</p>
+          )}
+          {entry.context && (
+            <Link
+              className="w-fit text-blu text-xs underline-offset-2 hover:underline"
+              href={entry.context.href}
+            >
+              {entry.context.label}
+            </Link>
+          )}
+        </div>
+      </RelativeDayTooltip>
     </li>
   );
 }
@@ -128,14 +156,16 @@ export function DealTimeline({
         <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-blu/40 bg-blu/10 text-blu">
           <Sparkles aria-hidden className="size-3.5" />
         </span>
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5 pt-1">
-          <p className="text-xs">
-            <span className="font-medium">{footerLabel}</span>
-            <span className="text-muted-foreground">
-              {` · ${formatDateTimeAwst(leadCreatedAt)}`}
-            </span>
-          </p>
-        </div>
+        <RelativeDayTooltip date={leadCreatedAt}>
+          <div className="flex min-w-0 flex-1 cursor-help flex-col gap-0.5 pt-1">
+            <p className="text-xs">
+              <span className="font-medium">{footerLabel}</span>
+              <span className="text-muted-foreground">
+                {` · ${formatDateTimeAwst(leadCreatedAt)}`}
+              </span>
+            </p>
+          </div>
+        </RelativeDayTooltip>
       </li>
     </ol>
   );

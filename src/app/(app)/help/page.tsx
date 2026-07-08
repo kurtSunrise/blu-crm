@@ -788,6 +788,7 @@ const WHATS_NEW = [
       "Made a typo or want to rephrase? Edit your last message with the pencil and the assistant re-answers from there. You can also copy a whole conversation as Markdown from the header.",
       "Long conversations no longer forget their beginning: the assistant keeps a running summary of older messages and carries it forward.",
       "Admins can now manage the assistant's knowledge base in Settings, Knowledge: add, edit, or remove the documents it cites, with instant effect on answers.",
+      "On a deal's timeline, hover any activity (or the Lead created marker) to see how long ago it happened, like '5 days ago', so you don't have to work it out from the date.",
     ],
   },
   {

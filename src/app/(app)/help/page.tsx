@@ -352,8 +352,10 @@ const SECTIONS: HelpSection[] = [
         </p>
         <ol className={STEP_CLASSES}>
           <li>
-            On the deal page, tap the upload button and pick a file; on a phone
-            you can shoot a photo straight from the camera.
+            On the deal page, tap the upload button and pick one or more files
+            at once; on a phone you can shoot a photo straight from the camera.
+            Photos, PDFs, Word documents, spreadsheets, and PowerPoint decks are
+            all accepted.
           </li>
           <li>
             Photos show as thumbnails; other files show as named tiles. Tap to
@@ -362,6 +364,11 @@ const SECTIONS: HelpSection[] = [
           <li>
             Files are stored privately and only open for signed-in users; there
             is no public link to share.
+          </li>
+          <li>
+            The assistant can read your documents too: it extracts the text from
+            Word, Excel, and PowerPoint files (and PDFs) so you can ask what a
+            file contains or search across a deal's documents.
           </li>
         </ol>
       </>
@@ -540,8 +547,10 @@ const SECTIONS: HelpSection[] = [
             <strong>Files and photos</strong>: attach an image or PDF with the
             paperclip, or drag a file straight onto the chat, and ask about
             photos or files already on a deal; the assistant can read them and
-            the deal's notes for context. Tap a photo you've sent to see it full
-            size.
+            the deal's notes for context. It also reads deal documents (Word,
+            Excel, PowerPoint), so you can ask what a brief or spreadsheet says
+            or have it search a deal's documents for a detail. Tap a photo
+            you've sent to see it full size.
           </li>
           <li>
             <strong>Talk instead of typing</strong>: tap the mic button on the
@@ -781,6 +790,8 @@ const WHATS_NEW = [
   {
     date: "08/07/2026",
     items: [
+      "Files and photos now takes several files at once: pick multiple in one go, and PowerPoint decks join the PDFs, Word documents, and spreadsheets you could already attach.",
+      "The assistant can now read your documents, not just images. Open a Word, Excel, or PowerPoint file on a deal and it reads the contents; ask it to search a deal's documents for a scope of works, a quoted item, or a deadline and it finds the passage and cites the file it came from.",
       "On desktop you can now make the assistant wider: use the resize button next to the Blu assistant title to give it more room for reading answers and cards, then use it again to go back to the normal width. It remembers your choice.",
       "The assistant's starter suggestions are tidier: each one is now a short single line, and hovering it shows the full prompt, so a long deal name no longer stretches a suggestion into a tall block.",
       "Every deal now has an AI conversations panel under Quotes: it lists the assistant chats you have had about that deal, so you can reopen one with a tap, and a New chat button starts a fresh chat already focused on that deal.",

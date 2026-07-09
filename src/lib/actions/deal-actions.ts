@@ -122,7 +122,7 @@ const createQuickAddDealForUser = async (
   }
 
   revalidatePath("/pipeline");
-  redirect("/pipeline");
+  redirect("/pipeline?flash=deal-created");
 };
 
 interface MoveTargetStage {

@@ -2,7 +2,8 @@
 
 import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
+import { toast } from "sonner";
 import { CompanyField } from "@/components/company-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,15 @@ export function ContactForm({
     ContactActionState,
     FormData
   >(createContact, {});
+
+  // Success redirects to the new contact (confirmed by a flash toast there);
+  // a failure stays put, so surface it as a toast. The inline message and the
+  // duplicate warning stay in place.
+  useEffect(() => {
+    if (state.error) {
+      toast.error(state.error);
+    }
+  }, [state.error]);
 
   const hasDuplicates = (state.duplicates?.length ?? 0) > 0;
 

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +29,15 @@ export function CompanyEditForm({ company }: { company: EditableCompany }) {
     CompanyActionState,
     FormData
   >(updateCompany, {});
+
+  // Success redirects back to the company (confirmed by a flash toast there);
+  // a failure stays put, so surface it as a toast. The inline message stays
+  // for accessibility.
+  useEffect(() => {
+    if (state.error) {
+      toast.error(state.error);
+    }
+  }, [state.error]);
 
   return (
     <form action={formAction} className="flex flex-col gap-4">

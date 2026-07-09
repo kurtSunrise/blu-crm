@@ -12,6 +12,7 @@ import {
   UserIcon,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -325,10 +326,11 @@ export function ThreadHistory({
   }, [query]);
 
   // Optimistic mutation helper: apply immediately, restore the previous list
-  // if the request fails.
+  // and toast the failure if the request fails.
   const mutateThreads = (
     apply: (current: ThreadListEntry[]) => ThreadListEntry[],
-    request: () => Promise<Response>
+    request: () => Promise<Response>,
+    errorMessage: string
   ) => {
     const previous = threads;
     setThreads((current) => (current ? apply(current) : current));
@@ -336,9 +338,13 @@ export function ThreadHistory({
       .then((response) => {
         if (!response.ok) {
           setThreads(previous);
+          toast.error(errorMessage);
         }
       })
-      .catch(() => setThreads(previous));
+      .catch(() => {
+        setThreads(previous);
+        toast.error(errorMessage);
+      });
   };
 
   const renameThread = (threadId: string, title: string) => {
@@ -353,7 +359,8 @@ export function ThreadHistory({
           body: JSON.stringify({ title }),
           headers: { "content-type": "application/json" },
           method: "PATCH",
-        })
+        }),
+      "Couldn't rename the conversation. Please try again."
     );
   };
 
@@ -369,7 +376,10 @@ export function ThreadHistory({
           body: JSON.stringify({ pinned }),
           headers: { "content-type": "application/json" },
           method: "PATCH",
-        })
+        }),
+      pinned
+        ? "Couldn't pin the conversation. Please try again."
+        : "Couldn't unpin the conversation. Please try again."
     );
   };
 
@@ -377,7 +387,16 @@ export function ThreadHistory({
     setDeleteCandidate(null);
     mutateThreads(
       (current) => current.filter((entry) => entry.id !== thread.id),
-      () => fetch(`/api/chat/threads/${thread.id}`, { method: "DELETE" })
+      async () => {
+        const response = await fetch(`/api/chat/threads/${thread.id}`, {
+          method: "DELETE",
+        });
+        if (response.ok) {
+          toast.success("Conversation deleted");
+        }
+        return response;
+      },
+      "Couldn't delete the conversation. Please try again."
     );
     onDeleted?.(thread.id);
   };

@@ -1,7 +1,9 @@
 "use client";
 
 import { Archive } from "lucide-react";
+import { unstable_rethrow } from "next/navigation";
 import { useState, useTransition } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
 // Soft delete with a two-step confirm (PRD §7, no hard deletes). The
@@ -41,7 +43,16 @@ export function ArchiveRecordButton({
           disabled={isPending}
           onClick={() =>
             startTransition(async () => {
-              await action();
+              // A successful archive redirects (which throws to navigate, and
+              // is confirmed by a flash toast on the list). If the action
+              // resolves without redirecting, it failed silently — say so.
+              try {
+                await action();
+                toast.error("Couldn't archive. Please try again.");
+              } catch (error) {
+                unstable_rethrow(error);
+                toast.error("Couldn't archive. Please try again.");
+              }
             })
           }
           type="button"

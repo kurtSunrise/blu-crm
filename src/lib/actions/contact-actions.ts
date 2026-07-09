@@ -121,7 +121,7 @@ export const createContact = async (
     }
 
     revalidatePath("/contacts");
-    redirect(`/contacts/${created.id}`);
+    redirect(`/contacts/${created.id}?flash=contact-created`);
   });
 
 export const updateContact = async (
@@ -193,7 +193,7 @@ const updateContactFromForm = async (
 
   revalidatePath("/contacts");
   revalidatePath(`/contacts/${contactId}`);
-  redirect(`/contacts/${contactId}`);
+  redirect(`/contacts/${contactId}?flash=contact-updated`);
 };
 
 // Soft delete per PRD §7: the contact leaves lists and search, but their
@@ -210,7 +210,7 @@ export const archiveContact = async (contactId: string): Promise<void> => {
       .where(and(eq(contact.id, contactId), isNull(contact.deletedAt)));
 
     revalidatePath("/contacts");
-    redirect("/contacts");
+    redirect("/contacts?flash=contact-archived");
   } catch (error) {
     unstable_rethrow(error); // archive actions redirect on success
     console.error("[action-error]", error);

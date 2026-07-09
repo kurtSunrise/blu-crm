@@ -1,5 +1,7 @@
 import { cookies } from "next/headers";
+import { Suspense } from "react";
 import { AppShell } from "@/components/app-shell";
+import { ToastFlash } from "@/components/toast-flash";
 import { requireSession } from "@/lib/session";
 import {
   ASSISTANT_WIDE_COOKIE,
@@ -27,6 +29,9 @@ export default async function AppLayout({
       userImage={session.user.image ?? null}
       userName={session.user.name}
     >
+      <Suspense>
+        <ToastFlash />
+      </Suspense>
       {children}
     </AppShell>
   );

@@ -14,6 +14,7 @@ import { ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
+import { toast } from "sonner";
 import { ScrollRow } from "@/components/scroll-row";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { moveDealStage } from "@/lib/actions/deal-actions";
@@ -309,7 +310,17 @@ export function PipelineBoard({
       current.map((item) => (item.id === dealId ? { ...item, stageId } : item))
     );
     startTransition(async () => {
-      await moveDealStage({ dealId, stageId, ...extras });
+      // The card already animated into its new column, so success needs no
+      // toast; a rejected move only needs to say why before router.refresh()
+      // snaps the card back to where the server still has it.
+      try {
+        const result = await moveDealStage({ dealId, stageId, ...extras });
+        if (result?.error) {
+          toast.error(result.error);
+        }
+      } catch {
+        toast.error("Couldn't move the deal. Please try again.");
+      }
       router.refresh();
     });
   };

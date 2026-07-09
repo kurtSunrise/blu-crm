@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { CompanyField } from "@/components/company-field";
 import { ContactField, type ContactOption } from "@/components/contact-field";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,15 @@ export function QuickAddForm({
     createQuickAddDeal,
     {}
   );
+
+  // Success redirects to the pipeline (confirmed by a flash toast there); a
+  // failure stays put, so surface it as a toast. The inline message stays for
+  // accessibility.
+  useEffect(() => {
+    if (state.error) {
+      toast.error(state.error);
+    }
+  }, [state.error]);
 
   const [companyName, setCompanyName] = useState("");
   const [contactInputValue, setContactInputValue] = useState("");

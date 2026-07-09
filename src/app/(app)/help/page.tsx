@@ -794,6 +794,7 @@ const WHATS_NEW = [
   {
     date: "09/07/2026",
     items: [
+      "More actions now confirm themselves with a brief pop-up, so you're never left guessing whether something took. Assigning or discarding a lead in the inbox, adding a lead or contact, saving contact and company edits, archiving a contact or company, and renaming, pinning, or deleting an assistant conversation all show a quick confirmation, and tell you plainly if something didn't work.",
       "A 'Deal needs attention' reminder now clears itself the moment you work the deal. Log a call, email, or note, complete a follow-up, send a quote, or move the deal to another stage, and its needs-attention notification drops out of your feed. A deal you dealt with yesterday no longer nags you today.",
       "Admins can tune the needs-attention nudge under Settings, Alerts: set how many days without contact counts as needing attention, switch the notification off, or have it repeat every few days while a deal stays quiet.",
     ],

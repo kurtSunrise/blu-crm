@@ -81,7 +81,7 @@ export const updateCompany = async (
 
     revalidatePath("/contacts");
     revalidatePath(`/companies/${companyId}`);
-    redirect(`/companies/${companyId}`);
+    redirect(`/companies/${companyId}?flash=company-updated`);
   });
 
 // Soft delete per PRD §7: the company leaves the directory, but its
@@ -98,7 +98,8 @@ export const archiveCompany = async (companyId: string): Promise<void> => {
       .where(and(eq(company.id, companyId), isNull(company.deletedAt)));
 
     revalidatePath("/contacts");
-    redirect("/contacts");
+    revalidatePath("/companies");
+    redirect("/companies?flash=company-archived");
   } catch (error) {
     unstable_rethrow(error); // archive actions redirect on success
     console.error("[action-error]", error);

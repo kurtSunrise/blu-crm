@@ -3,6 +3,7 @@
 import { Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { assignDealOwner, discardLead } from "@/lib/actions/inbox-actions";
@@ -25,15 +26,33 @@ export function InboxTriage({
       return;
     }
     startTransition(async () => {
-      await assignDealOwner({ dealId, ownerId });
-      router.refresh();
+      try {
+        const result = await assignDealOwner({ dealId, ownerId });
+        if (result?.error) {
+          toast.error(result.error);
+          return;
+        }
+        router.refresh();
+        toast.success("Lead assigned");
+      } catch {
+        toast.error("Couldn't assign the lead. Please try again.");
+      }
     });
   };
 
   const discard = () => {
     startTransition(async () => {
-      await discardLead({ dealId });
-      router.refresh();
+      try {
+        const result = await discardLead({ dealId });
+        if (result?.error) {
+          toast.error(result.error);
+          return;
+        }
+        router.refresh();
+        toast.success("Lead discarded");
+      } catch {
+        toast.error("Couldn't discard the lead. Please try again.");
+      }
     });
   };
 

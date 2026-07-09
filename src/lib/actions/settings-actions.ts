@@ -8,7 +8,12 @@ import { runAction } from "@/lib/actions/run-action";
 import { AI_ASSISTANT_INSTRUCTIONS_KEY } from "@/lib/ai/assistant-instructions";
 import { ATTACHMENT_DESCRIPTION_MODE_KEY } from "@/lib/ai/attachment-describe";
 import { AI_MODEL_KEY } from "@/lib/ai/models";
-import { CLOSING_SOON_DAYS_KEY, STALE_DAYS_KEY } from "@/lib/alerts";
+import {
+  CLOSING_SOON_DAYS_KEY,
+  STALE_DAYS_KEY,
+  STALE_NUDGE_ENABLED_KEY,
+  STALE_NUDGE_REPEAT_DAYS_KEY,
+} from "@/lib/alerts";
 import {
   PIPELINE_TOOLTIP_CONTACT_KEY,
   PIPELINE_TOOLTIP_ENABLED_KEY,
@@ -43,6 +48,9 @@ export const updateAlertThresholds = async (
     const parsed = alertThresholdsSchema.safeParse({
       staleDays: formData.get("staleDays"),
       closingSoonDays: formData.get("closingSoonDays"),
+      // Unchecked checkboxes are absent from the payload.
+      staleNudgeEnabled: formData.get("staleNudgeEnabled") !== null,
+      staleNudgeRepeatDays: formData.get("staleNudgeRepeatDays"),
     });
 
     if (!parsed.success) {
@@ -54,6 +62,14 @@ export const updateAlertThresholds = async (
       {
         key: CLOSING_SOON_DAYS_KEY,
         value: String(parsed.data.closingSoonDays),
+      },
+      {
+        key: STALE_NUDGE_ENABLED_KEY,
+        value: String(parsed.data.staleNudgeEnabled),
+      },
+      {
+        key: STALE_NUDGE_REPEAT_DAYS_KEY,
+        value: String(parsed.data.staleNudgeRepeatDays),
       },
     ];
 

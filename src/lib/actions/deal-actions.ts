@@ -17,6 +17,7 @@ import { dollarsToCents } from "@/lib/format";
 import { createLead } from "@/lib/intake";
 import { LOST_REASON_LABELS } from "@/lib/labels";
 import { updateDealFieldsCore } from "@/lib/mutations/deal";
+import { touchDealContact } from "@/lib/mutations/deal-contact";
 import { emitNotification, getHandoverRecipientIds } from "@/lib/notifications";
 import { requireActionSession } from "@/lib/session";
 import {
@@ -263,6 +264,10 @@ const moveDealStageForUser = async (
       source: "move",
       changedBy: movedBy,
     });
+
+    // Moving a deal along the pipeline counts as working it, so it resets the
+    // staleness clock and clears any outstanding "needs attention" nudge.
+    await touchDealContact(dealId);
   }
 
   if (stage.isWon && handoverToDelivery) {
@@ -310,10 +315,7 @@ export const logQuickActivity = async (input: unknown): Promise<ActionState> =>
       content: content ?? QUICK_LOG_LABELS[type],
       createdBy: auth.session.user.id,
     });
-    await db
-      .update(deal)
-      .set({ lastContactAt: now, updatedAt: now })
-      .where(eq(deal.id, dealId));
+    await touchDealContact(dealId, now);
 
     revalidatePath(`/deals/${dealId}`);
     revalidatePath("/pipeline");

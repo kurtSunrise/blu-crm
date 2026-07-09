@@ -424,7 +424,11 @@ const SECTIONS: HelpSection[] = [
         to jump to its deal (it marks itself read), tick the button on a card to
         flip read state, or "Mark all read" to clear your lot. Choose which
         types you receive under Settings then Notifications; admins also pick
-        who receives Won handovers there.
+        who receives Won handovers there. A "Deal needs attention" nudge clears
+        itself as soon as you work the deal: log a call or note, complete a
+        follow-up, send a quote, or move its stage. Admins set the
+        days-without-contact threshold, and can turn the nudge off or have it
+        repeat, under Settings then Alerts.
       </p>
     ),
   },
@@ -787,6 +791,13 @@ const GLOSSARY = [
 ];
 
 const WHATS_NEW = [
+  {
+    date: "09/07/2026",
+    items: [
+      "A 'Deal needs attention' reminder now clears itself the moment you work the deal. Log a call, email, or note, complete a follow-up, send a quote, or move the deal to another stage, and its needs-attention notification drops out of your feed. A deal you dealt with yesterday no longer nags you today.",
+      "Admins can tune the needs-attention nudge under Settings, Alerts: set how many days without contact counts as needing attention, switch the notification off, or have it repeat every few days while a deal stays quiet.",
+    ],
+  },
   {
     date: "08/07/2026",
     items: [

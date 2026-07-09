@@ -7,12 +7,25 @@ import { MS_PER_DAY } from "@/lib/format";
 // admin-configurable via /settings.
 export const STALE_DAYS_KEY = "stale_days";
 export const CLOSING_SOON_DAYS_KEY = "closing_soon_days";
+export const STALE_NUDGE_ENABLED_KEY = "stale_nudge_enabled";
+export const STALE_NUDGE_REPEAT_DAYS_KEY = "stale_nudge_repeat_days";
 export const DEFAULT_STALE_DAYS = 7;
 export const DEFAULT_CLOSING_SOON_DAYS = 14;
+// Defaults preserve the original behaviour: the nudge is on and fires once per
+// staleness episode (0 = no repeat).
+export const DEFAULT_STALE_NUDGE_ENABLED = true;
+export const DEFAULT_STALE_NUDGE_REPEAT_DAYS = 0;
 
 export interface AlertThresholds {
   closingSoonDays: number;
   staleDays: number;
+}
+
+export interface StaleNudgeConfig {
+  enabled: boolean;
+  // 0 = nudge once per staleness episode; N = re-nudge every N days a deal
+  // stays stale.
+  repeatDays: number;
 }
 
 const parseDays = (value: string | undefined, fallback: number): number => {
@@ -32,6 +45,34 @@ export const getAlertThresholds = async (): Promise<AlertThresholds> => {
     closingSoonDays: parseDays(
       byKey.get(CLOSING_SOON_DAYS_KEY),
       DEFAULT_CLOSING_SOON_DAYS
+    ),
+  };
+};
+
+// Admin levers for the "Deal needs attention" sweep (whether it runs, and how
+// often it re-nudges a still-stale deal). Absent settings fall back to the
+// original behaviour.
+export const getStaleNudgeConfig = async (): Promise<StaleNudgeConfig> => {
+  const rows = await db
+    .select({ key: appSetting.key, value: appSetting.value })
+    .from(appSetting)
+    .where(
+      inArray(appSetting.key, [
+        STALE_NUDGE_ENABLED_KEY,
+        STALE_NUDGE_REPEAT_DAYS_KEY,
+      ])
+    );
+
+  const byKey = new Map(rows.map((row) => [row.key, row.value]));
+  const enabledValue = byKey.get(STALE_NUDGE_ENABLED_KEY);
+  return {
+    enabled:
+      enabledValue === undefined
+        ? DEFAULT_STALE_NUDGE_ENABLED
+        : enabledValue === "true",
+    repeatDays: parseDays(
+      byKey.get(STALE_NUDGE_REPEAT_DAYS_KEY),
+      DEFAULT_STALE_NUDGE_REPEAT_DAYS
     ),
   };
 };

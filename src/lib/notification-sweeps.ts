@@ -1,8 +1,12 @@
 import { and, eq, gte, isNull, lt } from "drizzle-orm";
 import { db } from "@/db";
 import { deal, followUp } from "@/db/schema";
-import { getAlertThresholds, getStaleDeals } from "@/lib/alerts";
-import { awstDayRange } from "@/lib/format";
+import {
+  getAlertThresholds,
+  getStaleDeals,
+  getStaleNudgeConfig,
+} from "@/lib/alerts";
+import { awstDayRange, MS_PER_DAY } from "@/lib/format";
 import { emitNotificationBatch } from "@/lib/notifications";
 
 // Sweep-generated notifications (FR-11.1). Every sweep is idempotent: each
@@ -83,20 +87,38 @@ export const sweepFollowUpDueToday = async (): Promise<number> => {
 // Stale-deal nudges (PRD FR-11.1 P0). Reuses the dashboard's stale query so
 // the threshold semantics can never drift. The dedupe key anchors on the
 // staleness episode (coalesce(lastContactAt, createdAt)): a deal nudges once,
-// then again only after fresh contact goes stale again.
+// then again only after fresh contact goes stale again. When admins set a
+// repeat cadence, a time bucket is appended so a still-stale deal re-nudges
+// every N days; the bucket-0 key stays byte-identical to the pre-cadence key
+// so enabling the default never double-emits against existing rows.
 export const sweepStaleDealNudges = async (): Promise<number> => {
+  const { enabled, repeatDays } = await getStaleNudgeConfig();
+  if (!enabled) {
+    return 0;
+  }
+
   const { staleDays } = await getAlertThresholds();
   const staleDeals = await getStaleDeals(staleDays);
+  const now = Date.now();
 
   const entries = staleDeals.flatMap((item) => {
     if (!item.ownerId) {
       return [];
     }
-    const anchor = (item.lastContactAt ?? item.createdAt).toISOString();
+    const anchorDate = item.lastContactAt ?? item.createdAt;
+    const anchor = anchorDate.toISOString();
+    const bucket =
+      repeatDays > 0
+        ? Math.floor((now - anchorDate.getTime()) / (repeatDays * MS_PER_DAY))
+        : 0;
+    const dedupeKey =
+      bucket > 0
+        ? `stale_deal:${item.id}:${anchor}:${bucket}`
+        : `stale_deal:${item.id}:${anchor}`;
     return [
       {
         recipientId: item.ownerId,
-        dedupeKey: `stale_deal:${item.id}:${anchor}`,
+        dedupeKey,
         payload: {
           dealId: item.id,
           dealTitle: item.title,

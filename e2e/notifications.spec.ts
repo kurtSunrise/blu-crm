@@ -354,6 +354,39 @@ test("admins route handover notifications to the selected recipients (US-10)", a
   }).toPass({ timeout: 15_000 });
 });
 
+test("logging contact clears an outstanding 'needs attention' nudge (FR-11.1)", async ({
+  page,
+}, testInfo) => {
+  const stamp = `${testInfo.project.name}-${Date.now()}`;
+  const companyName = `StaleClear Co ${stamp}`;
+  const kurtId = await userIdByEmail(KURT_EMAIL);
+
+  await quickAddDeal(page, companyName);
+  const dealId = await dealIdByTitle(companyName);
+
+  // Seed an unread stale nudge for this deal, exactly as the daily sweep would.
+  await insertNotification(kurtId, "stale_deal", {
+    dealId,
+    dealTitle: companyName,
+  });
+
+  // Logging a call is contact: it resets the staleness clock and must resolve
+  // the outstanding nudge (not leave it lingering unread in the feed). Retry
+  // the click until the read flip lands, absorbing hydration races.
+  await page.goto(`/deals/${dealId}`);
+  const logCall = page.getByRole("button", { name: "Logged a call" });
+  await expect(logCall).toBeVisible();
+  await expect(async () => {
+    await logCall.click();
+    const rows = await queryRows<{ read: boolean }>(
+      `select read_at is not null as read from "notification"
+       where type = 'stale_deal' and payload->>'dealId' = $1`,
+      [dealId]
+    );
+    expect(rows[0]?.read).toBe(true);
+  }).toPass({ timeout: 25_000 });
+});
+
 test("the cron endpoint is token-guarded and its sweeps are idempotent", async ({
   page,
   request,

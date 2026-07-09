@@ -14,7 +14,7 @@ import { StageWeightingsForm } from "@/components/stage-weightings-form";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { db } from "@/db";
 import { deal, pipelineStage } from "@/db/schema";
-import { getAlertThresholds } from "@/lib/alerts";
+import { getAlertThresholds, getStaleNudgeConfig } from "@/lib/alerts";
 import { getPipelineTooltipSettings } from "@/lib/pipeline-tooltip";
 import { requireSession } from "@/lib/session";
 
@@ -59,6 +59,7 @@ export default async function GeneralSettingsPage() {
   }
 
   const thresholds = await getAlertThresholds();
+  const staleNudge = await getStaleNudgeConfig();
   const tooltip = await getPipelineTooltipSettings();
   // Deal counts include discarded deals: they still reference their stage,
   // so removing a stage has to move them too (FR-1.3 AC).
@@ -107,7 +108,7 @@ export default async function GeneralSettingsPage() {
       </SettingsSection>
 
       <SettingsSection
-        description="When deals surface on the dashboard and tasks page as needing attention or closing soon."
+        description="When deals surface on the dashboard and tasks page as needing attention or closing soon, and how the needs-attention notification behaves."
         icon={Bell}
         title="Alerts"
       >
@@ -115,6 +116,8 @@ export default async function GeneralSettingsPage() {
           <AlertThresholdsForm
             closingSoonDays={thresholds.closingSoonDays}
             staleDays={thresholds.staleDays}
+            staleNudgeEnabled={staleNudge.enabled}
+            staleNudgeRepeatDays={staleNudge.repeatDays}
           />
         </SettingsPanel>
       </SettingsSection>

@@ -101,12 +101,12 @@ export const NOTIFICATION_TYPES: Record<
   stale_deal: {
     label: "Deal needs attention",
     description:
-      "When one of your open deals has had no contact for the stale threshold.",
+      "When one of your open deals has had no logged contact past the threshold set in Settings → Alerts.",
     describe: (payload) => ({
       title: "Deal needs attention",
       detail: `${
         payload.dealTitle ?? "A deal"
-      } has had no contact for a while. Worth a check-in.`,
+      } has had no logged contact for a while. Worth a check-in.`,
     }),
     href: dealHref,
   },

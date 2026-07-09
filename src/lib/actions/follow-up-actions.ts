@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { activity, followUp } from "@/db/schema";
 import { runAction } from "@/lib/actions/run-action";
+import { touchDealContact } from "@/lib/mutations/deal-contact";
 import { createFollowUpCore } from "@/lib/mutations/follow-up";
 import { requireActionSession } from "@/lib/session";
 import {
@@ -80,6 +81,10 @@ export const completeFollowUp = async (
       content: completed.action,
       createdBy: auth.session.user.id,
     });
+
+    // Working a follow-up to completion counts as engaging the deal, so it
+    // resets the staleness clock and clears any outstanding stale nudge.
+    await touchDealContact(completed.dealId);
 
     revalidatePath("/");
     revalidatePath("/tasks");

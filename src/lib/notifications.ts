@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   appSetting,
@@ -87,6 +87,27 @@ export const emitNotificationBatch = async (
     // A notification must never fail the mutation that triggered it.
     console.error("[notify] failed to emit notifications", type, error);
     return 0;
+  }
+};
+
+// A "Deal needs attention" nudge is only ever created by the daily sweep; once
+// contact happens the deal is no longer stale, but the emitted nudge would
+// otherwise linger unread in the feed. Clearing it on any fresh contact keeps
+// the feed honest. Best-effort: resolving must never fail the contact write.
+export const resolveStaleNudges = async (dealId: string): Promise<void> => {
+  try {
+    await db
+      .update(notification)
+      .set({ readAt: new Date() })
+      .where(
+        and(
+          eq(notification.type, "stale_deal"),
+          isNull(notification.readAt),
+          sql`${notification.payload}->>'dealId' = ${dealId}`
+        )
+      );
+  } catch (error) {
+    console.error("[notify] failed to resolve stale nudges", dealId, error);
   }
 };
 

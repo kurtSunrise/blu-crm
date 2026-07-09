@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { activity, deal, quote } from "@/db/schema";
 import { runAction } from "@/lib/actions/run-action";
 import { formatAudFromCents } from "@/lib/format";
+import { touchDealContact } from "@/lib/mutations/deal-contact";
 import { createQuoteCore } from "@/lib/mutations/quote";
 import { requireActionSession } from "@/lib/session";
 import {
@@ -78,6 +79,10 @@ export const sendQuote = async (input: unknown): Promise<QuoteActionState> =>
       type: "quote_event",
       content: `Quote sent${sent.valueCents == null ? "" : ` at ${formatAudFromCents(sent.valueCents)}`}`,
     });
+
+    // Sending a quote to the client is direct contact, so it resets the
+    // staleness clock and clears any outstanding stale nudge.
+    await touchDealContact(sent.dealId);
 
     revalidatePath(`/deals/${sent.dealId}`);
     return {};

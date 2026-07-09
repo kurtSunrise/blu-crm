@@ -1,6 +1,6 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
-import { getEntryStyle } from "@/components/deal-timeline";
+import { getEntryStyle } from "@/components/deal-timeline-style";
 import { PageHeader } from "@/components/page-header";
 import { ReportsNav } from "@/components/reports/reports-nav";
 import { buttonVariants } from "@/components/ui/button";

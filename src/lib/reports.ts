@@ -11,7 +11,7 @@ import {
   type SQL,
   sql,
 } from "drizzle-orm";
-import type { TimelineEntry } from "@/components/deal-timeline";
+import type { TimelineEntry } from "@/components/deal-timeline-style";
 import { db } from "@/db";
 import {
   activity,

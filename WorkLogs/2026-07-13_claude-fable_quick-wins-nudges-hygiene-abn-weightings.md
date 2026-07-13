@@ -110,14 +110,29 @@ the M1-M9 metrics page, email/calendar sync (blocked on stakeholders and IT).
     5 companies tests pass on desktop, including the archive flow and the
     company edit form with the new ABN fields.
 
+## Deployment (2026-07-13)
+
+- Committed as `a6d9d80`; help sections and What's New updated in the same
+  change (alerts/automations, contacts/ABN, notifications list, assistant
+  proactive bullet, settings General description).
+- Prod rollout executed in order: `df -h /` (9.9 GB free) →
+  `db:pgvector:prod` (already enabled) → `db:push:prod` (company columns
+  applied) → `npm run deploy` → live worker version `e2086a75` on
+  `https://blu-crm.kurt-0f6.workers.dev`.
+- Live verification: three cache-busted cookieless `/sign-in` loads returned
+  200 with full 15.9 KB bodies (no streaming stall), `/enquire` 200, and the
+  new `/api/abn-lookup` responds 401 without a session (route live and
+  gated).
+
 ## Next Steps
 
-- Register for the free ABR GUID (abr.business.gov.au → web services) and set
-  `ABR_GUID` in `.env.local` and as a prod secret (`wrangler secret put`).
-- Prod rollout order: `npm run db:pgvector:prod` (no-op if present) →
-  `npm run db:push:prod` (company columns) → `wrangler secret put ABR_GUID` →
-  check `df -h /` → `npm run deploy` → cache-busted live verification.
+- **Kurt**: register for the free ABR GUID (abr.business.gov.au → web
+  services) and set `ABR_GUID` in `.env.local` and as a prod secret
+  (`wrangler secret put ABR_GUID`). Until then the Look up button returns a
+  clear "not configured" message; everything else works.
 - Consider surfacing the auto-created follow-up in the stage-move toast.
+- The daily cron (0 23 UTC) now also runs the quote-no-response sweep; check
+  the first run's `inserted.quoteNoResponse` in observability if curious.
 
 ## Related Files
 

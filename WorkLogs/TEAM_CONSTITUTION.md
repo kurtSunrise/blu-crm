@@ -212,6 +212,7 @@ Runtime variables the current code reads:
 - `ANTHROPIC_API_KEY` and/or `ZAI_API_KEY` — only required if photo search is enabled.
 - `CRON_SECRET` — bearer token guarding `/api/cron/notifications`. The Worker's `scheduled` handler (worker-entry.mjs) sends it when dispatching the notification sweeps declared in `wrangler.jsonc` `triggers.crons`; without it the route returns 503. Set via `wrangler secret put CRON_SECRET` in prod and in `.env.local`/`.dev.vars` for dev and E2E.
 - `EMAIL_INTAKE_TOKEN` — bearer token guarding `/api/intake/email` (503 when unset).
+- `ABR_GUID` — Australian Business Register web-services GUID (free registration at abr.business.gov.au) for `/api/abn-lookup`, which fills a company's ABN and legal name on the company form; the route returns 503 when unset.
 - `SEED_USER_PASSWORD` — password for the three seeded accounts. `src/db/seed.ts` fails hard when it is unset and the target database is not localhost (the `blu-crm-dev` fallback is a known string and must never reach a remote database).
 - `CHAT_DAILY_MESSAGE_LIMIT` — optional per-user daily assistant message cap (default 200; `/api/chat` returns 429 past it).
 

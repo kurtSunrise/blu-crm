@@ -18,6 +18,8 @@ export default async function EditCompanyPage({
       id: company.id,
       name: company.name,
       kind: company.kind,
+      abn: company.abn,
+      legalName: company.legalName,
       website: company.website,
       notes: company.notes,
     })
@@ -43,6 +45,8 @@ export default async function EditCompanyPage({
           id: record.id,
           name: record.name,
           kind: record.kind ?? "",
+          abn: record.abn ?? "",
+          legalName: record.legalName ?? "",
           website: record.website ?? "",
           notes: record.notes ?? "",
         }}

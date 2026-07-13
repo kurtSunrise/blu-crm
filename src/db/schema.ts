@@ -217,6 +217,10 @@ export const company = pgTable("company", {
   name: text("name").notNull(),
   // brand / agency / venue / shopping centre / referral partner
   kind: text("kind"),
+  // Australian Business Number (11 digits, no spaces) and the registered
+  // entity name, fillable via the ABR lookup on the company form.
+  abn: text("abn"),
+  legalName: text("legal_name"),
   website: text("website"),
   notes: text("notes"),
   createdBy: text("created_by").references(() => user.id),

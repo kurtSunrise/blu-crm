@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   sweepFollowUpDueToday,
   sweepOverdueFollowUpNotifications,
+  sweepQuoteNoResponseNudges,
   sweepStaleDealNudges,
 } from "@/lib/notification-sweeps";
 
@@ -39,6 +40,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   if (cron === DAILY_CRON || cron === null) {
     inserted.followUpDue = await sweepFollowUpDueToday();
     inserted.staleDeal = await sweepStaleDealNudges();
+    inserted.quoteNoResponse = await sweepQuoteNoResponseNudges();
   }
 
   return NextResponse.json({ inserted });

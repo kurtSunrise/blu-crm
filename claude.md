@@ -68,7 +68,7 @@ App routes (`src/app/(app)/`, session-gated by the layout): dashboard `/`, `pipe
 
 Public routes (`src/app/(public)/`): `sign-in`, `enquire` (public enquiry form), `q/[token]` (tokenised client quote view).
 
-API routes (`src/app/api/`): `auth/[...all]` (Better Auth), `chat` + `chat/threads` (list; `[id]` GET/PATCH rename+pin/DELETE soft-archive) + `chat/attachments` + `chat/transcribe` (Workers AI Whisper, 503 when the `AI` binding is absent) (assistant), `attachments` (deal files), `cron/notifications` (CRON_SECRET bearer), `intake/email` (EMAIL_INTAKE_TOKEN bearer), `enquiries` (public, rate-limited + honeypot), `notifications/unread-count`, `reports/export`.
+API routes (`src/app/api/`): `auth/[...all]` (Better Auth), `chat` + `chat/threads` (list; `[id]` GET/PATCH rename+pin/DELETE soft-archive) + `chat/attachments` + `chat/transcribe` (Workers AI Whisper, 503 when the `AI` binding is absent) (assistant), `attachments` (deal files), `cron/notifications` (CRON_SECRET bearer), `intake/email` (EMAIL_INTAKE_TOKEN bearer), `enquiries` (public, rate-limited + honeypot), `notifications/unread-count`, `reports/export`, `abn-lookup` (session-gated ABR proxy, needs `ABR_GUID`).
 
 `src/lib/` modules: `actions/` (server actions returning typed `*ActionState`), `ai/` (agent loop, tools, threads, knowledge RAG), `validation/` (zod schemas for every action and API body), `mutations/` (shared write cores), plus helpers (`reports.ts`, `alerts.ts`, `notifications.ts`, `session.ts`, `auth.ts`). `src/db/` holds the Drizzle schema, seed, and the driver-switching client.
 
@@ -102,6 +102,7 @@ API routes (`src/app/api/`): `auth/[...all]` (Better Auth), `chat` + `chat/threa
 | `ANTHROPIC_API_KEY` / `ZAI_API_KEY` | Anthropic key powers the assistant and all vision; `ZAI_API_KEY` is only checked by the settings AI page's vision-status badge (no Z.AI calls are made) |
 | `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` | Script-side only: `knowledge:import` embeds chunks via the Workers AI REST API (token needs Workers AI run permission); unset means null embeddings and FTS-only search. The deployed Worker uses the account-authenticated `AI` binding instead |
 | `CRON_SECRET` | Bearer guarding `/api/cron/notifications` (503 when unset) |
+| `ABR_GUID` | Australian Business Register web-services GUID (free registration) powering `/api/abn-lookup` for the company form's ABN lookup; the route returns 503 when unset |
 | `EMAIL_INTAKE_TOKEN` | Bearer guarding `/api/intake/email` |
 | `SEED_USER_PASSWORD` | Seed account password. Required for non-local databases; the `blu-crm-dev` fallback is local-only and the seed script fails hard otherwise |
 | `CHAT_DAILY_MESSAGE_LIMIT` | Optional per-user daily assistant message cap (default 200, returns 429 past it) |

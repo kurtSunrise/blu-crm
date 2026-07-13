@@ -11,6 +11,7 @@ export type NotificationType =
   | "follow_up_overdue"
   | "handover_to_delivery"
   | "lead_assigned"
+  | "quote_no_response"
   | "quote_viewed"
   | "stale_deal"
   | "weekly_report";
@@ -69,6 +70,18 @@ export const NOTIFICATION_TYPES: Record<
       detail: `The client just opened the quote on ${
         payload.dealTitle ?? "a deal"
       }. Good time to follow up.`,
+    }),
+    href: dealHref,
+  },
+  quote_no_response: {
+    label: "Quote awaiting response",
+    description:
+      "When a sent quote has had no acceptance or decline past the threshold set in Settings → Alerts & automations.",
+    describe: (payload) => ({
+      title: "Quote awaiting response",
+      detail: `The quote on ${
+        payload.dealTitle ?? "a deal"
+      } is still unanswered. Worth chasing.`,
     }),
     href: dealHref,
   },
@@ -145,6 +158,7 @@ export const NOTIFICATION_TYPES: Record<
 export const NOTIFICATION_TYPE_ORDER: readonly NotificationType[] = [
   "lead_assigned",
   "quote_viewed",
+  "quote_no_response",
   "follow_up_due",
   "follow_up_overdue",
   "stale_deal",

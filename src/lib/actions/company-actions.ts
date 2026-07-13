@@ -16,6 +16,8 @@ export interface CompanyActionState {
   values?: {
     name: string;
     kind: string;
+    abn: string;
+    legalName: string;
     website: string;
     notes: string;
   };
@@ -26,6 +28,8 @@ const submittedValues = (
 ): NonNullable<CompanyActionState["values"]> => ({
   name: String(formData.get("name") ?? ""),
   kind: String(formData.get("kind") ?? ""),
+  abn: String(formData.get("abn") ?? ""),
+  legalName: String(formData.get("legalName") ?? ""),
   website: String(formData.get("website") ?? ""),
   notes: String(formData.get("notes") ?? ""),
 });
@@ -48,6 +52,8 @@ export const updateCompany = async (
     const parsed = updateCompanySchema.safeParse({
       name: formData.get("name"),
       kind: formData.get("kind") ?? undefined,
+      abn: formData.get("abn") ?? undefined,
+      legalName: formData.get("legalName") ?? undefined,
       website: formData.get("website") ?? undefined,
       notes: formData.get("notes") ?? undefined,
     });
@@ -73,6 +79,8 @@ export const updateCompany = async (
       .set({
         name: input.name,
         kind: input.kind ?? null,
+        abn: input.abn ?? null,
+        legalName: input.legalName ?? null,
         website: input.website ?? null,
         notes: input.notes ?? null,
         updatedAt: new Date(),
@@ -99,7 +107,9 @@ export const archiveCompany = async (companyId: string): Promise<void> => {
 
     revalidatePath("/contacts");
     revalidatePath("/companies");
-    redirect("/companies?flash=company-archived");
+    // The contacts directory is the archived company's home surface; there is
+    // no /companies index route, so redirecting there 404s (caught by e2e).
+    redirect("/contacts?flash=company-archived");
   } catch (error) {
     unstable_rethrow(error); // archive actions redirect on success
     console.error("[action-error]", error);

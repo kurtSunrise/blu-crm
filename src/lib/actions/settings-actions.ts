@@ -1,6 +1,6 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { appSetting, pipelineStage } from "@/db/schema";
@@ -9,7 +9,11 @@ import { AI_ASSISTANT_INSTRUCTIONS_KEY } from "@/lib/ai/assistant-instructions";
 import { ATTACHMENT_DESCRIPTION_MODE_KEY } from "@/lib/ai/attachment-describe";
 import { AI_MODEL_KEY } from "@/lib/ai/models";
 import {
+  AUTO_FOLLOW_UP_DAYS_KEY,
+  AUTO_FOLLOW_UP_STAGE_KEY,
   CLOSING_SOON_DAYS_KEY,
+  QUOTE_NUDGE_DAYS_KEY,
+  QUOTE_NUDGE_ENABLED_KEY,
   STALE_DAYS_KEY,
   STALE_NUDGE_ENABLED_KEY,
   STALE_NUDGE_REPEAT_DAYS_KEY,
@@ -51,10 +55,33 @@ export const updateAlertThresholds = async (
       // Unchecked checkboxes are absent from the payload.
       staleNudgeEnabled: formData.get("staleNudgeEnabled") !== null,
       staleNudgeRepeatDays: formData.get("staleNudgeRepeatDays"),
+      quoteNudgeEnabled: formData.get("quoteNudgeEnabled") !== null,
+      quoteNudgeDays: formData.get("quoteNudgeDays"),
+      autoFollowUpStageId: formData.get("autoFollowUpStageId") ?? "",
+      autoFollowUpDays: formData.get("autoFollowUpDays"),
     });
 
     if (!parsed.success) {
       return { error: "Thresholds must be whole numbers of days (0 to 365)" };
+    }
+
+    // The automation stage must be a real open stage; a stale id (renamed
+    // board, removed stage) degrades to off rather than misfiring.
+    if (parsed.data.autoFollowUpStageId) {
+      const [stage] = await db
+        .select({ id: pipelineStage.id })
+        .from(pipelineStage)
+        .where(
+          and(
+            eq(pipelineStage.id, parsed.data.autoFollowUpStageId),
+            eq(pipelineStage.isWon, false),
+            eq(pipelineStage.isLost, false)
+          )
+        )
+        .limit(1);
+      if (!stage) {
+        return { error: "Choose an open pipeline stage for the follow-up" };
+      }
     }
 
     const entries = [
@@ -70,6 +97,19 @@ export const updateAlertThresholds = async (
       {
         key: STALE_NUDGE_REPEAT_DAYS_KEY,
         value: String(parsed.data.staleNudgeRepeatDays),
+      },
+      {
+        key: QUOTE_NUDGE_ENABLED_KEY,
+        value: String(parsed.data.quoteNudgeEnabled),
+      },
+      { key: QUOTE_NUDGE_DAYS_KEY, value: String(parsed.data.quoteNudgeDays) },
+      {
+        key: AUTO_FOLLOW_UP_STAGE_KEY,
+        value: parsed.data.autoFollowUpStageId,
+      },
+      {
+        key: AUTO_FOLLOW_UP_DAYS_KEY,
+        value: String(parsed.data.autoFollowUpDays),
       },
     ];
 

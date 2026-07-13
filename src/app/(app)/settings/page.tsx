@@ -14,9 +14,22 @@ import { StageWeightingsForm } from "@/components/stage-weightings-form";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { db } from "@/db";
 import { deal, pipelineStage } from "@/db/schema";
-import { getAlertThresholds, getStaleNudgeConfig } from "@/lib/alerts";
+import {
+  getAlertThresholds,
+  getAutoFollowUpConfig,
+  getQuoteNudgeConfig,
+  getStaleNudgeConfig,
+} from "@/lib/alerts";
+import { MS_PER_DAY } from "@/lib/format";
 import { getPipelineTooltipSettings } from "@/lib/pipeline-tooltip";
+import { getFunnelConversion, type ReportFilters } from "@/lib/reports";
 import { requireSession } from "@/lib/session";
+
+// Lookback for the "actual conversion" hints beside the weighting inputs:
+// long enough to smooth seasonality, short enough to reflect how Blu sells
+// now. Matches the funnel report's semantics (cohort = deals created in the
+// window).
+const WEIGHTING_LOOKBACK_DAYS = 365;
 
 export const metadata = {
   title: "Settings · General | Blu CRM",
@@ -58,12 +71,9 @@ export default async function GeneralSettingsPage() {
     );
   }
 
-  const thresholds = await getAlertThresholds();
-  const staleNudge = await getStaleNudgeConfig();
-  const tooltip = await getPipelineTooltipSettings();
   // Deal counts include discarded deals: they still reference their stage,
   // so removing a stage has to move them too (FR-1.3 AC).
-  const stages = await db
+  const stagesQuery = db
     .select({
       id: pipelineStage.id,
       name: pipelineStage.name,
@@ -76,6 +86,34 @@ export default async function GeneralSettingsPage() {
     .leftJoin(deal, eq(deal.stageId, pipelineStage.id))
     .groupBy(pipelineStage.id)
     .orderBy(asc(pipelineStage.position));
+
+  const conversionFilters: ReportFilters = {
+    from: new Date(Date.now() - WEIGHTING_LOOKBACK_DAYS * MS_PER_DAY),
+    fromKey: null,
+    ownerId: null,
+    periodDays: WEIGHTING_LOOKBACK_DAYS,
+    source: null,
+    to: null,
+    toKey: null,
+  };
+
+  const [
+    thresholds,
+    staleNudge,
+    quoteNudge,
+    autoFollowUp,
+    tooltip,
+    stages,
+    funnel,
+  ] = await Promise.all([
+    getAlertThresholds(),
+    getStaleNudgeConfig(),
+    getQuoteNudgeConfig(),
+    getAutoFollowUpConfig(),
+    getPipelineTooltipSettings(),
+    stagesQuery,
+    getFunnelConversion(conversionFilters),
+  ]);
 
   return (
     <>
@@ -98,23 +136,47 @@ export default async function GeneralSettingsPage() {
       </SettingsSection>
 
       <SettingsSection
-        description="How much of each stage's value counts towards the weighted forecast on the dashboard and reports."
+        description="How much of each stage's value counts towards the weighted forecast on the dashboard and reports. The hints show how deals actually converted, from stage history."
         icon={Percent}
         title="Forecast weightings"
       >
         <SettingsPanel>
-          <StageWeightingsForm stages={stages} />
+          <StageWeightingsForm
+            conversion={{
+              cohortCount: funnel.cohortCount,
+              lookbackDays: WEIGHTING_LOOKBACK_DAYS,
+              steps: funnel.steps.flatMap((step) =>
+                step.stageId
+                  ? [
+                      {
+                        conversionFromPrevious: step.conversionFromPrevious,
+                        reachedCount: step.reachedCount,
+                        stageId: step.stageId,
+                      },
+                    ]
+                  : []
+              ),
+            }}
+            stages={stages}
+          />
         </SettingsPanel>
       </SettingsSection>
 
       <SettingsSection
-        description="When deals surface on the dashboard and tasks page as needing attention or closing soon, and how the needs-attention notification behaves."
+        description="When deals surface on the dashboard and tasks page as needing attention or closing soon, how the needs-attention and quote nudges behave, and the stage-entry follow-up automation."
         icon={Bell}
-        title="Alerts"
+        title="Alerts & automations"
       >
         <SettingsPanel>
           <AlertThresholdsForm
+            autoFollowUpDays={autoFollowUp.days}
+            autoFollowUpStageId={autoFollowUp.stageId}
             closingSoonDays={thresholds.closingSoonDays}
+            quoteNudgeDays={quoteNudge.days}
+            quoteNudgeEnabled={quoteNudge.enabled}
+            stages={stages
+              .filter((stage) => !(stage.isWon || stage.isLost))
+              .map((stage) => ({ id: stage.id, name: stage.name }))}
             staleDays={thresholds.staleDays}
             staleNudgeEnabled={staleNudge.enabled}
             staleNudgeRepeatDays={staleNudge.repeatDays}

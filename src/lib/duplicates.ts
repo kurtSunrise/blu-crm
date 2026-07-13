@@ -1,6 +1,27 @@
-import { and, eq, ilike, isNull, or, type SQL } from "drizzle-orm";
+import { and, eq, ilike, isNull, or, type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { contact } from "@/db/schema";
+
+// Org-wide duplicate scan for the briefing's data-hygiene section: how many
+// email/phone values are shared by more than one live contact. Counts groups
+// (one nag per clash), not rows, so a pair reads as "1 possible duplicate".
+export const countDuplicateContactGroups = async (): Promise<number> => {
+  const result = await db.execute(sql`
+    select count(*)::int as groups from (
+      select lower(${contact.email}) as duplicate_key
+      from ${contact}
+      where ${contact.email} is not null and ${contact.deletedAt} is null
+      group by 1 having count(*) > 1
+      union all
+      select ${contact.phone} as duplicate_key
+      from ${contact}
+      where ${contact.phone} is not null and ${contact.deletedAt} is null
+      group by 1 having count(*) > 1
+    ) duplicates
+  `);
+  const [row] = result.rows as { groups: number }[];
+  return row ? Number(row.groups) : 0;
+};
 
 export interface DuplicateCandidate {
   email: string | null;

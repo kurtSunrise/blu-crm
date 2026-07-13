@@ -18,6 +18,7 @@ import { createLead } from "@/lib/intake";
 import { LOST_REASON_LABELS } from "@/lib/labels";
 import { updateDealFieldsCore } from "@/lib/mutations/deal";
 import { touchDealContact } from "@/lib/mutations/deal-contact";
+import { maybeCreateStageEntryFollowUp } from "@/lib/mutations/follow-up";
 import { emitNotification, getHandoverRecipientIds } from "@/lib/notifications";
 import { requireActionSession } from "@/lib/session";
 import {
@@ -146,6 +147,23 @@ const stageMoveActivityContent = (
   return `Moved to ${stage.name}`;
 };
 
+// Stage-entry automation (admin-configured). Runs after the stage write has
+// committed, so a failure here only costs the automatic reminder, never the
+// move itself.
+const runStageEntryAutomation = async (params: {
+  dealId: string;
+  movedBy: string;
+  ownerId: string | null;
+  stageName: string;
+  toStageId: string;
+}): Promise<void> => {
+  try {
+    await maybeCreateStageEntryFollowUp(params);
+  } catch (error) {
+    console.error("[auto-follow-up] stage-entry follow-up failed", error);
+  }
+};
+
 export const moveDealStage = async (input: unknown): Promise<ActionState> =>
   runAction(async () => {
     const auth = await requireActionSession();
@@ -229,7 +247,12 @@ const moveDealStageForUser = async (
       updatedAt: new Date(),
     })
     .where(eq(deal.id, dealId))
-    .returning({ id: deal.id, title: deal.title, leadId: deal.leadId });
+    .returning({
+      id: deal.id,
+      title: deal.title,
+      leadId: deal.leadId,
+      ownerId: deal.ownerId,
+    });
 
   if (!moved) {
     return { error: "Unknown deal" };
@@ -268,6 +291,14 @@ const moveDealStageForUser = async (
     // Moving a deal along the pipeline counts as working it, so it resets the
     // staleness clock and clears any outstanding "needs attention" nudge.
     await touchDealContact(dealId);
+
+    await runStageEntryAutomation({
+      dealId,
+      movedBy,
+      ownerId: moved.ownerId,
+      stageName: stage.name,
+      toStageId: stage.id,
+    });
   }
 
   if (stage.isWon && handoverToDelivery) {

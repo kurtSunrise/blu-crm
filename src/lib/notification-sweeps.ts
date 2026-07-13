@@ -3,6 +3,8 @@ import { db } from "@/db";
 import { deal, followUp } from "@/db/schema";
 import {
   getAlertThresholds,
+  getQuoteNudgeConfig,
+  getQuotesAwaitingResponse,
   getStaleDeals,
   getStaleNudgeConfig,
 } from "@/lib/alerts";
@@ -130,4 +132,37 @@ export const sweepStaleDealNudges = async (): Promise<number> => {
   });
 
   return await emitNotificationBatch("stale_deal", entries);
+};
+
+// "Quote awaiting response" nudges: a sent (or viewed) quote with no client
+// decision after the admin-set number of days pings the deal owner once per
+// send. The dedupe key anchors on sentAt so re-sending a revised quote starts
+// a fresh episode, while re-sweeps of the same episode are no-ops.
+export const sweepQuoteNoResponseNudges = async (): Promise<number> => {
+  const { enabled, days } = await getQuoteNudgeConfig();
+  if (!enabled) {
+    return 0;
+  }
+
+  const quotes = await getQuotesAwaitingResponse(days);
+  const entries = quotes.flatMap((item) => {
+    if (!item.ownerId) {
+      return [];
+    }
+    return [
+      {
+        recipientId: item.ownerId,
+        dedupeKey: `quote_no_response:${item.quoteId}:${item.sentAt.toISOString()}`,
+        payload: {
+          quoteId: item.quoteId,
+          dealId: item.dealId,
+          dealTitle: item.dealTitle,
+          leadId: item.leadId,
+          valueCents: item.valueCents,
+        },
+      },
+    ];
+  });
+
+  return await emitNotificationBatch("quote_no_response", entries);
 };

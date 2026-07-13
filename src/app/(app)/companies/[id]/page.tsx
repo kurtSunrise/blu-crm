@@ -24,6 +24,8 @@ export default async function CompanyPage({
       id: company.id,
       name: company.name,
       kind: company.kind,
+      abn: company.abn,
+      legalName: company.legalName,
       website: company.website,
       notes: company.notes,
     })
@@ -90,6 +92,13 @@ export default async function CompanyPage({
           </h1>
           {record.kind && <Badge variant="outline">{record.kind}</Badge>}
         </div>
+        {(record.legalName || record.abn) && (
+          <p className="text-muted-foreground text-sm">
+            {[record.legalName, record.abn ? `ABN ${record.abn}` : null]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        )}
         {record.website && (
           <a
             className="w-fit text-blu text-sm underline underline-offset-2"

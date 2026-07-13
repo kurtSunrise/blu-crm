@@ -310,6 +310,16 @@ const SECTIONS: HelpSection[] = [
           Both thresholds are adjustable in Settings. Logging any activity on a
           deal (a call, a site visit) resets its contact clock.
         </p>
+        <p className={PARA_CLASSES}>
+          Two more automations live under Settings, Alerts &amp; automations.
+          <strong> Quote awaiting response</strong> nudges the deal owner when a
+          sent quote has had no acceptance or decline for a set number of days
+          (5 by default; a quote the client merely viewed still counts as
+          awaiting). <strong>Auto follow-up</strong> watches one stage of your
+          choosing: any deal moving into it with no open follow-up gets a chase
+          follow-up created automatically for its owner, due a few days later.
+          Admins can change the stage, the day counts, or switch either off.
+        </p>
       </>
     ),
   },
@@ -409,6 +419,13 @@ const SECTIONS: HelpSection[] = [
           match. Repeat clients are common; open the existing record instead of
           creating a twin, or choose "Create anyway" deliberately.
         </p>
+        <p className={PARA_CLASSES}>
+          Companies can also carry their <strong>ABN and legal name</strong>. On
+          the company edit page, type the ABN (or leave it blank and rely on the
+          company name) and tap <strong>Look up</strong>: the details fill
+          straight from the Australian Business Register, and if several
+          entities match you pick the right one from a short list.
+        </p>
       </>
     ),
   },
@@ -419,16 +436,16 @@ const SECTIONS: HelpSection[] = [
       <p className={PARA_CLASSES}>
         The bell shows your unread count and collects everything that needs your
         eyes: new leads assigned to you, follow-ups due today or overdue, quiet
-        deals needing attention, quote-viewed alerts, and Won handovers. The
-        feed is yours alone; teammates each have their own. Tap a notification
-        to jump to its deal (it marks itself read), tick the button on a card to
-        flip read state, or "Mark all read" to clear your lot. Choose which
-        types you receive under Settings then Notifications; admins also pick
-        who receives Won handovers there. A "Deal needs attention" nudge clears
-        itself as soon as you work the deal: log a call or note, complete a
-        follow-up, send a quote, or move its stage. Admins set the
-        days-without-contact threshold, and can turn the nudge off or have it
-        repeat, under Settings then Alerts.
+        deals needing attention, quote-viewed alerts, quotes awaiting a client
+        response, and Won handovers. The feed is yours alone; teammates each
+        have their own. Tap a notification to jump to its deal (it marks itself
+        read), tick the button on a card to flip read state, or "Mark all read"
+        to clear your lot. Choose which types you receive under Settings then
+        Notifications; admins also pick who receives Won handovers there. A
+        "Deal needs attention" nudge clears itself as soon as you work the deal:
+        log a call or note, complete a follow-up, send a quote, or move its
+        stage. Admins set the days-without-contact threshold, and can turn the
+        nudge off or have it repeat, under Settings then Alerts.
       </p>
     ),
   },
@@ -578,6 +595,16 @@ const SECTIONS: HelpSection[] = [
             it.
           </li>
           <li>
+            <strong>It comes to you</strong>: every Monday morning the assistant
+            drops the weekly pipeline report into a ready-made chat, and Tuesday
+            to Friday a short morning briefing with your follow-ups due, deals
+            closing soon, anything gone quiet, and a data-hygiene check: deals
+            missing a fixed date, value, or decision-maker, quotes still
+            awaiting a client response, contacts with no company, and possible
+            duplicate contacts. Each lands as a notification you can tap to
+            open.
+          </li>
+          <li>
             <strong>History</strong>: the clock button lists your recent
             conversations, each showing the deal or contact it was about; pick
             one to resume it, and its deal cards and review cards come back with
@@ -664,9 +691,11 @@ const SECTIONS: HelpSection[] = [
             <strong>General</strong>: the pipeline stages (rename, reorder, add,
             or remove them; Won and Lost / Dormant stay fixed at the end),
             forecast weightings (how much of each stage's value counts toward
-            the weighted forecast), alerts ("Needs attention after" and "Closing
-            soon within", both in days), the pipeline card hover preview, and
-            the appearance toggle.
+            the weighted forecast, with hints showing how deals actually
+            converted over the last 12 months), alerts and automations ("Needs
+            attention after" and "Closing soon within" in days, the quote
+            awaiting-response nudge, and the stage-entry auto follow-up), the
+            pipeline card hover preview, and the appearance toggle.
           </li>
           <li>
             <strong>Deal statuses</strong>: add, rename, recolour, reorder, or
@@ -791,6 +820,16 @@ const GLOSSARY = [
 ];
 
 const WHATS_NEW = [
+  {
+    date: "13/07/2026",
+    items: [
+      "Quotes no longer go quiet unnoticed: when a sent quote has had no acceptance or decline for a few days (5 by default), the deal owner gets a 'Quote awaiting response' nudge. Admins can change the wait or switch it off under Settings, Alerts & automations.",
+      "New stage-entry automation: pick a pipeline stage (say Concept / Quote Issued) under Settings, Alerts & automations, and any deal moving into it with no open follow-up gets a chase follow-up created automatically for its owner, due a few days later.",
+      "Your weekday morning briefing now includes a Data hygiene section: open deals missing a fixed date, value, or confirmed decision-maker (with a tappable Data gaps list), quotes still awaiting a response, contacts with no company, and possible duplicate contacts.",
+      "Companies now carry an ABN and legal name. On the company edit page, type an ABN or just use the company name and tap Look up: the details fill straight from the Australian Business Register.",
+      "Setting forecast weightings is no longer guesswork: each stage on the Settings page now shows how deals actually converted through it over the last 12 months, straight from your pipeline history.",
+    ],
+  },
   {
     date: "09/07/2026",
     items: [

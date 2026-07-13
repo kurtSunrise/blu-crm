@@ -1,6 +1,7 @@
-import { and, asc, eq, gte, inArray, isNull, lt } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, isNull, lt } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  contact,
   deal,
   followUp,
   notification,
@@ -26,9 +27,14 @@ import {
   type AlertDeal,
   getAlertThresholds,
   getClosingSoonDeals,
+  getDealsMissingKeyFields,
+  getQuoteNudgeConfig,
+  getQuotesAwaitingResponse,
   getStaleDeals,
+  type QuoteAwaitingResponse,
 } from "@/lib/alerts";
 import { addDays, awstDateKey, type DateKey } from "@/lib/calendar";
+import { countDuplicateContactGroups } from "@/lib/duplicates";
 import {
   awstDayRange,
   formatAudFromCents,
@@ -272,6 +278,16 @@ const followUpsDueToday = (now: Date): Promise<BriefingFollowUp[]> => {
     .limit(FOLLOW_UPS_DUE_LIMIT);
 };
 
+// Live contacts not linked to any company: an org-wide hygiene signal, so it
+// is a single count shared by every member's briefing.
+const countContactsWithoutCompany = async (): Promise<number> => {
+  const [row] = await db
+    .select({ orphaned: count() })
+    .from(contact)
+    .where(and(isNull(contact.companyId), isNull(contact.deletedAt)));
+  return row?.orphaned ?? 0;
+};
+
 // The briefing lists are the user's own deals, so the owner column is the
 // recipient; contact/value/date-type are not part of the alert queries and
 // stay null (the deal_list card tolerates every nullable field).
@@ -292,10 +308,47 @@ const alertDealToSummary = (row: AlertDeal, ownerName: string): DealSummary =>
     valueCents: null,
   });
 
+interface BriefingHygiene {
+  contactsWithoutCompany: number;
+  dataGapCount: number;
+  duplicateContactGroups: number;
+  quoteNudgeDays: number;
+  quotesAwaiting: QuoteAwaitingResponse[];
+}
+
+const hygieneLines = (hygiene: BriefingHygiene): string[] => {
+  const items: string[] = [];
+  if (hygiene.dataGapCount > 0) {
+    items.push(
+      `- ${hygiene.dataGapCount} of your open deals ${hygiene.dataGapCount === 1 ? "is" : "are"} missing a fixed date, value, or confirmed decision-maker.`
+    );
+  }
+  for (const quoteItem of hygiene.quotesAwaiting) {
+    items.push(
+      `- The quote on ${quoteItem.dealTitle} has waited ${hygiene.quoteNudgeDays}+ days for a response.`
+    );
+  }
+  if (hygiene.contactsWithoutCompany > 0) {
+    items.push(
+      `- ${plural(hygiene.contactsWithoutCompany, "contact")} in the directory ${hygiene.contactsWithoutCompany === 1 ? "has" : "have"} no company.`
+    );
+  }
+  if (hygiene.duplicateContactGroups > 0) {
+    items.push(
+      `- ${plural(hygiene.duplicateContactGroups, "possible duplicate contact")} (shared email or phone) worth merging.`
+    );
+  }
+  if (items.length === 0) {
+    return [];
+  }
+  return ["", "Data hygiene:", ...items];
+};
+
 const briefingText = (params: {
   closingCount: number;
   closingSoonDays: number;
   followUps: BriefingFollowUp[];
+  hygiene: BriefingHygiene;
   now: Date;
   staleCount: number;
   staleDays: number;
@@ -312,6 +365,7 @@ const briefingText = (params: {
       ...params.followUps.map((item) => `- ${item.action} (${item.dealTitle})`)
     );
   }
+  lines.push(...hygieneLines(params.hygiene));
   return lines.join("\n");
 };
 
@@ -320,7 +374,7 @@ export const generateDailyBriefingThreads = async (
 ): Promise<{ created: number; skipped: number }> => {
   const dayKey = awstDateKey(now);
   const team = await listActiveTeam();
-  const [existing, muted, thresholds] = await Promise.all([
+  const [existing, muted, thresholds, quoteNudge] = await Promise.all([
     existingDedupeKeys(
       team.map((member) => `daily_briefing:${dayKey}:${member.id}`)
     ),
@@ -329,6 +383,7 @@ export const generateDailyBriefingThreads = async (
       team.map((member) => member.id)
     ),
     getAlertThresholds(),
+    getQuoteNudgeConfig(),
   ]);
 
   const pending = team.filter(
@@ -344,10 +399,22 @@ export const generateDailyBriefingThreads = async (
 
   // Org-wide fetches once, filtered per user in memory: the alert helpers are
   // the canonical stale/closing definitions and the team is three people.
-  const [staleDeals, closingSoon, dueFollowUps] = await Promise.all([
+  const [
+    staleDeals,
+    closingSoon,
+    dueFollowUps,
+    dataGapDeals,
+    quotesAwaiting,
+    contactsWithoutCompany,
+    duplicateContactGroups,
+  ] = await Promise.all([
     getStaleDeals(thresholds.staleDays),
     getClosingSoonDeals(thresholds.closingSoonDays),
     followUpsDueToday(now),
+    getDealsMissingKeyFields(),
+    getQuotesAwaitingResponse(quoteNudge.days),
+    countContactsWithoutCompany(),
+    countDuplicateContactGroups(),
   ]);
 
   let created = 0;
@@ -363,11 +430,19 @@ export const generateDailyBriefingThreads = async (
       const myStale = staleDeals
         .filter((item) => item.ownerId === member.id)
         .slice(0, BRIEFING_LIST_LIMIT);
+      const myDataGaps = dataGapDeals
+        .filter((item) => item.ownerId === member.id)
+        .slice(0, BRIEFING_LIST_LIMIT);
+      const myQuotesAwaiting = quotesAwaiting
+        .filter((item) => item.ownerId === member.id)
+        .slice(0, BRIEFING_LIST_LIMIT);
 
       if (
         myFollowUps.length === 0 &&
         myClosing.length === 0 &&
-        myStale.length === 0
+        myStale.length === 0 &&
+        myDataGaps.length === 0 &&
+        myQuotesAwaiting.length === 0
       ) {
         skipped += 1;
         continue;
@@ -390,6 +465,14 @@ export const generateDailyBriefingThreads = async (
           )
         );
       }
+      if (myDataGaps.length > 0) {
+        artifacts.push(
+          dealListArtifact(
+            "Data gaps",
+            myDataGaps.map((row) => alertDealToSummary(row, member.name))
+          )
+        );
+      }
 
       const threadId = await seedProactiveThread({
         artifacts,
@@ -397,6 +480,13 @@ export const generateDailyBriefingThreads = async (
           closingCount: myClosing.length,
           closingSoonDays: thresholds.closingSoonDays,
           followUps: myFollowUps,
+          hygiene: {
+            contactsWithoutCompany,
+            dataGapCount: myDataGaps.length,
+            duplicateContactGroups,
+            quoteNudgeDays: quoteNudge.days,
+            quotesAwaiting: myQuotesAwaiting,
+          },
           now,
           staleCount: myStale.length,
           staleDays: thresholds.staleDays,

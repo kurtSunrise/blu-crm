@@ -5,15 +5,20 @@ import { SUB_STATUS_COLORS } from "@/lib/labels";
 const MAX_THRESHOLD_DAYS = 365;
 
 // Stale / closing-soon thresholds are admin-configurable (FR-5.3 AC), plus the
-// on/off switch and repeat cadence for the "Deal needs attention" nudge.
-// staleNudgeRepeatDays of 0 means nudge once per staleness episode. The
-// enabled checkbox is absent from the form when unchecked, so the action
-// resolves it to a boolean before validating here.
+// on/off switch and repeat cadence for the "Deal needs attention" nudge, the
+// "Quote awaiting response" nudge, and the stage-entry follow-up automation
+// (empty stage id = off). staleNudgeRepeatDays of 0 means nudge once per
+// staleness episode. The enabled checkboxes are absent from the form when
+// unchecked, so the action resolves them to booleans before validating here.
 export const alertThresholdsSchema = z.object({
   staleDays: z.coerce.number().int().min(0).max(MAX_THRESHOLD_DAYS),
   closingSoonDays: z.coerce.number().int().min(0).max(MAX_THRESHOLD_DAYS),
   staleNudgeEnabled: z.boolean(),
   staleNudgeRepeatDays: z.coerce.number().int().min(0).max(MAX_THRESHOLD_DAYS),
+  quoteNudgeEnabled: z.boolean(),
+  quoteNudgeDays: z.coerce.number().int().min(0).max(MAX_THRESHOLD_DAYS),
+  autoFollowUpStageId: z.string().trim(),
+  autoFollowUpDays: z.coerce.number().int().min(0).max(MAX_THRESHOLD_DAYS),
 });
 
 export type AlertThresholdsInput = z.infer<typeof alertThresholdsSchema>;

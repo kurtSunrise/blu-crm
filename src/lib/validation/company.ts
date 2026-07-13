@@ -27,9 +27,25 @@ export const COMPANY_KINDS = [
   "referral partner",
 ] as const;
 
+const ABN_DIGITS = /^\d{11}$/;
+
+// ABN entry is lenient about spacing ("51 824 753 556" is the ABR's own
+// display format) but stores the 11 bare digits.
+const optionalAbn = z
+  .string()
+  .trim()
+  .transform((value) => value.replaceAll(" ", ""))
+  .refine((value) => value === "" || ABN_DIGITS.test(value), {
+    message: "An ABN is 11 digits",
+  })
+  .transform((value) => (value === "" ? undefined : value))
+  .optional();
+
 export const updateCompanySchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   kind: optionalTrimmed,
+  abn: optionalAbn,
+  legalName: optionalTrimmed,
   website: optionalTrimmed,
   notes: optionalNotes,
 });

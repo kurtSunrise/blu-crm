@@ -59,7 +59,7 @@ export function AlertThresholdsForm({
             id="stale-days"
             inputMode="numeric"
             max={365}
-            min={0}
+            min={1}
             name="staleDays"
             required
             type="number"

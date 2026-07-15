@@ -30,8 +30,10 @@ import {
   getDealsMissingKeyFields,
   getQuoteNudgeConfig,
   getQuotesAwaitingResponse,
+  getRecentlyWonDeals,
   getStaleDeals,
   type QuoteAwaitingResponse,
+  type RecentlyWonDeal,
 } from "@/lib/alerts";
 import { addDays, awstDateKey, type DateKey } from "@/lib/calendar";
 import { countDuplicateContactGroups } from "@/lib/duplicates";
@@ -40,6 +42,7 @@ import {
   formatAudFromCents,
   formatDateAwst,
   formatDayMonthAwst,
+  MS_PER_DAY,
 } from "@/lib/format";
 import type { NotificationType } from "@/lib/notification-types";
 import { emitNotificationBatch } from "@/lib/notifications";
@@ -308,6 +311,34 @@ const alertDealToSummary = (row: AlertDeal, ownerName: string): DealSummary =>
     valueCents: null,
   });
 
+// Recently-won deals as deal_list cards. wonAt stands in for the contact
+// timestamps so the card reads "won today / yesterday" rather than showing a
+// null; value falls back to null when neither quoted nor estimated is set.
+const wonDealToSummary = (
+  row: RecentlyWonDeal,
+  ownerName: string
+): DealSummary =>
+  toDealSummary({
+    companyName: row.companyName,
+    contactName: null,
+    createdAt: row.wonAt,
+    expectedCloseDate: null,
+    fixedDate: null,
+    fixedDateType: null,
+    id: row.dealId,
+    lastContactAt: row.wonAt,
+    leadId: row.leadId,
+    ownerName,
+    stageName: row.stageName,
+    title: row.title,
+    valueCents: row.valueCents,
+  });
+
+interface BriefingWin {
+  title: string;
+  valueCents: number | null;
+}
+
 interface BriefingHygiene {
   contactsWithoutCompany: number;
   dataGapCount: number;
@@ -352,12 +383,23 @@ const briefingText = (params: {
   now: Date;
   staleCount: number;
   staleDays: number;
+  wins: BriefingWin[];
 }): string => {
   const lines = [
     `Good morning! Here is your briefing for ${formatDateAwst(params.now)}.`,
     "",
     `You have ${plural(params.followUps.length, "follow-up")} due today, ${plural(params.closingCount, "deal")} closing within ${params.closingSoonDays} days, and ${plural(params.staleCount, "deal")} quiet for ${params.staleDays}+ days.`,
   ];
+  if (params.wins.length > 0) {
+    lines.push(
+      "",
+      `Nice work - you won ${plural(params.wins.length, "deal")} since your last briefing:`,
+      ...params.wins.map(
+        (win) =>
+          `- ${win.title}${win.valueCents === null ? "" : ` (${formatAudFromCents(win.valueCents)})`}`
+      )
+    );
+  }
   if (params.followUps.length > 0) {
     lines.push(
       "",
@@ -397,6 +439,11 @@ export const generateDailyBriefingThreads = async (
     return { created: 0, skipped: 0 };
   }
 
+  // Wins since the start of the previous AWST day: a deal won yesterday shows
+  // in today's briefing exactly once (tomorrow's window no longer covers it).
+  // Weekend wins (Fri briefing to Tue) are picked up by Monday's weekly report.
+  const wonSince = awstDayRange(new Date(now.getTime() - MS_PER_DAY)).start;
+
   // Org-wide fetches once, filtered per user in memory: the alert helpers are
   // the canonical stale/closing definitions and the team is three people.
   const [
@@ -407,6 +454,7 @@ export const generateDailyBriefingThreads = async (
     quotesAwaiting,
     contactsWithoutCompany,
     duplicateContactGroups,
+    recentlyWon,
   ] = await Promise.all([
     getStaleDeals(thresholds.staleDays),
     getClosingSoonDeals(thresholds.closingSoonDays),
@@ -415,6 +463,7 @@ export const generateDailyBriefingThreads = async (
     getQuotesAwaitingResponse(quoteNudge.days),
     countContactsWithoutCompany(),
     countDuplicateContactGroups(),
+    getRecentlyWonDeals(wonSince),
   ]);
 
   let created = 0;
@@ -436,19 +485,31 @@ export const generateDailyBriefingThreads = async (
       const myQuotesAwaiting = quotesAwaiting
         .filter((item) => item.ownerId === member.id)
         .slice(0, BRIEFING_LIST_LIMIT);
+      const myWins = recentlyWon
+        .filter((item) => item.ownerId === member.id)
+        .slice(0, BRIEFING_LIST_LIMIT);
 
       if (
         myFollowUps.length === 0 &&
         myClosing.length === 0 &&
         myStale.length === 0 &&
         myDataGaps.length === 0 &&
-        myQuotesAwaiting.length === 0
+        myQuotesAwaiting.length === 0 &&
+        myWins.length === 0
       ) {
         skipped += 1;
         continue;
       }
 
       const artifacts: PersistableArtifact[] = [];
+      if (myWins.length > 0) {
+        artifacts.push(
+          dealListArtifact(
+            "Won recently",
+            myWins.map((row) => wonDealToSummary(row, member.name))
+          )
+        );
+      }
       if (myClosing.length > 0) {
         artifacts.push(
           dealListArtifact(
@@ -490,6 +551,10 @@ export const generateDailyBriefingThreads = async (
           now,
           staleCount: myStale.length,
           staleDays: thresholds.staleDays,
+          wins: myWins.map((win) => ({
+            title: win.title,
+            valueCents: win.valueCents,
+          })),
         }),
         originPage: "/",
         title: `Morning briefing - ${formatDayMonthAwst(now)}`,

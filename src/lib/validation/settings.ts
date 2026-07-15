@@ -11,7 +11,9 @@ const MAX_THRESHOLD_DAYS = 365;
 // staleness episode. The enabled checkboxes are absent from the form when
 // unchecked, so the action resolves them to booleans before validating here.
 export const alertThresholdsSchema = z.object({
-  staleDays: z.coerce.number().int().min(0).max(MAX_THRESHOLD_DAYS),
+  // Minimum 1: a 0-day staleness threshold marks every open deal as "quiet",
+  // so it is never a valid setting (getAlertThresholds also guards reads).
+  staleDays: z.coerce.number().int().min(1).max(MAX_THRESHOLD_DAYS),
   closingSoonDays: z.coerce.number().int().min(0).max(MAX_THRESHOLD_DAYS),
   staleNudgeEnabled: z.boolean(),
   staleNudgeRepeatDays: z.coerce.number().int().min(0).max(MAX_THRESHOLD_DAYS),

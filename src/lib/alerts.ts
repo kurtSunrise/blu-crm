@@ -1,6 +1,24 @@
-import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { db } from "@/db";
-import { appSetting, company, deal, pipelineStage, quote } from "@/db/schema";
+import {
+  appSetting,
+  company,
+  deal,
+  dealStageEvent,
+  pipelineStage,
+  quote,
+} from "@/db/schema";
 import { MS_PER_DAY } from "@/lib/format";
 
 // Defaults match Blu's weekly report rules (FR-5.3); both are
@@ -60,8 +78,13 @@ export const getAlertThresholds = async (): Promise<AlertThresholds> => {
     .where(inArray(appSetting.key, [STALE_DAYS_KEY, CLOSING_SOON_DAYS_KEY]));
 
   const byKey = new Map(rows.map((row) => [row.key, row.value]));
+  const staleDays = parseDays(byKey.get(STALE_DAYS_KEY), DEFAULT_STALE_DAYS);
   return {
-    staleDays: parseDays(byKey.get(STALE_DAYS_KEY), DEFAULT_STALE_DAYS),
+    // A 0-day staleness threshold flags every open deal as "quiet" (cutoff =
+    // now), which is never a useful signal. The settings form now enforces a
+    // minimum of 1; this read-time guard rescues any value below 1 already
+    // stored from before that constraint by falling back to the default.
+    staleDays: staleDays < 1 ? DEFAULT_STALE_DAYS : staleDays,
     closingSoonDays: parseDays(
       byKey.get(CLOSING_SOON_DAYS_KEY),
       DEFAULT_CLOSING_SOON_DAYS
@@ -213,6 +236,67 @@ export const getClosingSoonDeals = async (
       )
     )
     .orderBy(asc(sql`least(${deal.fixedDate}, ${deal.expectedCloseDate})`));
+};
+
+export interface RecentlyWonDeal {
+  companyName: string | null;
+  dealId: string;
+  leadId: string;
+  ownerId: string | null;
+  stageName: string;
+  title: string;
+  valueCents: number | null;
+  wonAt: Date;
+}
+
+const RECENT_WON_LIMIT = 200;
+
+// Deals that entered a Won stage on or after `since` and are still there now
+// (the event's target stage is the deal's current stage, so a deal won then
+// reopened is excluded). Sourced from deal_stage_event, which records the
+// moment a deal was actually marked won rather than any mutable column, so the
+// briefing can acknowledge fresh wins.
+export const getRecentlyWonDeals = async (
+  since: Date
+): Promise<RecentlyWonDeal[]> => {
+  const rows = await db
+    .select({
+      dealId: deal.id,
+      leadId: deal.leadId,
+      title: deal.title,
+      companyName: company.name,
+      ownerId: deal.ownerId,
+      stageName: pipelineStage.name,
+      valueCents: sql<
+        number | null
+      >`coalesce(${deal.quotedValueCents}, ${deal.estimatedValueCents})`,
+      wonAt: dealStageEvent.changedAt,
+    })
+    .from(dealStageEvent)
+    .innerJoin(pipelineStage, eq(dealStageEvent.toStageId, pipelineStage.id))
+    .innerJoin(deal, eq(dealStageEvent.dealId, deal.id))
+    .leftJoin(company, eq(deal.companyId, company.id))
+    .where(
+      and(
+        isNull(deal.deletedAt),
+        eq(pipelineStage.isWon, true),
+        eq(dealStageEvent.toStageId, deal.stageId),
+        gte(dealStageEvent.changedAt, since)
+      )
+    )
+    .orderBy(desc(dealStageEvent.changedAt))
+    .limit(RECENT_WON_LIMIT);
+
+  // A deal re-won within the window (won, reopened, won again) yields more
+  // than one qualifying event; keep only the most recent per deal.
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    if (seen.has(row.dealId)) {
+      return false;
+    }
+    seen.add(row.dealId);
+    return true;
+  });
 };
 
 const MISSING_FIELDS_LIMIT = 200;
